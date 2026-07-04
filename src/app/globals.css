@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+/* Chart chrome & ink tokens from the validated reference palette (see
+   src/lib/palette.ts). Light values here, dark overrides below. */
+:root {
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --ink-muted: #898781;
+  --gridline: #e1e0d9;
+  --baseline: #c3c2b7;
+  --hairline: rgba(11, 11, 11, 0.1);
+  --delta-good: #006300;
+}
+
+@theme inline {
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-muted: var(--ink-muted);
+  --color-gridline: var(--gridline);
+  --color-baseline: var(--baseline);
+  --color-hairline: var(--hairline);
+  --color-delta-good: var(--delta-good);
+  /* Privacy: system font stack only — no remote font fetches, ever. */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+    monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --ink-muted: #898781;
+    --gridline: #2c2c2a;
+    --baseline: #383835;
+    --hairline: rgba(255, 255, 255, 0.1);
+    --delta-good: #0ca30c;
+  }
+}
+
+body {
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+
+/* Category dots: swap to the palette's dark-mode step of the same hue.
+   (!important because the light hex is set as an inline style.) */
+@media (prefers-color-scheme: dark) {
+  [data-has-color] {
+    background-color: var(--dot-dark) !important;
+  }
+}
