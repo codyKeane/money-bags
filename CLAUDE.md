@@ -31,8 +31,19 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
 - `src/server/services/` — the only DB-touching layer; shared by RSC pages,
   Server Actions, API route handlers, and the import CLI. Add new data
   access here, not in components/routes.
-- `src/app/` — RSC pages (`/`, `/transactions`, `/import`), Server Actions
-  for mutations, thin GET JSON routes under `/api` for local scripting.
+- `src/app/` — RSC pages (`/`, `/transactions`, `/accounts`,
+  `/categories`, `/import`), Server Actions for mutations, thin GET JSON
+  routes under `/api` for local scripting.
+- PWA/remote access: `src/app/manifest.ts` + `src/app/apple-icon.png` +
+  `public/icon-*.png` (generated locally, never fetched) make the app
+  installable over Tailscale HTTPS — deliberately **no service worker**
+  (no offline/push; the ledger is server-side).
+  `experimental.serverActions.allowedOrigins` in `next.config.ts` allows
+  `*.ts.net` so mutations survive the `tailscale serve` proxy
+  (Origin-vs-Host CSRF check); extend via `EXTRA_ALLOWED_ORIGINS`.
+- Navigation: `src/components/nav-links.ts` is the single source for both
+  the desktop `Sidebar` (hidden below `md`) and `MobileNav` (top bar,
+  hidden at `md`+).
 - `scripts/import-csv.ts` — CLI importer.
 
 ## Conventions

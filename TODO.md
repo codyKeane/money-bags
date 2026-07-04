@@ -190,8 +190,11 @@ account form is intentional UX — fold into Q1/Q2 primitives and stop.
   sums + openings, documented as "before first transaction"). Build after
   F1/refund-semantics settle net-vs-gross.
 - **`db:seed` guard** on a DB with real data (abort without `--force`).
-- **Mobile layout** (collapsible sidebar, responsive tables), **chart
-  accessibility** (Recharts `accessibilityLayer`, non-hue series
+- ~~**Mobile layout**~~ — DONE (shipped with the Tailscale/PWA milestone:
+  MobileNav top bar below `md`, responsive padding, wrapping headers; the
+  app is also installable as a PWA and pre-configured for
+  `tailscale serve` remote access — see README "Remote access").
+- **Chart accessibility** (Recharts `accessibilityLayer`, non-hue series
   distinction), **month jump picker**, **pagination page numbers**.
 - **Deferred by design**: recurring-transaction detection, OFX/QIF,
   multi-currency conversion, Docker, auth, double-entry ledger.

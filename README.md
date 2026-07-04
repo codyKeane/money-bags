@@ -33,6 +33,37 @@ on startup; `npm run db:seed` is only for demo data.
 copy the backup over `data/finance.db`, delete stale `finance.db-wal` /
 `finance.db-shm`, restart.
 
+## Remote access (Tailscale)
+
+The app stays loopback-bound; [Tailscale](https://tailscale.com) extends
+who can reach it without opening any port to the internet:
+
+1. Install Tailscale on the server and on your phone/laptop; `sudo
+   tailscale up` on each and sign into the same tailnet.
+2. On the server: `tailscale serve --bg 3100`
+3. From any tailnet device, open `https://<host>.<tailnet>.ts.net` —
+   Tailscale provides the TLS certificate automatically.
+
+Privacy properties: traffic is end-to-end WireGuard-encrypted between your
+own devices; your financial data never touches a third-party server
+(Tailscale's coordination service sees connection metadata only — use
+[Headscale](https://github.com/juanfont/headscale) if you want that
+self-hosted too, and set `EXTRA_ALLOWED_ORIGINS` in `.env` for its custom
+domain). The local binding does not change: on the LAN the app still
+answers only on 127.0.0.1 unless you use the `:lan` scripts. The app has no
+auth — tailnet membership is the access boundary, so scope your tailnet
+(or its ACLs) accordingly.
+
+Server Actions are pre-configured to accept `*.ts.net` origins (Next.js
+otherwise rejects mutations arriving through a proxy whose Host differs
+from the browser's Origin).
+
+**Install as an app (PWA)**: browse the `ts.net` URL, then — Android
+Chrome: accept the install prompt (or ⋮ → "Add to Home screen"); iOS
+Safari: Share → "Add to Home Screen". You get a home-screen icon and a
+standalone window. There is deliberately no offline mode: the ledger lives
+on the server.
+
 ## Importing statements
 
 Via the web UI (`/import`), or the CLI:

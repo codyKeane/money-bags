@@ -2,25 +2,18 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-
-const LINKS = [
-  { href: "/", label: "Dashboard" },
-  { href: "/transactions", label: "Transactions" },
-  { href: "/accounts", label: "Accounts" },
-  { href: "/categories", label: "Categories" },
-  { href: "/import", label: "Import" },
-] as const;
+import { NAV_LINKS } from "./nav-links";
 
 export function Sidebar() {
   const pathname = usePathname();
   return (
-    <aside className="w-52 shrink-0 border-r border-hairline bg-surface min-h-screen px-4 py-6 flex flex-col gap-6">
+    <aside className="hidden md:flex w-52 shrink-0 border-r border-hairline bg-surface min-h-screen px-4 py-6 flex-col gap-6">
       <div>
         <p className="text-sm font-semibold tracking-tight">Finance Engine</p>
         <p className="text-xs text-ink-muted mt-0.5">Local &amp; private</p>
       </div>
       <nav className="flex flex-col gap-1">
-        {LINKS.map(({ href, label }) => {
+        {NAV_LINKS.map(({ href, label }) => {
           const active = pathname === href;
           return (
             <Link

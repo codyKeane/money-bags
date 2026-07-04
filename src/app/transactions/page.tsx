@@ -66,7 +66,7 @@ export default async function TransactionsPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold">Transactions</h1>
           <p className="mt-1 text-sm text-ink-muted">
