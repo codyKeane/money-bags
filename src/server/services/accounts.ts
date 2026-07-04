@@ -11,6 +11,7 @@ export interface AccountWithBalance {
   currency: string;
   openingBalanceCents: number;
   balanceCents: number;
+  transactionCount: number;
 }
 
 export async function getAccountsWithBalances(db: Db = getDb()): Promise<AccountWithBalance[]> {
@@ -23,6 +24,7 @@ export async function getAccountsWithBalances(db: Db = getDb()): Promise<Account
       currency: accounts.currency,
       openingBalanceCents: accounts.openingBalanceCents,
       balanceCents: sql<number>`${accounts.openingBalanceCents} + coalesce(sum(${transactions.amountCents}), 0)`,
+      transactionCount: sql<number>`count(${transactions.id})`,
     })
     .from(accounts)
     .leftJoin(transactions, eq(transactions.accountId, accounts.id))
@@ -69,4 +71,39 @@ export async function getOrCreateAccountByName(
   const existing = await getAccountByName(name, db);
   if (existing) return { account: existing, created: false as const };
   return { account: await createAccount({ name, type }, db), created: true as const };
+}
+
+export async function getAccountById(id: string, db: Db = getDb()) {
+  const [row] = await db.select().from(accounts).where(eq(accounts.id, id)).limit(1);
+  return row ?? null;
+}
+
+export interface UpdateAccountInput {
+  name: string;
+  type: AccountType;
+  institution: string | null;
+  openingBalanceCents: number;
+}
+
+export async function updateAccount(
+  id: string,
+  input: UpdateAccountInput,
+  db: Db = getDb(),
+): Promise<string | null> {
+  const [row] = await db
+    .update(accounts)
+    .set(input)
+    .where(eq(accounts.id, id))
+    .returning({ id: accounts.id });
+  return row?.id ?? null;
+}
+
+// FK cascade removes the account's transactions with it — callers gate this
+// behind an explicit typed confirmation.
+export async function deleteAccount(id: string, db: Db = getDb()): Promise<string | null> {
+  const [row] = await db
+    .delete(accounts)
+    .where(eq(accounts.id, id))
+    .returning({ id: accounts.id });
+  return row?.id ?? null;
 }

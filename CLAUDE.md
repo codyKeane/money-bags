@@ -55,6 +55,12 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
     *different* CSV files each hash with index 0, so the second file's copy
     is skipped as a duplicate. Importers must report skipped rows in detail
     so the user can catch this.
+  - Changelog 2026-07: the hash *formula* is unchanged, but parser fixes
+    (header priority, decimal-comma amounts, debit sign) change which
+    description/amount feed the hash for files that were previously
+    misparsed. Re-importing such a file inserts fresh rows because the old
+    import stored corrupted values under different hashes — review import
+    counts and delete the corrupted rows first.
 - **Categorization**: case-insensitive keyword match at import; longest
   matching keyword wins, ties broken by category name; no match →
   `categoryId = null` (rendered "Uncategorized").
@@ -67,12 +73,18 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
 
 ## Commands
 
-- `npm run dev` — dev server at http://localhost:3100 (3000 is taken by another local service)
+- `npm run dev` — dev server at http://127.0.0.1:3100 (3000 is taken by
+  another local service; loopback-only by default — the app has no auth.
+  `dev:lan` / `start:lan` bind 0.0.0.0 as an explicit opt-in)
+- `npm run db:backup` — WAL-safe online backup to `data/backups/`
+  (restore: stop server, copy back over `data/finance.db`, delete stale
+  `-wal`/`-shm`, restart)
 - `npm run build` / `npm start` — production build / serve
 - `npm test` / `npm run test:watch` — Vitest
 - `npm run lint` — ESLint
 - `npm run db:generate` — generate migration from schema changes
-- `npm run db:migrate` — apply migrations
+- `npm run db:migrate` — apply migrations (also auto-applied on startup;
+  default categories install automatically when the table is empty)
 - `npm run db:seed` — idempotent demo seed (re-run adds nothing)
 - `npm run db:studio` — Drizzle Studio DB browser
 - `npm run import -- --file <csv> --account "<name>" [--type CHECKING] [--date-format MDY]` — CLI import

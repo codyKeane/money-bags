@@ -34,8 +34,9 @@ yarn-error.log*
 .env*
 !.env.example
 
-# local financial data: SQLite DB (incl. WAL/SHM) and real statement CSVs — never commit
+# local financial data: SQLite DB (incl. WAL/SHM), backups, and real statement CSVs — never commit
 data/*.db*
+data/backups/
 data/imports/
 
 # vercel

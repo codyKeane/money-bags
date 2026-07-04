@@ -73,7 +73,9 @@ export default async function DashboardPage({
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard label="Net worth" value={formatCents(netWorthCents)} />
+        <Link href="/accounts" className="block">
+          <StatCard label="Net worth" value={formatCents(netWorthCents)} />
+        </Link>
         <StatCard
           label={`Income · ${formatMonth(month)}`}
           value={formatCents(summary.incomeCents)}

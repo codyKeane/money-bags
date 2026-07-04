@@ -25,28 +25,58 @@ export interface ParseStatementResult {
   errors: StatementRowError[];
 }
 
-const HEADER_SYNONYMS: Record<string, "date" | "description" | "amount" | "debit" | "credit"> = {
-  "date": "date",
-  "transaction date": "date",
-  "posted date": "date",
-  "post date": "date",
-  "trans date": "date",
-  "description": "description",
-  "memo": "description",
-  "payee": "description",
-  "details": "description",
-  "narrative": "description",
-  "amount": "amount",
-  "transaction amount": "amount",
-  "debit": "debit",
-  "withdrawal": "debit",
-  "withdrawals": "debit",
-  "money out": "debit",
-  "credit": "credit",
-  "deposit": "credit",
-  "deposits": "credit",
-  "money in": "credit",
+type CanonicalField = "date" | "description" | "amount" | "debit" | "credit";
+
+// Ordered synonym lists: index = priority, lower wins. A file that carries
+// both "Description" and "Memo" must store the description, never the memo —
+// the flat-map approach let csv-parse's last-duplicate-wins silently replace
+// (or blank) the real description.
+const HEADER_PRIORITIES: Record<CanonicalField, readonly string[]> = {
+  date: ["date", "transaction date", "trans date", "posted date", "post date"],
+  description: ["description", "payee", "memo", "details", "narrative"],
+  amount: ["amount", "transaction amount"],
+  debit: ["debit", "withdrawal", "withdrawals", "money out"],
+  credit: ["credit", "deposit", "deposits", "money in"],
 };
+
+const CANONICAL_FIELDS = Object.keys(HEADER_PRIORITIES) as CanonicalField[];
+
+type ColumnConfig = CanonicalField | { name: string; disabled: true };
+
+// One winner per canonical field: columnMap overrides (priority -1) beat and
+// displace synonyms; among synonyms lower list index wins; ties go to the
+// first-seen column. Losers and unmapped headers are disabled so a stray
+// duplicate can never clobber the winner's value.
+function resolveHeaderColumns(
+  headers: readonly string[],
+  overrides: ReadonlyMap<string, CanonicalField>,
+): ColumnConfig[] {
+  const claims = headers.map((header) => {
+    const key = header.trim().toLowerCase();
+    const override = overrides.get(key);
+    if (override) return { field: override, priority: -1 };
+    for (const field of CANONICAL_FIELDS) {
+      const priority = HEADER_PRIORITIES[field].indexOf(key);
+      if (priority !== -1) return { field, priority };
+    }
+    return null;
+  });
+
+  const winners = new Map<CanonicalField, number>(); // field -> header index
+  claims.forEach((claim, i) => {
+    if (!claim) return;
+    const current = winners.get(claim.field);
+    if (current === undefined || claim.priority < (claims[current]?.priority ?? Infinity)) {
+      winners.set(claim.field, i);
+    }
+  });
+
+  return headers.map((header, i) => {
+    const claim = claims[i];
+    if (claim && winners.get(claim.field) === i) return claim.field;
+    return { name: header.trim().toLowerCase(), disabled: true };
+  });
+}
 
 // "$1,234.56" / "(45.00)" / "45.00-" / "-45.00" -> signed cents, or null if
 // unparseable. Integer math only — no float multiplication.
@@ -69,6 +99,15 @@ export function parseAmountToCents(raw: string): number | null {
   } else if (s.startsWith("+")) {
     s = s.slice(1).trim();
   }
+  // A trailing ",dd" can never be a US thousands group (those are always 3
+  // digits), so it is unambiguously a decimal comma — but only when no "."
+  // competes and it is the only comma. Mixed forms ("1.234,56", "1,234,56")
+  // are rejected, never guessed: a loud row error beats a silent 100x
+  // misparse.
+  if (/,\d{2}$/.test(s)) {
+    if (s.includes(".") || s.indexOf(",") !== s.lastIndexOf(",")) return null;
+    s = s.replace(",", ".");
+  }
   // strip currency symbols, spaces, thousands separators
   s = s.replace(/[$€£\s,]/g, "");
   const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(s);
@@ -77,6 +116,9 @@ export function parseAmountToCents(raw: string): number | null {
   const centsPart = match[2] ?? "";
   const cents = centsPart.length === 0 ? 0 : parseInt(centsPart.padEnd(2, "0"), 10);
   const total = dollars * 100 + cents;
+  // Guard integer-cents math: past 2^53-1 the arithmetic above has already
+  // lost precision, and SQLite would store the overflow as REAL.
+  if (!Number.isSafeInteger(total)) return null;
   return negative ? -total : total;
 }
 
@@ -128,13 +170,10 @@ export function parseStatementCsv(
   const errors: StatementRowError[] = [];
   const rows: ParsedStatementRow[] = [];
 
-  const overrides = new Map<string, "date" | "description" | "amount" | "debit" | "credit">();
+  const overrides = new Map<string, CanonicalField>();
   for (const [canonical, header] of Object.entries(options.columnMap ?? {})) {
     if (header) {
-      overrides.set(
-        header.trim().toLowerCase(),
-        canonical as "date" | "description" | "amount" | "debit" | "credit",
-      );
+      overrides.set(header.trim().toLowerCase(), canonical as CanonicalField);
     }
   }
 
@@ -142,11 +181,7 @@ export function parseStatementCsv(
   try {
     records = parse(text, {
       bom: true,
-      columns: (headers: string[]) =>
-        headers.map((h) => {
-          const key = h.trim().toLowerCase();
-          return overrides.get(key) ?? HEADER_SYNONYMS[key] ?? { name: key, disabled: true };
-        }),
+      columns: (headers: string[]) => resolveHeaderColumns(headers, overrides),
       skip_empty_lines: true,
       trim: true,
       relax_column_count: true,
@@ -208,8 +243,10 @@ export function parseStatementCsv(
         });
         continue;
       }
-      // debit columns are outflows: positive values mean money out
-      amountCents = hasDebit ? -Math.abs(parsed) : Math.abs(parsed);
+      // Debit columns are outflows: positive values mean money out. Keep the
+      // sign: a negative Debit is a refund (inflow), a negative Credit a
+      // reversal (outflow).
+      amountCents = hasDebit ? -parsed : parsed;
     }
 
     rows.push({ rowNumber, date, description: rawDescription, amountCents });

@@ -1,0 +1,72 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createTestDb, type Db } from "@/db/client";
+import { transactions } from "@/db/schema";
+import {
+  createAccount,
+  deleteAccount,
+  getAccountsWithBalances,
+  getNetWorth,
+  updateAccount,
+} from "./accounts";
+
+describe("accounts service (integration, temp DB)", () => {
+  let dir: string;
+  let db: Db;
+  let sqlite: { close(): void };
+  let checkingId: string;
+  let cardId: string;
+
+  beforeAll(async () => {
+    dir = mkdtempSync(path.join(tmpdir(), "finance-acct-"));
+    const handle = createTestDb(path.join(dir, "test.db"));
+    db = handle.db;
+    sqlite = handle.sqlite;
+    checkingId = (
+      await createAccount({ name: "Checking", type: "CHECKING", openingBalanceCents: 10000 }, db)
+    ).id;
+    cardId = (await createAccount({ name: "Card", type: "CREDIT_CARD" }, db)).id;
+    await db.insert(transactions).values([
+      { date: "2026-06-01", description: "PAY", amountCents: 5000, accountId: checkingId },
+      { date: "2026-06-02", description: "SHOP", amountCents: -2000, accountId: cardId },
+    ]);
+  });
+
+  afterAll(() => {
+    sqlite.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("reports balances and transaction counts", async () => {
+    const rows = await getAccountsWithBalances(db);
+    const checking = rows.find((r) => r.id === checkingId);
+    const card = rows.find((r) => r.id === cardId);
+    expect(checking).toMatchObject({ balanceCents: 15000, transactionCount: 1 });
+    expect(card).toMatchObject({ balanceCents: -2000, transactionCount: 1 });
+    expect(await getNetWorth(db)).toBe(13000);
+  });
+
+  it("updating the opening balance moves the computed balance", async () => {
+    const updated = await updateAccount(
+      checkingId,
+      { name: "Checking", type: "CHECKING", institution: "Bank", openingBalanceCents: 20000 },
+      db,
+    );
+    expect(updated).toBe(checkingId);
+    const rows = await getAccountsWithBalances(db);
+    expect(rows.find((r) => r.id === checkingId)).toMatchObject({
+      balanceCents: 25000,
+      institution: "Bank",
+    });
+  });
+
+  it("deleting an account cascades to its transactions only", async () => {
+    expect(await deleteAccount(cardId, db)).toBe(cardId);
+    const remaining = await db.select().from(transactions);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]?.accountId).toBe(checkingId);
+    expect(await getNetWorth(db)).toBe(25000);
+  });
+});

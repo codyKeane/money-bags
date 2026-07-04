@@ -36,3 +36,15 @@ export function formatMonthShort(month: string): string {
   const [, m] = month.split("-").map(Number);
   return (MONTH_NAMES[(m ?? 1) - 1] ?? "").slice(0, 3);
 }
+
+// Calendar-checked YYYY-MM-DD (matches the ledger's date column format).
+export function isValidIsoDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (year < 1900 || year > 2200 || month < 1 || month > 12) return false;
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return day >= 1 && day <= daysInMonth;
+}

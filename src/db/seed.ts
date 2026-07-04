@@ -13,40 +13,9 @@ try {
 import { getDb } from "./client";
 import { accounts, categories, transactions } from "./schema";
 import { computeImportHashes, type HashableRow } from "../lib/import-hash";
-import { CATEGORICAL_SLOTS } from "../lib/palette";
+import { DEFAULT_CATEGORIES } from "../lib/default-categories";
 
 const db = getDb();
-
-// ---------- categories ----------
-
-const slot = (n: number) => CATEGORICAL_SLOTS[n - 1]?.light ?? null;
-
-// First 8 take the validated palette slots in order; the tail stays neutral
-// (never generate a 9th hue — badges render uncolored).
-const CATEGORY_DEFS: {
-  name: string;
-  color: string | null;
-  keywords: string[];
-  excludeFromSpending?: boolean;
-}[] = [
-  { name: "Groceries", color: slot(1), keywords: ["market", "grocery", "supermarket", "harvest"] },
-  { name: "Dining", color: slot(2), keywords: ["restaurant", "cafe", "coffee", "grill", "pizza", "noodle", "taco"] },
-  { name: "Housing", color: slot(3), keywords: ["rent", "apartments", "mortgage"] },
-  { name: "Transportation", color: slot(4), keywords: ["shell", "fuel", "gas station", "uber", "lyft", "transit"] },
-  { name: "Utilities", color: slot(5), keywords: ["power", "light", "electric", "water", "internet", "fibernet"] },
-  { name: "Shopping", color: slot(6), keywords: ["amazon", "mktplace", "target", "walmart"] },
-  { name: "Entertainment", color: slot(7), keywords: ["cineplex", "cinema", "theater", "tickets"] },
-  { name: "Subscriptions", color: slot(8), keywords: ["netflix", "spotify", "subscription"] },
-  { name: "Income", color: null, keywords: ["payroll", "salary", "direct deposit"] },
-  { name: "Health", color: null, keywords: ["pharmacy", "clinic", "dental"] },
-  { name: "Insurance", color: null, keywords: ["insurance"] },
-  {
-    name: "Transfers",
-    color: null,
-    keywords: ["payment to rewards card", "payment received", "transfer"],
-    excludeFromSpending: true,
-  },
-];
 
 // ---------- deterministic transaction generation ----------
 
@@ -147,9 +116,9 @@ async function main() {
     accountIds.set(row.name, row.id);
   }
 
-  // Categories (upsert by unique name)
+  // Categories (upsert by unique name — refreshes defaults to current values)
   const categoryIds = new Map<string, string>();
-  for (const def of CATEGORY_DEFS) {
+  for (const def of DEFAULT_CATEGORIES) {
     const [row] = await db
       .insert(categories)
       .values({

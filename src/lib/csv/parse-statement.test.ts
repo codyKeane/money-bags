@@ -52,6 +52,55 @@ describe("parseStatementCsv", () => {
     expect(rows[1]?.amountCents).toBe(260000);
   });
 
+  it("keeps the sign of negative Debit/Credit values (refunds and reversals)", () => {
+    const { rows, errors } = parseStatementCsv(
+      "Date,Description,Debit,Credit\n2026-06-01,REFUND,-25.00,\n2026-06-02,REVERSAL,,-25.00\n",
+    );
+    expect(errors).toEqual([]);
+    expect(rows[0]?.amountCents).toBe(2500); // negative debit = money back in
+    expect(rows[1]?.amountCents).toBe(-2500); // negative credit = money back out
+  });
+
+  it("prefers Description over Memo when both columns exist", () => {
+    const populated = parseStatementCsv(
+      "Date,Description,Memo,Amount\n2026-06-01,REAL DESC,note text,-4.50\n",
+    );
+    expect(populated.errors).toEqual([]);
+    expect(populated.rows[0]?.description).toBe("REAL DESC");
+    // an empty memo must not blank the description and drop the row
+    const emptyMemo = parseStatementCsv(
+      "Date,Description,Memo,Amount\n2026-06-01,REAL DESC,,-4.50\n",
+    );
+    expect(emptyMemo.errors).toEqual([]);
+    expect(emptyMemo.rows[0]?.description).toBe("REAL DESC");
+  });
+
+  it("prefers Transaction Date over Posted Date and Payee over Memo", () => {
+    const { rows, errors } = parseStatementCsv(
+      "Transaction Date,Posted Date,Payee,Memo,Amount\n2026-06-01,2026-06-03,MERCHANT,note,-1.00\n",
+    );
+    expect(errors).toEqual([]);
+    expect(rows[0]?.date).toBe("2026-06-01");
+    expect(rows[0]?.description).toBe("MERCHANT");
+  });
+
+  it("lets columnMap overrides displace a competing synonym column", () => {
+    const { rows, errors } = parseStatementCsv(
+      "Date,Description,Memo,Amount\n2026-06-01,ignored,USE THIS,-1.00\n",
+      { columnMap: { description: "Memo" } },
+    );
+    expect(errors).toEqual([]);
+    expect(rows[0]?.description).toBe("USE THIS");
+  });
+
+  it("uses the first column when identical headers are duplicated", () => {
+    const { rows, errors } = parseStatementCsv(
+      "Date,Description,Description,Amount\n2026-06-01,FIRST,SECOND,-1.00\n",
+    );
+    expect(errors).toEqual([]);
+    expect(rows[0]?.description).toBe("FIRST");
+  });
+
   it("respects MDY vs DMY date formats", () => {
     const csv = "Date,Description,Amount\n02/03/2026,SHOP,-1.00\n";
     expect(parseStatementCsv(csv, { dateFormat: "MDY" }).rows[0]?.date).toBe("2026-02-03");
@@ -117,5 +166,30 @@ describe("parseAmountToCents", () => {
     expect(parseAmountToCents("")).toBeNull();
     expect(parseAmountToCents("abc")).toBeNull();
     expect(parseAmountToCents("1.234")).toBeNull();
+  });
+
+  it("parses unambiguous European decimal commas", () => {
+    expect(parseAmountToCents("45,00")).toBe(4500);
+    expect(parseAmountToCents("1234,56")).toBe(123456);
+    expect(parseAmountToCents("(45,00)")).toBe(-4500);
+    expect(parseAmountToCents("€45,00")).toBe(4500);
+    expect(parseAmountToCents("1 234,56")).toBe(123456);
+  });
+
+  it("rejects ambiguous mixed-separator forms instead of guessing", () => {
+    expect(parseAmountToCents("1.234,56")).toBeNull();
+    expect(parseAmountToCents("1,234,56")).toBeNull();
+  });
+
+  it("keeps US thousands-separator semantics", () => {
+    expect(parseAmountToCents("12,345")).toBe(1234500);
+    expect(parseAmountToCents("1,234.56")).toBe(123456);
+    expect(parseAmountToCents("-$1,850.00")).toBe(-185000);
+  });
+
+  it("rejects amounts past the safe-integer cents boundary", () => {
+    expect(parseAmountToCents("90071992547409.91")).toBe(9007199254740991);
+    expect(parseAmountToCents("90071992547409.92")).toBeNull();
+    expect(parseAmountToCents("99999999999999999.99")).toBeNull();
   });
 });

@@ -1,77 +1,55 @@
 # Remaining work
 
-Status after the foundation build (commit `a17fad3`): schema + migrations,
-seeded ledger, tested CSV ingestion (CLI + UI) with idempotent dedupe,
-dashboard/transactions/import pages — all verified end-to-end on port 3100.
-This is what still needs to be done, from a three-lens audit (correctness,
-hardening, user-facing completeness) with every high-priority item
-independently re-verified against the code.
+Status after the foundation build (commit `a17fad3`) **plus the TODO
+milestone** (CSV correctness fixes, bootstrap/data-safety hardening,
+categories/accounts/manual-transaction management, filters + pagination —
+all sections 1–3 items below except the GitHub push, verified end-to-end).
 
-## 1. Critical — fix before importing real statements
+## 1. Critical — fix before importing real statements — ✅ DONE
 
-These two silently corrupt ingested data, and corrupted values get frozen
-into the dedupe hash (`importHash`), so cleanup after the fact is painful.
-
-- [ ] **CSV header collision: `Description` + `Memo` in the same file.**
-  `HEADER_SYNONYMS` maps description/memo/payee/details to one canonical
-  field and the last duplicate column wins, so `Date,Description,Memo,Amount`
-  stores the *memo* as the description (and an empty memo blanks it →
-  row rejected). Corrupts categorization input and the import hash. Same
-  applies to `Transaction Date` + `Posted Date`. Fix: priority order in the
-  `columns()` callback of `src/lib/csv/parse-statement.ts`; first/most
-  specific header wins, later synonyms disabled. (effort M)
-- [ ] **European decimal-comma amounts misparse 100×; no magnitude bound.**
-  `parseAmountToCents("45,00")` → $4,500.00 (comma stripped as thousands
-  separator) — silent 100× inflation, and the parser explicitly strips €/£
-  so such files are in scope. Also `"99999999999999999.99"` → 1e19, past
-  `Number.MAX_SAFE_INTEGER`, which SQLite stores as REAL in the INTEGER
-  cents column. Fix: reject/optionally support trailing `,\d{2}` decimals
-  and add a `Number.isSafeInteger` cap in the same function; add tests.
-  (effort S)
+- [x] **CSV header collision: `Description` + `Memo` in the same file.**
+  Fixed via priority-ordered header resolution (`resolveHeaderColumns` in
+  `src/lib/csv/parse-statement.ts`): Description beats Memo, Transaction
+  Date beats Posted Date, columnMap overrides displace synonyms, duplicate
+  headers → first wins, losers disabled. Note: files previously imported
+  through the buggy path hashed corrupted text — see the dedupe changelog
+  note in CLAUDE.md before re-importing them.
+- [x] **European decimal-comma amounts + magnitude bound.** Unambiguous
+  trailing `,dd` now parses as a decimal comma; mixed forms (`1.234,56`)
+  are rejected as row errors; `Number.isSafeInteger` cap added. Bonus fix:
+  negative Debit values keep their sign (refunds are inflows).
 
 ## 2. High priority — bootstrap & data-safety gaps
 
-- [ ] **Category management exists only in the demo seed.** A real user who
-  imports without seeding gets zero categories: auto-categorization is
-  inert and the recategorize dropdown offers only "Uncategorized". Split
-  default categories (keywords/colors/excludeFromSpending) out of the demo
-  seed, add a categories service + minimal `/categories` UI (create, edit
-  keywords, excludeFromSpending). (M)
-- [ ] **Re-run keyword rules over uncategorized rows.** `categorize()` only
-  runs at import, so keyword edits never touch existing rows. Add an
-  "Apply rules to uncategorized" action (`WHERE categoryId IS NULL`,
-  preserving manual choices). (S)
-- [ ] **Auto-apply migrations on startup.** Fresh clone + `npm run dev`
-  without `db:migrate` → stub DB file + opaque 500 ("no such table").
-  Call drizzle's `migrate()` inside `createDb()` (already proven in
-  `src/server/services/import.test.ts`). (S)
-- [ ] **WAL-safe DB backup script.** No backup story for the most valuable
-  file in the system; naive copy while the server runs loses transactions
-  sitting in `finance.db-wal`. Add `npm run db:backup` using better-sqlite3's
-  online `db.backup()` / `VACUUM INTO`, document restore. (S)
-- [ ] **Push the repo off this box.** No git remote is configured and this
-  container is ephemeral — the code currently exists in exactly one place.
-  Add a private remote (or `git bundle` to the NAS) and push `main`. (S)
-- [ ] **Bind to loopback by default.** `next start` binds 0.0.0.0 with zero
-  auth; any LAN device can read every transaction and POST imports (route
-  handlers have no CSRF protection). Default to `-H 127.0.0.1` and make LAN
-  exposure an explicit, documented choice — full auth remains out of scope.
-  (S)
+- [x] **Category management** — `/categories` page: create/edit keywords/
+  color/excludeFromSpending/delete; default category set decoupled from the
+  demo seed (`src/lib/default-categories.ts`) and auto-installed on an
+  empty database.
+- [x] **Re-run keyword rules over uncategorized rows** — "Apply rules to
+  uncategorized" button on `/categories` and `/transactions`; never touches
+  manually categorized rows.
+- [x] **Auto-apply migrations on startup** — `migrate()` runs in
+  `createDb()`; a fresh clone boots with `npm run dev` alone.
+- [x] **WAL-safe DB backup** — `npm run db:backup` (better-sqlite3 online
+  backup API) → `data/backups/`; restore procedure documented in README.
+- [ ] **Push the repo off this box.** STILL BLOCKED: the Claude GitHub App
+  lacks write access to `codyKeane/money-bags` (push → 403). A verified
+  full-history git bundle was delivered to the user as fallback. Grant the
+  app repo access (GitHub → Settings → Integrations → Applications →
+  Claude) or push the bundle from the laptop. (S)
+- [x] **Bind to loopback by default** — `dev`/`start` bind 127.0.0.1;
+  `dev:lan`/`start:lan` are the explicit LAN opt-in.
 
-## 3. High priority — features a real user needs next
+## 3. High priority — features a real user needs next — ✅ DONE
 
-- [ ] **Manual transaction add/edit/delete.** The schema already anticipates
-  it (`importHash` nullable "for manually created rows") and the import UI
-  literally tells users to "add it manually" for the cross-file dedupe edge
-  case — but no such feature exists. (M)
-- [ ] **Accounts page.** Per-account balances are computed but shown
-  nowhere; UI-created accounts can't set/fix an opening balance, making net
-  worth wrong for accounts with pre-import history. List + create/edit
-  (name, type, institution, opening balance) + guarded delete. (M)
-- [ ] **Transactions: pagination, search, filters.** Hardcoded latest-100;
-  no way to find older rows or answer "what did I spend at X". Filtered/
-  paginated service query (description search, date range, account,
-  category incl. uncategorized), driven by URL searchParams. (L)
+- [x] **Manual transaction add/edit/delete** — add form on `/transactions`,
+  per-row Edit page + confirmed Delete; manual rows keep `importHash` null.
+- [x] **Accounts page** — `/accounts`: balances + transaction counts,
+  create/edit incl. institution and signed opening balance, delete gated on
+  a server-verified typed account name; dashboard Net-worth tile links to it.
+- [x] **Transactions: pagination, search, filters** — URL-driven search
+  (LIKE-escaped), account/category (incl. Uncategorized)/month filters,
+  offset pagination (50/page) with a "Showing X–Y of N" footer.
 
 ## 4. Medium priority
 

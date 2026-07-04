@@ -1,7 +1,6 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestDb, type Db } from "@/db/client";
 import { categories } from "@/db/schema";
@@ -29,7 +28,6 @@ describe("importStatement (integration, temp DB)", () => {
     const handle = createTestDb(path.join(dir, "test.db"));
     db = handle.db;
     sqlite = handle.sqlite;
-    migrate(db, { migrationsFolder: path.resolve(__dirname, "../../../drizzle") });
     await db.insert(categories).values([
       { name: "Groceries", keywords: JSON.stringify(["market"]) },
       { name: "Income", keywords: JSON.stringify(["payroll"]) },
