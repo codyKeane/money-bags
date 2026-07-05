@@ -1,8 +1,6 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createTestDb, type Db } from "@/db/client";
+import { beforeAll, describe, expect, it } from "vitest";
+import { type Db } from "@/db/client";
+import { setupTestDb } from "@/test/test-db";
 import { categories } from "@/db/schema";
 import { importStatement } from "./import";
 import { getAccountsWithBalances, getNetWorth, getOrCreateAccountByName } from "./accounts";
@@ -18,16 +16,12 @@ const CSV = [
 ].join("\n");
 
 describe("importStatement (integration, temp DB)", () => {
-  let dir: string;
+  const ctx = setupTestDb("finance-test-");
   let db: Db;
-  let sqlite: { close(): void };
   let accountId: string;
 
   beforeAll(async () => {
-    dir = mkdtempSync(path.join(tmpdir(), "finance-test-"));
-    const handle = createTestDb(path.join(dir, "test.db"));
-    db = handle.db;
-    sqlite = handle.sqlite;
+    db = ctx.db;
     await db.insert(categories).values([
       { name: "Groceries", keywords: JSON.stringify(["market"]) },
       { name: "Income", keywords: JSON.stringify(["payroll"]) },
@@ -39,11 +33,6 @@ describe("importStatement (integration, temp DB)", () => {
     ]);
     const { account } = await getOrCreateAccountByName("Test Checking", "CHECKING", db);
     accountId = account.id;
-  });
-
-  afterAll(() => {
-    sqlite.close();
-    rmSync(dir, { recursive: true, force: true });
   });
 
   it("imports all rows including same-day identical ones, auto-categorized", async () => {

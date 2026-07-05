@@ -87,9 +87,12 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
 - `npm run dev` — dev server at http://127.0.0.1:3100 (3000 is taken by
   another local service; loopback-only by default — the app has no auth.
   `dev:lan` / `start:lan` bind 0.0.0.0 as an explicit opt-in)
-- `npm run db:backup` — WAL-safe online backup to `data/backups/`
-  (restore: stop server, copy back over `data/finance.db`, delete stale
-  `-wal`/`-shm`, restart)
+- `npm run db:backup [-- --keep N]` — WAL-safe online backup to
+  `data/backups/` (optional `--keep N` prunes to the N newest; restore: stop
+  server, copy back over `data/finance.db`, delete stale `-wal`/`-shm`,
+  restart)
+- `GET /api/health` — liveness probe (`{ok:true}` / 500) for uptime
+  monitoring; `deploy/` holds systemd unit + backup timer examples
 - `npm run build` / `npm start` — production build / serve
 - `npm test` / `npm run test:watch` — Vitest
 - `npm run lint` — ESLint

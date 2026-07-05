@@ -1,9 +1,7 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import { eq, isNull } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createTestDb, type Db } from "@/db/client";
+import { beforeAll, describe, expect, it } from "vitest";
+import { type Db } from "@/db/client";
+import { setupTestDb } from "@/test/test-db";
 import { transactions } from "@/db/schema";
 import {
   applyRulesToUncategorized,
@@ -15,18 +13,14 @@ import {
 import { getOrCreateAccountByName } from "./accounts";
 
 describe("categories service (integration, temp DB)", () => {
-  let dir: string;
+  const ctx = setupTestDb("finance-cat-");
   let db: Db;
-  let sqlite: { close(): void };
   let accountId: string;
   let groceriesId: string;
   let diningId: string;
 
   beforeAll(async () => {
-    dir = mkdtempSync(path.join(tmpdir(), "finance-cat-"));
-    const handle = createTestDb(path.join(dir, "test.db"));
-    db = handle.db;
-    sqlite = handle.sqlite;
+    db = ctx.db;
     const { account } = await getOrCreateAccountByName("Cat Test", "CHECKING", db);
     accountId = account.id;
     groceriesId = (
@@ -67,11 +61,6 @@ describe("categories service (integration, temp DB)", () => {
         categoryId: null,
       },
     ]);
-  });
-
-  afterAll(() => {
-    sqlite.close();
-    rmSync(dir, { recursive: true, force: true });
   });
 
   it("lists categories with transaction counts", async () => {

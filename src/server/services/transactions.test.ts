@@ -1,8 +1,6 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createTestDb, type Db } from "@/db/client";
+import { beforeAll, describe, expect, it } from "vitest";
+import { type Db } from "@/db/client";
+import { setupTestDb } from "@/test/test-db";
 import {
   createTransaction,
   deleteTransaction,
@@ -14,18 +12,14 @@ import { createAccount, getAccountsWithBalances } from "./accounts";
 import { createCategory } from "./categories";
 
 describe("transactions service (integration, temp DB)", () => {
-  let dir: string;
+  const ctx = setupTestDb("finance-txn-");
   let db: Db;
-  let sqlite: { close(): void };
   let accountA: string;
   let accountB: string;
   let groceriesId: string;
 
   beforeAll(async () => {
-    dir = mkdtempSync(path.join(tmpdir(), "finance-txn-"));
-    const handle = createTestDb(path.join(dir, "test.db"));
-    db = handle.db;
-    sqlite = handle.sqlite;
+    db = ctx.db;
     accountA = (await createAccount({ name: "A", type: "CHECKING" }, db)).id;
     accountB = (await createAccount({ name: "B", type: "CREDIT_CARD" }, db)).id;
     groceriesId = (
@@ -67,11 +61,6 @@ describe("transactions service (integration, temp DB)", () => {
       },
       db,
     );
-  });
-
-  afterAll(() => {
-    sqlite.close();
-    rmSync(dir, { recursive: true, force: true });
   });
 
   it("manual create stores signed cents with a null importHash", async () => {

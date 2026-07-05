@@ -1,0 +1,23 @@
+# Finance Engine — systemd service for a home server.
+# Install: copy to /etc/systemd/system/, edit User + WorkingDirectory, then
+#   sudo systemctl daemon-reload && sudo systemctl enable --now finance
+# Logs: journalctl -u finance -f   (journald handles rotation)
+#
+# Run `npm ci && npm run build` once in the working directory first. The app
+# binds 127.0.0.1:3100; expose it with `tailscale serve --bg 3100` (see README).
+
+[Unit]
+Description=Finance Engine (local personal finance)
+After=network.target
+
+[Service]
+Type=simple
+User=finance
+WorkingDirectory=/home/finance/personal-finance
+ExecStart=/usr/bin/npm start
+Restart=on-failure
+RestartSec=5
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

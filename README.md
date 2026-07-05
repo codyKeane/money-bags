@@ -29,9 +29,34 @@ start`. Migrations and the default category set are applied automatically
 on startup; `npm run db:seed` is only for demo data.
 
 **Backups**: `npm run db:backup` writes a WAL-safe online copy to
-`data/backups/` (safe while the server runs). To restore: stop the server,
-copy the backup over `data/finance.db`, delete stale `finance.db-wal` /
+`data/backups/` (safe while the server runs); `npm run db:backup -- --keep 14`
+also prunes all but the 14 newest. To restore: stop the server, copy the
+backup over `data/finance.db`, delete stale `finance.db-wal` /
 `finance.db-shm`, restart.
+
+## Run on a home server
+
+Use `npm ci` (not `npm install`) for a reproducible install matching the
+committed lockfile, then build once:
+
+```bash
+npm ci && npm run build
+```
+
+Node ≥ 20.12 is required (`.nvmrc` pins 22; `nvm use`). Run it under systemd
+with the example units in `deploy/` — edit `User`/`WorkingDirectory`, then:
+
+```bash
+sudo cp deploy/finance*.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now finance             # the app (restarts on failure)
+sudo systemctl enable --now finance-backup.timer # daily db:backup --keep 14
+```
+
+Logs go to journald (`journalctl -u finance -f`). Health check for uptime
+monitoring: `curl 127.0.0.1:3100/api/health` → `{"ok":true}` (it doesn't
+touch balances, unlike `/api/accounts`). Reach it remotely via Tailscale
+(below).
 
 ## Remote access (Tailscale)
 

@@ -1,29 +1,18 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import { eq, sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createTestDb, type Db } from "./client";
+import { beforeAll, describe, expect, it } from "vitest";
+import { type Db } from "./client";
+import { setupTestDb } from "@/test/test-db";
 import { categories } from "./schema";
 import { ensureDefaultCategories } from "./default-categories";
 import { DEFAULT_CATEGORIES } from "../lib/default-categories";
 import { parseKeywords } from "../lib/categorize";
 
 describe("ensureDefaultCategories", () => {
-  let dir: string;
+  const ctx = setupTestDb("finance-defaults-");
   let db: Db;
-  let sqlite: { close(): void };
 
   beforeAll(() => {
-    dir = mkdtempSync(path.join(tmpdir(), "finance-defaults-"));
-    const handle = createTestDb(path.join(dir, "test.db"));
-    db = handle.db;
-    sqlite = handle.sqlite;
-  });
-
-  afterAll(() => {
-    sqlite.close();
-    rmSync(dir, { recursive: true, force: true });
+    db = ctx.db;
   });
 
   async function count(): Promise<number> {

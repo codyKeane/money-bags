@@ -2,6 +2,9 @@
   "name": "repo",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.12"
+  },
   "scripts": {
     "dev": "next dev -p 3100 -H 127.0.0.1",
     "build": "next build",

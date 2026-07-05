@@ -1,0 +1,10 @@
+# Runs finance-backup.service daily (and catches up if the machine was off).
+[Unit]
+Description=Daily Finance Engine backup
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,14 @@
+# One-shot WAL-safe backup, invoked by finance-backup.timer.
+# Install alongside finance-backup.timer in /etc/systemd/system/, edit User +
+# WorkingDirectory to match finance.service, then:
+#   sudo systemctl daemon-reload && sudo systemctl enable --now finance-backup.timer
+
+[Unit]
+Description=Finance Engine database backup
+
+[Service]
+Type=oneshot
+User=finance
+WorkingDirectory=/home/finance/personal-finance
+# --keep 14 retains the 14 newest backups in data/backups/ and prunes the rest.
+ExecStart=/usr/bin/npm run db:backup -- --keep 14
