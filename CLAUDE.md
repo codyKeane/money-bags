@@ -25,15 +25,30 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
 
 - `src/db/` — Drizzle schema (`schema.ts`), connection singleton
   (`client.ts`: absolute DB path from `DB_FILE_NAME`, WAL + foreign_keys
-  pragmas), `seed.ts`. Migrations live in `drizzle/`.
+  pragmas), `seed.ts`. Migrations live in `drizzle/`. `client.ts` also
+  applies pending migrations and runs `ensureDefaultCategories`
+  (`db/default-categories.ts`, insert-only when the table is empty) on
+  first connect — so a fresh DB has working auto-categorization with no
+  seed step.
 - `src/lib/` — pure logic, no DB: CSV statement parser, categorizer,
-  import-hash, money formatting. Unit-tested, colocated `*.test.ts`.
+  import-hash, money/month formatting, the default-category definitions
+  (`default-categories.ts`, pure data) and the validated color palette
+  (`palette.ts`). Unit-tested, colocated `*.test.ts`.
 - `src/server/services/` — the only DB-touching layer; shared by RSC pages,
   Server Actions, API route handlers, and the import CLI. Add new data
   access here, not in components/routes.
 - `src/app/` — RSC pages (`/`, `/transactions`, `/accounts`,
   `/categories`, `/import`), Server Actions for mutations, thin GET JSON
   routes under `/api` for local scripting.
+- `src/server/actions/` — every UI mutation (accounts, categories,
+  transactions, apply-rules) as `"use server"` modules split by domain
+  (`accounts.ts`, `categories.ts`, `transactions.ts`), sharing helpers/types
+  from `shared.ts` and re-exported by a barrel `index.ts` so components keep
+  importing from `@/server/actions`. Each action zod-validates its FormData,
+  calls a service, then `revalidatePath`s the affected routes. Add new
+  mutations to the matching domain file, not inline in components. Destructive
+  ops re-verify server-side (e.g. delete-account checks the typed name), not
+  just in the client confirm.
 - PWA/remote access: `src/app/manifest.ts` + `src/app/apple-icon.png` +
   `public/icon-*.png` (generated locally, never fetched) make the app
   installable over Tailscale HTTPS — deliberately **no service worker**
@@ -74,7 +89,18 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
     counts and delete the corrupted rows first.
 - **Categorization**: case-insensitive keyword match at import; longest
   matching keyword wins, ties broken by category name; no match →
-  `categoryId = null` (rendered "Uncategorized").
+  `categoryId = null` (rendered "Uncategorized"). Retroactive:
+  `applyRulesToUncategorized` (Categories page "Apply rules" button →
+  `applyRulesAction`) re-runs the matcher over **uncategorized rows only** —
+  manual categorizations are never overwritten.
+- **Category colors**: constrained to the validated `CATEGORICAL_SLOTS` in
+  `src/lib/palette.ts` (the Server Action rejects any other value). Only the
+  first 8 categories get a hue; the rest render as neutral badges — never
+  invent a 9th color.
+- **Spending math** (`server/services/summary.ts`, `countsTowardSpending`):
+  a category flagged `excludeFromSpending` (e.g. Transfers) is left out of
+  spending, income, and the trend chart; uncategorized rows always count.
+  Spending = negative `amountCents`, income = positive.
 - **Input safety**: zod-validate every external input; Drizzle query builder
   or parameterized `sql` fragments only — never string-built SQL. Uploads
   capped at 5 MB, CSV text only.
@@ -94,7 +120,9 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
 - `GET /api/health` — liveness probe (`{ok:true}` / 500) for uptime
   monitoring; `deploy/` holds systemd unit + backup timer examples
 - `npm run build` / `npm start` — production build / serve
-- `npm test` / `npm run test:watch` — Vitest
+- `npm test` / `npm run test:watch` — Vitest. Single file:
+  `npm test -- src/lib/categorize.test.ts`; by name:
+  `npm test -- -t "dedupe"`
 - `npm run lint` — ESLint
 - `npm run db:generate` — generate migration from schema changes
 - `npm run db:migrate` — apply migrations (also auto-applied on startup;
