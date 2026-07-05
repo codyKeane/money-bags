@@ -3,8 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import type { CategoryOption } from "@/components/CategorySelect";
-
-const inputClass = "rounded-md border border-hairline bg-surface px-2 py-1.5 text-sm";
+import { inputClass } from "@/components/ui/form";
 
 // One filter row above the table; every change rewrites the URL query (and
 // resets the page) so filtered views are linkable and survive reload.

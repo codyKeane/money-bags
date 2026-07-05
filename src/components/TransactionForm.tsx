@@ -1,15 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useActionState } from "react";
 import {
   createTransactionAction,
   updateTransactionAction,
   type TransactionFormState,
 } from "@/server/actions";
 import type { CategoryOption } from "@/components/CategorySelect";
-
-const inputClass = "rounded-md border border-hairline bg-surface px-2 py-1.5 text-sm";
+import { Field, FormError, inputClass } from "@/components/ui/form";
+import { useServerForm } from "@/components/ui/use-server-form";
 
 export interface TransactionFormInitial {
   transactionId: string;
@@ -33,19 +32,14 @@ export function TransactionForm({
 }) {
   const router = useRouter();
   const mode = initial ? "edit" : "create";
-  const [state, formAction, pending] = useActionState(
-    async (prev: TransactionFormState, formData: FormData) => {
-      const result = initial
-        ? await updateTransactionAction(prev, formData)
-        : await createTransactionAction(prev, formData);
-      if (result.ok) {
-        if (mode === "edit") router.push("/transactions");
-        else onDone?.();
-        router.refresh();
-      }
-      return result;
+  const [state, formAction, pending] = useServerForm<TransactionFormState>(
+    (prev, formData) =>
+      initial ? updateTransactionAction(prev, formData) : createTransactionAction(prev, formData),
+    {
+      // create: the action revalidates /transactions so the new row appears on
+      // the re-render (no refresh); edit: navigating to the list re-renders it.
+      onSuccess: () => (mode === "edit" ? router.push("/transactions") : onDone?.()),
     },
-    { ok: true },
   );
 
   return (
@@ -54,8 +48,7 @@ export function TransactionForm({
       className="flex max-w-xl flex-col gap-3 rounded-lg border border-hairline bg-surface px-4 py-3"
     >
       {initial ? <input type="hidden" name="transactionId" value={initial.transactionId} /> : null}
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="text-ink-2">Account</span>
+      <Field label="Account">
         <select name="accountId" required defaultValue={initial?.accountId ?? ""} className={inputClass}>
           {!initial ? <option value="">Select an account…</option> : null}
           {accounts.map((a) => (
@@ -64,17 +57,14 @@ export function TransactionForm({
             </option>
           ))}
         </select>
-      </label>
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="text-ink-2">Date</span>
+      </Field>
+      <Field label="Date">
         <input type="date" name="date" required defaultValue={initial?.date} className={inputClass} />
-      </label>
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="text-ink-2">Description</span>
+      </Field>
+      <Field label="Description">
         <input name="description" required maxLength={500} defaultValue={initial?.description} className={inputClass} />
-      </label>
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="text-ink-2">Amount (signed dollars — negative = money out)</span>
+      </Field>
+      <Field label="Amount (signed dollars — negative = money out)">
         <input
           name="amount"
           required
@@ -82,9 +72,8 @@ export function TransactionForm({
           defaultValue={initial ? (initial.amountCents / 100).toFixed(2) : ""}
           className={inputClass}
         />
-      </label>
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="text-ink-2">Category</span>
+      </Field>
+      <Field label="Category">
         <select name="categoryId" defaultValue={initial?.categoryId ?? ""} className={inputClass}>
           <option value="">Uncategorized</option>
           {categories.map((c) => (
@@ -93,7 +82,7 @@ export function TransactionForm({
             </option>
           ))}
         </select>
-      </label>
+      </Field>
       <div className="flex items-center gap-3">
         <button
           type="submit"
@@ -107,7 +96,7 @@ export function TransactionForm({
             Cancel
           </button>
         ) : null}
-        {!state.ok && state.error ? <span className="text-sm text-ink-2">⚠ {state.error}</span> : null}
+        <FormError error={state.ok ? null : state.error} />
       </div>
     </form>
   );

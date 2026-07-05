@@ -1,13 +1,11 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { applyRulesAction } from "@/server/actions";
 
 // Re-runs keyword rules over uncategorized rows only (manual choices are
 // never touched — enforced server-side).
 export function ApplyRulesButton() {
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   return (
@@ -24,7 +22,7 @@ export function ApplyRulesButton() {
                 ? `Categorized ${result.updated} of ${result.scanned} uncategorized`
                 : (result.error ?? "Failed"),
             );
-            router.refresh();
+            // applyRulesAction revalidates the route; no refresh needed (P2).
           })
         }
       >

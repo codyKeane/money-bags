@@ -1,10 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useActionState, useState } from "react";
+import { useState } from "react";
 import { createAccountAction, type CreateAccountState } from "@/server/actions";
 import { ACCOUNT_TYPES } from "@/lib/account-types";
 import { formatCents } from "@/lib/money";
+import { Field, inputClass } from "@/components/ui/form";
+import { useServerForm } from "@/components/ui/use-server-form";
 import type { SkippedRow } from "@/server/services/import";
 
 export interface AccountOption {
@@ -19,9 +21,6 @@ interface ImportResponse {
   errors: { rowNumber: number; message: string }[];
 }
 
-const inputClass =
-  "rounded-md border border-hairline bg-surface px-2 py-1.5 text-sm";
-
 export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
   const router = useRouter();
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
@@ -30,17 +29,18 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
   const [result, setResult] = useState<ImportResponse | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const [createState, createFormAction, createPending] = useActionState(
-    async (prev: CreateAccountState, formData: FormData) => {
-      const state = await createAccountAction(prev, formData);
-      if (state.ok && state.accountId) {
-        setAccountId(state.accountId);
-        setShowCreate(false);
-        router.refresh(); // pull the new account into the RSC-provided list
-      }
-      return state;
+  // createAccountAction revalidates /import, so the new account flows into the
+  // RSC-provided `accounts` list on the re-render — no router.refresh (P2).
+  const [createState, createFormAction, createPending] = useServerForm<CreateAccountState>(
+    createAccountAction,
+    {
+      onSuccess: (state) => {
+        if (state.accountId) {
+          setAccountId(state.accountId);
+          setShowCreate(false);
+        }
+      },
     },
-    { ok: true },
   );
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -60,6 +60,8 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
         return;
       }
       setResult(body as ImportResponse);
+      // The upload posts to a route handler (not a Server Action), so its
+      // revalidatePath doesn't refresh the client — this refresh is required.
       router.refresh();
     } catch {
       setUploadError("Import failed: could not reach the local server.");
@@ -71,8 +73,7 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
   return (
     <div className="flex max-w-xl flex-col gap-5">
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-ink-2">Account</span>
+        <Field label="Account">
           <div className="flex items-center gap-2">
             <select
               value={accountId}
@@ -94,21 +95,19 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
               {showCreate ? "Cancel" : "New account…"}
             </button>
           </div>
-        </label>
+        </Field>
 
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-ink-2">Statement CSV (max 5 MB)</span>
+        <Field label="Statement CSV (max 5 MB)">
           <input type="file" name="file" accept=".csv,text/csv" required className="text-sm" />
-        </label>
+        </Field>
 
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-ink-2">Date format in file</span>
+        <Field label="Date format in file">
           <select name="dateFormat" defaultValue="auto" className={inputClass}>
             <option value="auto">Auto-detect</option>
             <option value="MDY">MM/DD/YYYY</option>
             <option value="DMY">DD/MM/YYYY</option>
           </select>
-        </label>
+        </Field>
 
         <button
           type="submit"
@@ -126,12 +125,10 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
           className="flex flex-col gap-3 rounded-lg border border-hairline bg-surface px-4 py-3"
         >
           <p className="text-sm font-medium">New account</p>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-ink-2">Name</span>
+          <Field label="Name">
             <input name="name" required maxLength={120} className={inputClass} />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-ink-2">Type</span>
+          </Field>
+          <Field label="Type">
             <select name="type" defaultValue="CHECKING" className={inputClass}>
               {ACCOUNT_TYPES.map((t) => (
                 <option key={t} value={t}>
@@ -139,7 +136,7 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
                 </option>
               ))}
             </select>
-          </label>
+          </Field>
           <button
             type="submit"
             disabled={createPending}
