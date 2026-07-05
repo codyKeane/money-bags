@@ -4,11 +4,9 @@ import { ApplyRulesButton } from "@/components/ApplyRulesButton";
 import { TransactionFilters } from "@/components/TransactionFilters";
 import { TransactionTable } from "@/components/TransactionTable";
 import { isValidMonth } from "@/lib/month";
-import { getAccountsWithBalances } from "@/server/services/accounts";
-import {
-  getAllCategories,
-  getTransactionsPage,
-} from "@/server/services/transactions";
+import { getAccountOptions } from "@/server/services/accounts";
+import { getAllCategories } from "@/server/services/categories";
+import { getTransactionsPage } from "@/server/services/transactions";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +39,7 @@ export default async function TransactionsPage({
       limit: PAGE_SIZE,
       offset: (page - 1) * PAGE_SIZE,
     }),
-    getAccountsWithBalances(),
+    getAccountOptions(),
     getAllCategories(),
   ]);
 

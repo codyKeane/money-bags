@@ -1,12 +1,10 @@
-import { getAccountsWithBalances, getNetWorth } from "@/server/services/accounts";
+import { getAccountsWithBalances, sumNetWorth } from "@/server/services/accounts";
 
 export async function GET() {
-  const [netWorthCents, accounts] = await Promise.all([
-    getNetWorth(),
-    getAccountsWithBalances(),
-  ]);
+  // one aggregate, summed in JS (P4) — was two identical queries
+  const accounts = await getAccountsWithBalances();
   return Response.json({
-    netWorthCents,
+    netWorthCents: sumNetWorth(accounts),
     accounts: accounts.map((a) => ({
       id: a.id,
       name: a.name,

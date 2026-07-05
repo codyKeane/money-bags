@@ -1,6 +1,7 @@
-import { and, desc, eq, isNull, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lt, sql, type SQL } from "drizzle-orm";
 import { getDb, type Db } from "@/db/client";
 import { accounts, categories, transactions } from "@/db/schema";
+import { monthRange } from "@/lib/month";
 
 export interface TransactionListItem {
   id: string;
@@ -14,27 +15,26 @@ export interface TransactionListItem {
   categoryColor: string | null;
 }
 
+// Single source of the list projection + joins, shared by the paged query and
+// getRecentTransactions (Q5).
+const transactionListColumns = {
+  id: transactions.id,
+  date: transactions.date,
+  description: transactions.description,
+  amountCents: transactions.amountCents,
+  accountName: accounts.name,
+  currency: accounts.currency,
+  categoryId: transactions.categoryId,
+  categoryName: categories.name,
+  categoryColor: categories.color,
+} as const;
+
 export async function getRecentTransactions(
   limit = 10,
   db: Db = getDb(),
 ): Promise<TransactionListItem[]> {
-  return db
-    .select({
-      id: transactions.id,
-      date: transactions.date,
-      description: transactions.description,
-      amountCents: transactions.amountCents,
-      accountName: accounts.name,
-      currency: accounts.currency,
-      categoryId: transactions.categoryId,
-      categoryName: categories.name,
-      categoryColor: categories.color,
-    })
-    .from(transactions)
-    .innerJoin(accounts, eq(transactions.accountId, accounts.id))
-    .leftJoin(categories, eq(transactions.categoryId, categories.id))
-    .orderBy(desc(transactions.date), desc(transactions.createdAt))
-    .limit(limit);
+  const { items } = await getTransactionsPage({ limit, offset: 0 }, db);
+  return items;
 }
 
 export interface TransactionFilter {
@@ -64,7 +64,9 @@ function buildTransactionWhere(filter: TransactionFilter): SQL | undefined {
   if (filter.categoryId === null) conditions.push(isNull(transactions.categoryId));
   else if (filter.categoryId) conditions.push(eq(transactions.categoryId, filter.categoryId));
   if (filter.month) {
-    conditions.push(sql`substr(${transactions.date}, 1, 7) = ${filter.month}`);
+    // range predicate hits transactions_date_idx (P1)
+    const { start, endExclusive } = monthRange(filter.month);
+    conditions.push(gte(transactions.date, start), lt(transactions.date, endExclusive));
   }
   return conditions.length > 0 ? and(...conditions) : undefined;
 }
@@ -79,17 +81,7 @@ export async function getTransactionsPage(
     .from(transactions)
     .where(where);
   const items = await db
-    .select({
-      id: transactions.id,
-      date: transactions.date,
-      description: transactions.description,
-      amountCents: transactions.amountCents,
-      accountName: accounts.name,
-      currency: accounts.currency,
-      categoryId: transactions.categoryId,
-      categoryName: categories.name,
-      categoryColor: categories.color,
-    })
+    .select(transactionListColumns)
     .from(transactions)
     .innerJoin(accounts, eq(transactions.accountId, accounts.id))
     .leftJoin(categories, eq(transactions.categoryId, categories.id))
@@ -101,8 +93,10 @@ export async function getTransactionsPage(
 }
 
 export async function getLatestTransactionMonth(db: Db = getDb()): Promise<string | null> {
+  // substr(max(date),1,7) uses the min/max index optimization; max(substr(...))
+  // would scan (P1).
   const [row] = await db
-    .select({ month: sql<string | null>`max(substr(${transactions.date}, 1, 7))` })
+    .select({ month: sql<string | null>`substr(max(${transactions.date}), 1, 7)` })
     .from(transactions);
   return row?.month ?? null;
 }
@@ -119,10 +113,6 @@ export async function setTransactionCategory(
     .where(eq(transactions.id, transactionId))
     .returning({ id: transactions.id });
   return row?.id ?? null;
-}
-
-export async function getAllCategories(db: Db = getDb()) {
-  return db.select().from(categories).orderBy(categories.name);
 }
 
 // ---------- manual transaction CRUD (importHash stays null) ----------

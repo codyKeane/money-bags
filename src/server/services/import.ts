@@ -47,36 +47,55 @@ export async function importStatement(
   }));
   const hashes = computeImportHashes(input.accountId, rows);
 
+  // All hashes within one file are unique (occurrence indexing), so the set of
+  // hashes RETURNING reports as inserted cleanly partitions imported vs.
+  // skipped — preserving the skipped-row detail contract while inserting in
+  // batches instead of one re-prepared INSERT per row (P7).
+  const prepared = rows.map((row, i) => ({
+    row,
+    hash: hashes[i] ?? "",
+    values: {
+      date: row.date,
+      description: row.description,
+      amountCents: row.amountCents,
+      accountId: input.accountId,
+      categoryId: categorize(row.description, matchers),
+      importHash: hashes[i] ?? "",
+    },
+  }));
+
+  // 6 columns/row keeps each chunk under SQLite's 999 bound-variable limit.
+  const CHUNK = 150;
+  const insertedHashes = new Set<string>();
+  db.transaction((tx) => {
+    for (let i = 0; i < prepared.length; i += CHUNK) {
+      const slice = prepared.slice(i, i + CHUNK);
+      const returned = tx
+        .insert(transactions)
+        .values(slice.map((p) => p.values))
+        .onConflictDoNothing({ target: transactions.importHash })
+        .returning({ importHash: transactions.importHash })
+        .all();
+      for (const r of returned) {
+        if (r.importHash) insertedHashes.add(r.importHash);
+      }
+    }
+  });
+
   const skipped: SkippedRow[] = [];
   let imported = 0;
-  // better-sqlite3 transactions are synchronous; the whole batch commits or
-  // rolls back together, and ON CONFLICT DO NOTHING classifies duplicates.
-  db.transaction((tx) => {
-    rows.forEach((row, i) => {
-      const result = tx
-        .insert(transactions)
-        .values({
-          date: row.date,
-          description: row.description,
-          amountCents: row.amountCents,
-          accountId: input.accountId,
-          categoryId: categorize(row.description, matchers),
-          importHash: hashes[i],
-        })
-        .onConflictDoNothing({ target: transactions.importHash })
-        .run();
-      if (result.changes > 0) {
-        imported++;
-      } else {
-        skipped.push({
-          rowNumber: row.rowNumber,
-          date: row.date,
-          description: row.description,
-          amountCents: row.amountCents,
-        });
-      }
-    });
-  });
+  for (const { row, hash } of prepared) {
+    if (insertedHashes.has(hash)) {
+      imported++;
+    } else {
+      skipped.push({
+        rowNumber: row.rowNumber,
+        date: row.date,
+        description: row.description,
+        amountCents: row.amountCents,
+      });
+    }
+  }
 
   return { imported, skipped, errors };
 }

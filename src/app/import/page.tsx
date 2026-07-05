@@ -1,10 +1,10 @@
 import { ImportForm } from "@/components/ImportForm";
-import { getAccountsWithBalances } from "@/server/services/accounts";
+import { getAccountOptions } from "@/server/services/accounts";
 
 export const dynamic = "force-dynamic";
 
 export default async function ImportPage() {
-  const accounts = await getAccountsWithBalances();
+  const accounts = await getAccountOptions();
   return (
     <div className="flex flex-col gap-4">
       <div>

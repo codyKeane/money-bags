@@ -1,4 +1,4 @@
-import { eq, isNull, sql } from "drizzle-orm";
+import { eq, inArray, isNull, sql } from "drizzle-orm";
 import { getDb, type Db } from "@/db/client";
 import { categories, transactions, type Category } from "@/db/schema";
 import { categorize, parseKeywords } from "@/lib/categorize";
@@ -90,8 +90,17 @@ export async function getCategoryById(id: string, db: Db = getDb()): Promise<Cat
   return row ?? null;
 }
 
+export async function getAllCategories(db: Db = getDb()) {
+  return db.select().from(categories).orderBy(categories.name);
+}
+
+// SQLite's default variable limit is 999; keep IN-lists well under it.
+const UPDATE_CHUNK = 500;
+
 // Re-runs the keyword matcher over uncategorized rows ONLY — manual
-// categorizations are never touched. Returns how many were scanned/updated.
+// categorizations are never touched. Matches are grouped by resolved category
+// and written with one `UPDATE … WHERE id IN (…)` per category rather than a
+// re-prepared UPDATE per row (P5). Returns how many were scanned/updated.
 export async function applyRulesToUncategorized(
   db: Db = getDb(),
 ): Promise<{ scanned: number; updated: number }> {
@@ -106,16 +115,27 @@ export async function applyRulesToUncategorized(
     .from(transactions)
     .where(isNull(transactions.categoryId));
 
+  const idsByCategory = new Map<string, string[]>();
+  for (const row of rows) {
+    const categoryId = categorize(row.description, matchers);
+    if (!categoryId) continue;
+    const list = idsByCategory.get(categoryId);
+    if (list) list.push(row.id);
+    else idsByCategory.set(categoryId, [row.id]);
+  }
+
   let updated = 0;
   db.transaction((tx) => {
-    for (const row of rows) {
-      const categoryId = categorize(row.description, matchers);
-      if (!categoryId) continue;
-      tx.update(transactions)
-        .set({ categoryId })
-        .where(eq(transactions.id, row.id))
-        .run();
-      updated++;
+    for (const [categoryId, ids] of idsByCategory) {
+      for (let i = 0; i < ids.length; i += UPDATE_CHUNK) {
+        const chunk = ids.slice(i, i + UPDATE_CHUNK);
+        const result = tx
+          .update(transactions)
+          .set({ categoryId })
+          .where(inArray(transactions.id, chunk))
+          .run();
+        updated += result.changes;
+      }
     }
   });
   return { scanned: rows.length, updated };

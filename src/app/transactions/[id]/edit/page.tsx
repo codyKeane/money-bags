@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import { TransactionForm } from "@/components/TransactionForm";
-import { getAccountsWithBalances } from "@/server/services/accounts";
-import { getAllCategories, getTransactionById } from "@/server/services/transactions";
+import { getAccountOptions } from "@/server/services/accounts";
+import { getAllCategories } from "@/server/services/categories";
+import { getTransactionById } from "@/server/services/transactions";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export default async function EditTransactionPage({
   if (!transaction) notFound();
 
   const [accounts, categories] = await Promise.all([
-    getAccountsWithBalances(),
+    getAccountOptions(),
     getAllCategories(),
   ]);
 

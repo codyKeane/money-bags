@@ -35,6 +35,10 @@ function createDb(
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const sqlite = new Database(file);
   sqlite.pragma("journal_mode = WAL");
+  // NORMAL is the documented WAL pairing: one fewer fsync per commit (i.e. per
+  // server action), still corruption-safe — only the last commit is at risk on
+  // power loss, acceptable beside db:backup (P6).
+  sqlite.pragma("synchronous = NORMAL");
   sqlite.pragma("foreign_keys = ON");
   const db = drizzle(sqlite, { schema });
   // Idempotent per the journal — a fresh clone works without a manual

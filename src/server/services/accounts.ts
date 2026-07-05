@@ -32,9 +32,27 @@ export async function getAccountsWithBalances(db: Db = getDb()): Promise<Account
     .orderBy(accounts.name);
 }
 
-export async function getNetWorth(db: Db = getDb()): Promise<number> {
-  const rows = await getAccountsWithBalances(db);
+export function sumNetWorth(rows: AccountWithBalance[]): number {
   return rows.reduce((sum, account) => sum + account.balanceCents, 0);
+}
+
+export async function getNetWorth(db: Db = getDb()): Promise<number> {
+  return sumNetWorth(await getAccountsWithBalances(db));
+}
+
+// Lightweight account list for dropdowns — avoids the per-account balance
+// aggregate on pages that only need names (P3).
+export interface AccountOption {
+  id: string;
+  name: string;
+  type: string;
+}
+
+export async function getAccountOptions(db: Db = getDb()): Promise<AccountOption[]> {
+  return db
+    .select({ id: accounts.id, name: accounts.name, type: accounts.type })
+    .from(accounts)
+    .orderBy(accounts.name);
 }
 
 export interface CreateAccountInput {

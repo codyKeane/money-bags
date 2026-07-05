@@ -15,6 +15,18 @@ export function addMonths(month: string, delta: number): string {
   return `${year}-${String(mon).padStart(2, "0")}`;
 }
 
+// First calendar day of a month as an ISO date ("2026-06" -> "2026-06-01").
+export function monthStart(month: string): string {
+  return `${month}-01`;
+}
+
+// Half-open ISO date range [start, endExclusive) covering exactly `month`.
+// Used for index-friendly `date >= start AND date < endExclusive` predicates
+// (a range hits transactions_date_idx; substr(date,1,7) = m forces a scan).
+export function monthRange(month: string): { start: string; endExclusive: string } {
+  return { start: monthStart(month), endExclusive: monthStart(addMonths(month, 1)) };
+}
+
 export function currentUtcMonth(): string {
   const now = new Date();
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;

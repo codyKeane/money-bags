@@ -1,7 +1,7 @@
-import { and, eq, gte, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
 import { getDb, type Db } from "@/db/client";
 import { categories, transactions } from "@/db/schema";
-import { addMonths } from "@/lib/month";
+import { addMonths, monthRange, monthStart } from "@/lib/month";
 
 // Transfers between own accounts (categories.excludeFromSpending) are neither
 // income nor spending; uncategorized rows always count.
@@ -10,7 +10,15 @@ const countsTowardSpending = or(
   eq(categories.excludeFromSpending, false),
 );
 
+// substr(date,1,7) is the month bucket KEY (SELECT/GROUP BY). Month FILTERING
+// uses a `date >= start AND date < end` range so it hits transactions_date_idx
+// instead of scanning (P1). See monthRange() in src/lib/month.ts.
 const monthOf = sql<string>`substr(${transactions.date}, 1, 7)`;
+
+function inMonth(month: string) {
+  const { start, endExclusive } = monthRange(month);
+  return and(gte(transactions.date, start), lt(transactions.date, endExclusive));
+}
 
 export interface CategorySpending {
   categoryId: string | null;
@@ -32,13 +40,7 @@ export async function getMonthlySpendingByCategory(
     })
     .from(transactions)
     .leftJoin(categories, eq(transactions.categoryId, categories.id))
-    .where(
-      and(
-        sql`${monthOf} = ${month}`,
-        lt(transactions.amountCents, 0),
-        countsTowardSpending,
-      ),
-    )
+    .where(and(inMonth(month), lt(transactions.amountCents, 0), countsTowardSpending))
     .groupBy(transactions.categoryId)
     .orderBy(sql`sum(${transactions.amountCents})`); // biggest spend first
 }
@@ -56,7 +58,7 @@ export async function getMonthlySummary(month: string, db: Db = getDb()): Promis
     })
     .from(transactions)
     .leftJoin(categories, eq(transactions.categoryId, categories.id))
-    .where(and(sql`${monthOf} = ${month}`, countsTowardSpending));
+    .where(and(inMonth(month), countsTowardSpending));
   return row ?? { incomeCents: 0, spendingCents: 0 };
 }
 
@@ -84,8 +86,8 @@ export async function getSpendingTrend(
     .leftJoin(categories, eq(transactions.categoryId, categories.id))
     .where(
       and(
-        gte(monthOf, startMonth),
-        lte(monthOf, endMonth),
+        gte(transactions.date, monthStart(startMonth)),
+        lt(transactions.date, monthStart(addMonths(endMonth, 1))),
         countsTowardSpending,
       ),
     )
