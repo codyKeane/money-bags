@@ -24,6 +24,11 @@ export async function recategorizeAction(
 ): Promise<{ ok: boolean; error?: string }> {
   const parsed = RecategorizeSchema.safeParse({ transactionId, categoryId });
   if (!parsed.success) return { ok: false, error: "Invalid input" };
+  // Verify the target category exists before the UPDATE — otherwise a stale id
+  // (e.g. a category deleted in another tab) hits a raw FK violation (F4).
+  if (parsed.data.categoryId && !(await getCategoryById(parsed.data.categoryId))) {
+    return { ok: false, error: "Unknown category" };
+  }
   const updated = await setTransactionCategory(
     parsed.data.transactionId,
     parsed.data.categoryId,

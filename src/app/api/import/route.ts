@@ -14,49 +14,65 @@ const FieldsSchema = z.object({
 
 // The import upload goes through this route handler (not a Server Action) —
 // Server Actions cap request bodies at 1 MB by default; here we enforce our
-// own 5 MB / CSV-only policy.
+// own 5 MB / CSV-only policy. Every failure returns JSON `{ error }` so the
+// client can always surface a message (F4).
 export async function POST(request: Request) {
-  const formData = await request.formData();
-  const parsed = FieldsSchema.safeParse({
-    accountId: formData.get("accountId") ?? undefined,
-    dateFormat: formData.get("dateFormat") ?? undefined,
-  });
-  if (!parsed.success) {
-    return Response.json({ error: "accountId is required" }, { status: 400 });
-  }
+  try {
+    // Reject oversized uploads before buffering the whole body when the client
+    // declares its length (F4). file.size below is the authoritative check for
+    // clients that omit or understate Content-Length.
+    const declared = Number(request.headers.get("content-length"));
+    if (Number.isFinite(declared) && declared > MAX_BYTES) {
+      return Response.json({ error: "File exceeds the 5 MB cap" }, { status: 413 });
+    }
 
-  const file = formData.get("file");
-  if (!(file instanceof File)) {
-    return Response.json({ error: "file is required" }, { status: 400 });
-  }
-  if (file.size > MAX_BYTES) {
-    return Response.json({ error: "File exceeds the 5 MB cap" }, { status: 413 });
-  }
-  const isCsv =
-    file.name.toLowerCase().endsWith(".csv") ||
-    file.type === "text/csv" ||
-    file.type === "text/plain";
-  if (!isCsv) {
-    return Response.json({ error: "Only CSV files are accepted" }, { status: 415 });
-  }
+    const formData = await request.formData();
+    const parsed = FieldsSchema.safeParse({
+      accountId: formData.get("accountId") ?? undefined,
+      dateFormat: formData.get("dateFormat") ?? undefined,
+    });
+    if (!parsed.success) {
+      return Response.json({ error: "accountId is required" }, { status: 400 });
+    }
 
-  const db = getDb();
-  const [account] = await db
-    .select({ id: accounts.id })
-    .from(accounts)
-    .where(eq(accounts.id, parsed.data.accountId))
-    .limit(1);
-  if (!account) {
-    return Response.json({ error: "Unknown account" }, { status: 404 });
+    const file = formData.get("file");
+    if (!(file instanceof File)) {
+      return Response.json({ error: "file is required" }, { status: 400 });
+    }
+    if (file.size > MAX_BYTES) {
+      return Response.json({ error: "File exceeds the 5 MB cap" }, { status: 413 });
+    }
+    const isCsv =
+      file.name.toLowerCase().endsWith(".csv") ||
+      file.type === "text/csv" ||
+      file.type === "text/plain";
+    if (!isCsv) {
+      return Response.json({ error: "Only CSV files are accepted" }, { status: 415 });
+    }
+
+    const db = getDb();
+    const [account] = await db
+      .select({ id: accounts.id })
+      .from(accounts)
+      .where(eq(accounts.id, parsed.data.accountId))
+      .limit(1);
+    if (!account) {
+      return Response.json({ error: "Unknown account" }, { status: 404 });
+    }
+
+    const result = await importStatement({
+      accountId: account.id,
+      csvText: await file.text(),
+      dateFormat: parsed.data.dateFormat,
+    });
+
+    revalidatePath("/");
+    revalidatePath("/transactions");
+    return Response.json(result);
+  } catch (err) {
+    // Malformed multipart, encoding failures, unexpected DB errors — never leak
+    // an HTML stack to the JSON-expecting client.
+    console.error("import route failed:", err);
+    return Response.json({ error: "Import failed unexpectedly." }, { status: 500 });
   }
-
-  const result = await importStatement({
-    accountId: account.id,
-    csvText: await file.text(),
-    dateFormat: parsed.data.dateFormat,
-  });
-
-  revalidatePath("/");
-  revalidatePath("/transactions");
-  return Response.json(result);
 }
