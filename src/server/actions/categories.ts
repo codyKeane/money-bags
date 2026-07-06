@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { parseAmountToCents } from "@/lib/csv/parse-statement";
 import { CATEGORICAL_SLOTS } from "@/lib/palette";
 import {
   applyRulesToUncategorized,
@@ -32,6 +33,20 @@ const CategorySchema = z.object({
     .transform((v) => v || null)
     .refine((v) => v === null || VALID_COLORS.has(v), "Unknown color"),
   excludeFromSpending: z.coerce.boolean().default(false),
+  // Dollar string → positive cents, or null when left blank (no budget).
+  monthlyBudgetCents: z
+    .string()
+    .default("")
+    .transform((v, ctx) => {
+      const trimmed = v.trim();
+      if (!trimmed) return null;
+      const cents = parseAmountToCents(trimmed);
+      if (cents === null || cents <= 0) {
+        ctx.addIssue({ code: "custom", message: "Budget must be a positive amount" });
+        return z.NEVER;
+      }
+      return cents;
+    }),
 });
 
 function categoryFormInput(formData: FormData) {
@@ -40,6 +55,7 @@ function categoryFormInput(formData: FormData) {
     keywords: formData.get("keywords") ?? "",
     color: formData.get("color") ?? "",
     excludeFromSpending: formData.get("excludeFromSpending") === "on",
+    monthlyBudgetCents: formData.get("monthlyBudget") ?? "",
   };
 }
 

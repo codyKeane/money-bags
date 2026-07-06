@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BudgetProgress } from "@/components/BudgetProgress";
 import { MonthNav } from "@/components/MonthNav";
 import { StatCard } from "@/components/StatCard";
 import { TransactionTable } from "@/components/TransactionTable";
@@ -8,6 +9,7 @@ import { formatCents } from "@/lib/money";
 import { currentUtcMonth, formatMonth, isValidMonth } from "@/lib/month";
 import { getNetWorth } from "@/server/services/accounts";
 import {
+  getBudgetVsActual,
   getMonthlySpendingByCategory,
   getMonthlySummary,
   getSpendingTrend,
@@ -52,10 +54,11 @@ export default async function DashboardPage({
   // month — a fresh setup should never open onto an empty dashboard.
   const month = requested && isValidMonth(requested) ? requested : latest;
 
-  const [netWorthCents, summary, byCategory, trend, recent] = await Promise.all([
+  const [netWorthCents, summary, byCategory, budgets, trend, recent] = await Promise.all([
     getNetWorth(),
     getMonthlySummary(month),
     getMonthlySpendingByCategory(month),
+    getBudgetVsActual(month),
     getSpendingTrend(month >= currentUtcMonth() ? currentUtcMonth() : month, 6),
     getRecentTransactions(10),
   ]);
@@ -98,6 +101,15 @@ export default async function DashboardPage({
           )}
         </div>
       </section>
+
+      {budgets.length > 0 ? (
+        <section className="rounded-lg border border-hairline bg-surface px-5 py-4">
+          <h2 className="text-sm font-medium">Budget vs actual · {formatMonth(month)}</h2>
+          <div className="mt-4">
+            <BudgetProgress items={budgets} />
+          </div>
+        </section>
+      ) : null}
 
       <section className="rounded-lg border border-hairline bg-surface px-5 py-4">
         <h2 className="text-sm font-medium">Income vs spending · last 6 months</h2>

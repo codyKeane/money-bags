@@ -9,6 +9,7 @@ import {
 } from "@/server/actions";
 import { CATEGORICAL_SLOTS } from "@/lib/palette";
 import { ColorDot } from "@/components/CategoryBadge";
+import { formatCents } from "@/lib/money";
 import { Field, FormError, buttonClass, inputClass, toggleButtonClass } from "@/components/ui/form";
 import { useServerForm } from "@/components/ui/use-server-form";
 import {
@@ -37,7 +38,10 @@ function ColorSelect({ defaultValue }: { defaultValue: string | null }) {
 function CategoryFields({
   initial,
 }: {
-  initial?: Pick<CategoryWithStats, "name" | "keywords" | "color" | "excludeFromSpending">;
+  initial?: Pick<
+    CategoryWithStats,
+    "name" | "keywords" | "color" | "excludeFromSpending" | "monthlyBudgetCents"
+  >;
 }) {
   return (
     <>
@@ -54,6 +58,19 @@ function CategoryFields({
       </Field>
       <Field label="Color">
         <ColorSelect defaultValue={initial?.color ?? null} />
+      </Field>
+      <Field label="Monthly budget (optional, in dollars)">
+        <input
+          name="monthlyBudget"
+          inputMode="decimal"
+          defaultValue={
+            initial?.monthlyBudgetCents != null
+              ? (initial.monthlyBudgetCents / 100).toString()
+              : ""
+          }
+          placeholder="500"
+          className={inputClass}
+        />
       </Field>
       <label className="inline-flex items-center gap-2 text-sm text-ink-2">
         <input
@@ -127,6 +144,7 @@ export function CategoryManager({ categories }: { categories: CategoryWithStats[
           <tr className={headRowClass}>
             <th className={thClass}>Category</th>
             <th className={thClass}>Keywords</th>
+            <th className={`${thClass} text-right`}>Budget</th>
             <th className={thClass}>Excluded</th>
             <th className={`${thClass} text-right`}>Transactions</th>
             <th className={thClass} />
@@ -136,7 +154,7 @@ export function CategoryManager({ categories }: { categories: CategoryWithStats[
           {categories.map((c) => (
             <tr key={c.id} className={`${bodyRowClass} align-top`}>
               {editingId === c.id ? (
-                <td colSpan={5} className="px-3 py-3">
+                <td colSpan={6} className="px-3 py-3">
                   <EditRow category={c} onDone={() => setEditingId(null)} />
                 </td>
               ) : (
@@ -149,6 +167,13 @@ export function CategoryManager({ categories }: { categories: CategoryWithStats[
                   </td>
                   <td className="px-3 py-2 text-ink-2">
                     {c.keywords.length > 0 ? c.keywords.join(", ") : <span className="text-ink-muted">—</span>}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-ink-2">
+                    {c.monthlyBudgetCents != null ? (
+                      formatCents(c.monthlyBudgetCents)
+                    ) : (
+                      <span className="text-ink-muted">—</span>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-ink-2">{c.excludeFromSpending ? "Yes" : ""}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{c.transactionCount}</td>

@@ -35,6 +35,9 @@ export const categories = sqliteTable("categories", {
   excludeFromSpending: integer("exclude_from_spending", { mode: "boolean" })
     .notNull()
     .default(false),
+  // Optional monthly spending target in cents (positive). null = no budget set;
+  // budget vs actual only surfaces categories that have one.
+  monthlyBudgetCents: integer("monthly_budget_cents"),
   createdAt: integer("created_at")
     .notNull()
     .$defaultFn(() => Date.now()),

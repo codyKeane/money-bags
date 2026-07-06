@@ -1,4 +1,4 @@
-import { and, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, gte, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { getDb, type Db } from "@/db/client";
 import { categories, transactions } from "@/db/schema";
 import { addMonths, monthRange, monthStart } from "@/lib/month";
@@ -43,6 +43,61 @@ export async function getMonthlySpendingByCategory(
     .where(and(inMonth(month), lt(transactions.amountCents, 0), countsTowardSpending))
     .groupBy(transactions.categoryId)
     .orderBy(sql`sum(${transactions.amountCents})`); // biggest spend first
+}
+
+export interface BudgetVsActual {
+  categoryId: string;
+  categoryName: string;
+  color: string | null;
+  budgetCents: number; // the target (positive)
+  spentCents: number; // positive; 0 if nothing spent this month
+  remainingCents: number; // budget - spent; negative once over budget
+  overBudget: boolean;
+}
+
+// Every category that has a monthlyBudgetCents set, paired with its actual
+// outflow for the month. LEFT JOIN so a budgeted category with zero spend still
+// appears; the negative-only filter lives INSIDE the aggregate (not WHERE) so
+// it can't drop those zero-spend rows. Refunds (positive amounts) don't reduce
+// the number — spend mirrors getMonthlySpendingByCategory.
+export async function getBudgetVsActual(
+  month: string,
+  db: Db = getDb(),
+): Promise<BudgetVsActual[]> {
+  const { start, endExclusive } = monthRange(month);
+  const rows = await db
+    .select({
+      categoryId: categories.id,
+      categoryName: categories.name,
+      color: categories.color,
+      budgetCents: categories.monthlyBudgetCents,
+      spentCents: sql<number>`coalesce(-sum(case when ${transactions.amountCents} < 0 then ${transactions.amountCents} else 0 end), 0)`,
+    })
+    .from(categories)
+    .leftJoin(
+      transactions,
+      and(
+        eq(transactions.categoryId, categories.id),
+        gte(transactions.date, start),
+        lt(transactions.date, endExclusive),
+      ),
+    )
+    .where(isNotNull(categories.monthlyBudgetCents))
+    .groupBy(categories.id)
+    .orderBy(categories.name);
+
+  return rows.map((r) => {
+    const budgetCents = r.budgetCents ?? 0;
+    return {
+      categoryId: r.categoryId,
+      categoryName: r.categoryName,
+      color: r.color,
+      budgetCents,
+      spentCents: r.spentCents,
+      remainingCents: budgetCents - r.spentCents,
+      overBudget: r.spentCents > budgetCents,
+    };
+  });
 }
 
 export interface MonthlySummary {

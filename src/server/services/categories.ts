@@ -9,6 +9,7 @@ export interface CategoryWithStats {
   color: string | null;
   keywords: string[];
   excludeFromSpending: boolean;
+  monthlyBudgetCents: number | null;
   transactionCount: number;
 }
 
@@ -20,6 +21,7 @@ export async function getCategoriesWithStats(db: Db = getDb()): Promise<Category
       color: categories.color,
       keywords: categories.keywords,
       excludeFromSpending: categories.excludeFromSpending,
+      monthlyBudgetCents: categories.monthlyBudgetCents,
       transactionCount: sql<number>`count(${transactions.id})`,
     })
     .from(categories)
@@ -34,6 +36,7 @@ export interface CategoryInput {
   color: string | null;
   keywords: string[];
   excludeFromSpending: boolean;
+  monthlyBudgetCents?: number | null; // omitted = no budget
 }
 
 export async function createCategory(input: CategoryInput, db: Db = getDb()): Promise<Category> {
@@ -44,6 +47,7 @@ export async function createCategory(input: CategoryInput, db: Db = getDb()): Pr
       color: input.color,
       keywords: JSON.stringify(input.keywords),
       excludeFromSpending: input.excludeFromSpending,
+      monthlyBudgetCents: input.monthlyBudgetCents ?? null,
     })
     .returning();
   if (!row) throw new Error("failed to create category");
@@ -63,6 +67,9 @@ export async function updateCategory(
       ...(patch.keywords !== undefined ? { keywords: JSON.stringify(patch.keywords) } : {}),
       ...(patch.excludeFromSpending !== undefined
         ? { excludeFromSpending: patch.excludeFromSpending }
+        : {}),
+      ...(patch.monthlyBudgetCents !== undefined
+        ? { monthlyBudgetCents: patch.monthlyBudgetCents }
         : {}),
     })
     .where(eq(categories.id, id))

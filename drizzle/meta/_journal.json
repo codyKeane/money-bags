@@ -15,6 +15,13 @@
       "when": 1783146074376,
       "tag": "0001_third_skin",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1783354074001,
+      "tag": "0002_noisy_bill_hollister",
+      "breakpoints": true
     }
   ]
 }
