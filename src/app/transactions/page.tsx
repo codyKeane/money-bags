@@ -11,9 +11,6 @@ export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 50;
 
-// The raw filter params to carry across pagination / into the export link.
-const FILTER_KEYS = ["q", "account", "category", "month", "from", "to"] as const;
-
 function first(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
@@ -28,11 +25,25 @@ export default async function TransactionsPage({
   const query = parseTransactionQuery(get);
   const page = Math.max(1, parseInt(get("page") ?? "1", 10) || 1);
 
-  const [{ items, totalCount }, accounts, categories] = await Promise.all([
-    getTransactionsPage({ ...query, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
-    getAccountOptions(),
-    getAllCategories(),
-  ]);
+  // Load the option lists first so we can drop filter ids that no longer exist
+  // — a deleted account/category left in the URL would otherwise show a
+  // confusing empty result. Mirrors the isValidMonth guard (F6).
+  const [accounts, categories] = await Promise.all([getAccountOptions(), getAllCategories()]);
+  const accountId =
+    query.accountId && accounts.some((a) => a.id === query.accountId) ? query.accountId : undefined;
+  // null (uncategorized) / undefined (any) are always valid; a real id must exist.
+  const categoryId =
+    query.categoryId == null || categories.some((c) => c.id === query.categoryId)
+      ? query.categoryId
+      : undefined;
+
+  const { items, totalCount } = await getTransactionsPage({
+    ...query,
+    accountId,
+    categoryId,
+    limit: PAGE_SIZE,
+    offset: (page - 1) * PAGE_SIZE,
+  });
 
   const accountOptions = accounts.map((a) => ({ id: a.id, name: a.name }));
   const categoryOptions = categories.map((c) => ({ id: c.id, name: c.name }));
@@ -41,13 +52,19 @@ export default async function TransactionsPage({
   const rowFrom = totalCount === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const rowTo = Math.min(page * PAGE_SIZE, totalCount);
 
-  // Current filter params, shared by Prev/Next and the CSV export link.
+  // Sanitized filter params, shared by Prev/Next and the CSV export link — dead
+  // account/category ids and invalid month/date bounds are already dropped, so
+  // links stay consistent with what the page actually shows.
+  const rawCategory = get("category");
   const filterParams = () => {
     const sp = new URLSearchParams();
-    for (const key of FILTER_KEYS) {
-      const value = get(key);
-      if (value) sp.set(key, value);
-    }
+    if (query.q) sp.set("q", query.q);
+    if (accountId) sp.set("account", accountId);
+    if (rawCategory === "uncategorized") sp.set("category", "uncategorized");
+    else if (categoryId) sp.set("category", categoryId);
+    if (query.month) sp.set("month", query.month);
+    if (query.from) sp.set("from", query.from);
+    if (query.to) sp.set("to", query.to);
     return sp;
   };
   const pageHref = (target: number) => {

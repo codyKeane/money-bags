@@ -7,7 +7,7 @@ import { SpendingByCategoryChart } from "@/components/charts/SpendingByCategoryC
 import { SpendingTrendChart } from "@/components/charts/SpendingTrendChart";
 import { formatCents } from "@/lib/money";
 import { currentUtcMonth, formatMonth, isValidMonth } from "@/lib/month";
-import { getNetWorth } from "@/server/services/accounts";
+import { getNetWorthOverview } from "@/server/services/accounts";
 import {
   getBudgetVsActual,
   getMonthlySpendingByCategory,
@@ -54,8 +54,8 @@ export default async function DashboardPage({
   // month — a fresh setup should never open onto an empty dashboard.
   const month = requested && isValidMonth(requested) ? requested : latest;
 
-  const [netWorthCents, summary, byCategory, budgets, trend, recent] = await Promise.all([
-    getNetWorth(),
+  const [netWorth, summary, byCategory, budgets, trend, recent] = await Promise.all([
+    getNetWorthOverview(),
     getMonthlySummary(month),
     getMonthlySpendingByCategory(month),
     getBudgetVsActual(month),
@@ -77,7 +77,7 @@ export default async function DashboardPage({
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Link href="/accounts" className="block">
-          <StatCard label="Net worth" value={formatCents(netWorthCents)} />
+          <StatCard label="Net worth" value={formatCents(netWorth.netWorthCents)} />
         </Link>
         <StatCard
           label={`Income · ${formatMonth(month)}`}
@@ -88,6 +88,15 @@ export default async function DashboardPage({
           value={formatCents(summary.spendingCents)}
         />
       </div>
+
+      {netWorth.currencies.length > 1 ? (
+        <p className="-mt-2 text-xs text-delta-bad">
+          ⚠ Net worth sums accounts in different currencies (
+          {netWorth.currencies.join(", ")}) as if they were one — the total is
+          not meaningful. Keep one currency per install, or track them
+          separately.
+        </p>
+      ) : null}
 
       <section className="rounded-lg border border-hairline bg-surface px-5 py-4">
         <h2 className="text-sm font-medium">Spending by category · {formatMonth(month)}</h2>

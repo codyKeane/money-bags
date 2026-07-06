@@ -37,7 +37,14 @@ export function TransactionTable({
             <tr key={t.id} className={bodyRowClass}>
               <td className="px-3 py-2 whitespace-nowrap text-ink-2 tabular-nums">{t.date}</td>
               <td className="px-3 py-2">{t.description}</td>
-              <td className="px-3 py-2 whitespace-nowrap text-ink-2">{t.accountName}</td>
+              <td className="px-3 py-2 whitespace-nowrap text-ink-2">
+                <Link
+                  href={`/transactions?account=${t.accountId}`}
+                  className="underline decoration-hairline underline-offset-2 hover:decoration-ink-2"
+                >
+                  {t.accountName}
+                </Link>
+              </td>
               <td className="px-3 py-2 whitespace-nowrap">
                 {categories ? (
                   <CategorySelect

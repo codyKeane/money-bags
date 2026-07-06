@@ -40,6 +40,20 @@ export async function getNetWorth(db: Db = getDb()): Promise<number> {
   return sumNetWorth(await getAccountsWithBalances(db));
 }
 
+export interface NetWorthOverview {
+  netWorthCents: number;
+  currencies: string[]; // distinct currency codes across accounts, sorted
+}
+
+// Net worth plus the currencies it spans. Summing balances is only meaningful
+// within a single currency, so the dashboard warns when this spans more than
+// one rather than presenting a meaningless mixed total (F8).
+export async function getNetWorthOverview(db: Db = getDb()): Promise<NetWorthOverview> {
+  const rows = await getAccountsWithBalances(db);
+  const currencies = [...new Set(rows.map((r) => r.currency))].sort();
+  return { netWorthCents: sumNetWorth(rows), currencies };
+}
+
 // Lightweight account list for dropdowns — avoids the per-account balance
 // aggregate on pages that only need names (P3).
 export interface AccountOption {

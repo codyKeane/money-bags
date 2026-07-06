@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import {
   createAccountAction,
@@ -170,7 +171,14 @@ export function AccountsManager({ accounts }: { accounts: AccountWithBalance[] }
                 </td>
               ) : (
                 <>
-                  <td className="px-3 py-2 whitespace-nowrap font-medium">{a.name}</td>
+                  <td className="px-3 py-2 whitespace-nowrap font-medium">
+                    <Link
+                      href={`/transactions?account=${a.id}`}
+                      className="underline decoration-hairline underline-offset-2 hover:decoration-ink-2"
+                    >
+                      {a.name}
+                    </Link>
+                  </td>
                   <td className="px-3 py-2 text-ink-2">{a.type}</td>
                   <td className="px-3 py-2 text-ink-2">{a.institution ?? "—"}</td>
                   <td className="px-3 py-2 text-right tabular-nums">

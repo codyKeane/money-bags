@@ -8,6 +8,7 @@ export interface TransactionListItem {
   date: string;
   description: string;
   amountCents: number;
+  accountId: string;
   accountName: string;
   currency: string;
   categoryId: string | null;
@@ -22,6 +23,7 @@ const transactionListColumns = {
   date: transactions.date,
   description: transactions.description,
   amountCents: transactions.amountCents,
+  accountId: transactions.accountId,
   accountName: accounts.name,
   currency: accounts.currency,
   categoryId: transactions.categoryId,

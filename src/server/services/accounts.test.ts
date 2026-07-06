@@ -1,12 +1,13 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { type Db } from "@/db/client";
 import { setupTestDb } from "@/test/test-db";
-import { transactions } from "@/db/schema";
+import { accounts, transactions } from "@/db/schema";
 import {
   createAccount,
   deleteAccount,
   getAccountsWithBalances,
   getNetWorth,
+  getNetWorthOverview,
   updateAccount,
 } from "./accounts";
 
@@ -57,5 +58,31 @@ describe("accounts service (integration, temp DB)", () => {
     expect(remaining).toHaveLength(1);
     expect(remaining[0]?.accountId).toBe(checkingId);
     expect(await getNetWorth(db)).toBe(25000);
+  });
+});
+
+describe("getNetWorthOverview (integration, temp DB)", () => {
+  const ctx = setupTestDb("finance-networth-");
+
+  beforeAll(async () => {
+    await ctx.db.insert(accounts).values([
+      { name: "USD A", type: "CHECKING", currency: "USD", openingBalanceCents: 10000 },
+      { name: "USD B", type: "SAVINGS", currency: "USD", openingBalanceCents: 5000 },
+    ]);
+  });
+
+  it("reports one currency and the summed net worth when all match", async () => {
+    const overview = await getNetWorthOverview(ctx.db);
+    expect(overview.netWorthCents).toBe(15000);
+    expect(overview.currencies).toEqual(["USD"]);
+  });
+
+  it("surfaces every distinct currency (sorted) once accounts are mixed (F8)", async () => {
+    await ctx.db.insert(accounts).values([
+      { name: "Euro", type: "CHECKING", currency: "EUR", openingBalanceCents: 20000 },
+    ]);
+    const overview = await getNetWorthOverview(ctx.db);
+    expect(overview.currencies).toEqual(["EUR", "USD"]);
+    expect(overview.netWorthCents).toBe(35000);
   });
 });
