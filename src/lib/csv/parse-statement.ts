@@ -23,6 +23,9 @@ export interface ParseStatementOptions {
 export interface ParseStatementResult {
   rows: ParsedStatementRow[];
   errors: StatementRowError[];
+  // File-level, non-fatal advisories (e.g. ambiguous dates read as MM/DD). The
+  // rows still imported; the user may want to re-import differently (F3).
+  warnings: string[];
 }
 
 type CanonicalField = "date" | "description" | "amount" | "debit" | "credit";
@@ -157,6 +160,18 @@ export function parseStatementDate(raw: string, dateFormat: DateFormat): string 
   return format === "MDY" ? toIso(year, a, b) : toIso(year, b, a);
 }
 
+// True when a separated date could be read either MM/DD or DD/MM and the two
+// readings differ — i.e. both components are ≤ 12 and unequal. ISO dates, dates
+// with a component > 12, and equal components (05/05) are never ambiguous. Used
+// only to warn when 'auto' silently picks MDY (F3).
+function isAmbiguousSeparatedDate(raw: string): boolean {
+  const parts = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})$/.exec(raw.trim());
+  if (!parts) return false;
+  const a = Number(parts[1]);
+  const b = Number(parts[2]);
+  return a <= 12 && b <= 12 && a !== b;
+}
+
 interface RawRecord {
   record: Record<string, string>;
   info: { lines: number };
@@ -177,11 +192,19 @@ export function parseStatementCsv(
     }
   }
 
+  const warnings: string[] = [];
+  let resolved: ColumnConfig[] = [];
+  let rawHeaders: string[] = [];
+
   let records: RawRecord[];
   try {
     records = parse(text, {
       bom: true,
-      columns: (headers: string[]) => resolveHeaderColumns(headers, overrides),
+      columns: (headers: string[]) => {
+        rawHeaders = headers.map((h) => h.trim());
+        resolved = resolveHeaderColumns(headers, overrides);
+        return resolved;
+      },
       skip_empty_lines: true,
       trim: true,
       relax_column_count: true,
@@ -192,8 +215,34 @@ export function parseStatementCsv(
     return {
       rows: [],
       errors: [{ rowNumber: 0, message: `Unparseable CSV: ${(err as Error).message}` }],
+      warnings,
     };
   }
+
+  // One clear file-level error when a required column never resolves, instead of
+  // the same "Missing date/description/amount" repeated on every data row (F3).
+  const present = new Set(resolved.filter((c): c is CanonicalField => typeof c === "string"));
+  const missing: string[] = [];
+  if (!present.has("date")) missing.push("date");
+  if (!present.has("description")) missing.push("description");
+  if (!present.has("amount") && !present.has("debit") && !present.has("credit")) {
+    missing.push("amount (or debit/credit)");
+  }
+  if (missing.length > 0) {
+    const seen = rawHeaders.length > 0 ? rawHeaders.join(", ") : "(no header row)";
+    return {
+      rows: [],
+      errors: [
+        {
+          rowNumber: 0,
+          message: `Could not find a ${missing.join(", ")} column. Headers seen: ${seen}. Set an explicit column mapping and re-import.`,
+        },
+      ],
+      warnings,
+    };
+  }
+
+  let ambiguousDates = 0;
 
   for (const { record, info } of records) {
     const rowNumber = info.lines;
@@ -208,6 +257,7 @@ export function parseStatementCsv(
       errors.push({ rowNumber, message: `Unparseable date "${rawDate}"` });
       continue;
     }
+    if (dateFormat === "auto" && isAmbiguousSeparatedDate(rawDate)) ambiguousDates++;
     if (!rawDescription) {
       errors.push({ rowNumber, message: "Missing description" });
       continue;
@@ -252,5 +302,13 @@ export function parseStatementCsv(
     rows.push({ rowNumber, date, description: rawDescription, amountCents });
   }
 
-  return { rows, errors };
+  if (ambiguousDates > 0) {
+    warnings.push(
+      `${ambiguousDates} date${ambiguousDates === 1 ? " was" : "s were"} ambiguous ` +
+        `(e.g. 03/04) and read as MM/DD. If this file uses DD/MM, re-import with the ` +
+        `date format set to DD/MM/YYYY.`,
+    );
+  }
+
+  return { rows, errors, warnings };
 }

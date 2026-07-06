@@ -12,6 +12,29 @@ const FieldsSchema = z.object({
   dateFormat: z.enum(["auto", "MDY", "DMY"]).default("auto"),
 });
 
+const CANONICAL_COLUMNS = ["date", "description", "amount", "debit", "credit"] as const;
+type CanonicalColumn = (typeof CANONICAL_COLUMNS)[number];
+
+// The optional column-mapping override arrives as a JSON string (canonical
+// field -> header name). Silently ignore anything malformed or off-list — a bad
+// map just falls back to automatic header detection (F3).
+function parseColumnMap(raw: FormDataEntryValue | null): Partial<Record<CanonicalColumn, string>> | undefined {
+  if (typeof raw !== "string" || !raw.trim()) return undefined;
+  let obj: unknown;
+  try {
+    obj = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  if (!obj || typeof obj !== "object") return undefined;
+  const map: Partial<Record<CanonicalColumn, string>> = {};
+  for (const key of CANONICAL_COLUMNS) {
+    const value = (obj as Record<string, unknown>)[key];
+    if (typeof value === "string" && value.trim()) map[key] = value.trim();
+  }
+  return Object.keys(map).length > 0 ? map : undefined;
+}
+
 // The import upload goes through this route handler (not a Server Action) —
 // Server Actions cap request bodies at 1 MB by default; here we enforce our
 // own 5 MB / CSV-only policy. Every failure returns JSON `{ error }` so the
@@ -64,6 +87,7 @@ export async function POST(request: Request) {
       accountId: account.id,
       csvText: await file.text(),
       dateFormat: parsed.data.dateFormat,
+      columnMap: parseColumnMap(formData.get("columnMap")),
     });
 
     revalidatePath("/");

@@ -22,6 +22,7 @@ export interface ImportResult {
   // CLAUDE.md dedupe contract) — the user needs to be able to spot that.
   skipped: SkippedRow[];
   errors: StatementRowError[];
+  warnings: string[]; // file-level advisories from the parser (F3)
 }
 
 export interface ImportStatementInput extends ParseStatementOptions {
@@ -33,11 +34,11 @@ export async function importStatement(
   input: ImportStatementInput,
   db: Db = getDb(),
 ): Promise<ImportResult> {
-  const { rows, errors } = parseStatementCsv(input.csvText, {
+  const { rows, errors, warnings } = parseStatementCsv(input.csvText, {
     dateFormat: input.dateFormat,
     columnMap: input.columnMap,
   });
-  if (rows.length === 0) return { imported: 0, skipped: [], errors };
+  if (rows.length === 0) return { imported: 0, skipped: [], errors, warnings };
 
   const categoryRows = await db.select().from(categories);
   const matchers = categoryRows.map((c) => ({
@@ -97,5 +98,5 @@ export async function importStatement(
     }
   }
 
-  return { imported, skipped, errors };
+  return { imported, skipped, errors, warnings };
 }

@@ -153,6 +153,49 @@ describe("parseStatementCsv", () => {
     expect(errors).toEqual([]);
     expect(rows[0]).toMatchObject({ date: "2026-06-01", description: "THING", amountCents: -123 });
   });
+
+  it("emits a single file-level error when a required column is missing (F3)", () => {
+    const { rows, errors } = parseStatementCsv(
+      "Date,Notes\n2026-06-01,no amount here\n2026-06-02,still none\n",
+    );
+    expect(rows).toEqual([]);
+    // One error for the file, NOT one per data row.
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ rowNumber: 0 });
+    expect(errors[0]?.message).toMatch(/description/);
+    expect(errors[0]?.message).toMatch(/amount/);
+  });
+
+  it("a columnMap rescues a file whose required column has an unknown header (F3)", () => {
+    const { rows, errors } = parseStatementCsv(
+      "Date,Notes,Value\n2026-06-01,COFFEE,-3.50\n",
+      { columnMap: { description: "Notes", amount: "Value" } },
+    );
+    expect(errors).toEqual([]);
+    expect(rows[0]).toMatchObject({ description: "COFFEE", amountCents: -350 });
+  });
+
+  it("warns when 'auto' reads ambiguous dates as MM/DD (F3)", () => {
+    const { rows, warnings } = parseStatementCsv(
+      "Date,Description,Amount\n03/04/2026,THING,-1.00\n",
+    );
+    expect(rows[0]?.date).toBe("2026-03-04"); // read as MDY
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/DD\/MM/);
+  });
+
+  it("does not warn on unambiguous or explicitly-formatted dates (F3)", () => {
+    // 25 > 12 forces DMY — unambiguous.
+    expect(parseStatementCsv("Date,Description,Amount\n25/12/2026,GIFT,-1.00\n").warnings).toEqual(
+      [],
+    );
+    // Explicit format = the user already told us; no guess to warn about.
+    expect(
+      parseStatementCsv("Date,Description,Amount\n03/04/2026,THING,-1.00\n", {
+        dateFormat: "MDY",
+      }).warnings,
+    ).toEqual([]);
+  });
 });
 
 describe("parseAmountToCents", () => {

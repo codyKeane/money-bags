@@ -19,12 +19,23 @@ interface ImportResponse {
   imported: number;
   skipped: SkippedRow[];
   errors: { rowNumber: number; message: string }[];
+  warnings: string[];
 }
+
+// Canonical field -> the label shown in the Advanced column-mapping section.
+const COLUMN_FIELDS: { key: string; label: string }[] = [
+  { key: "date", label: "Date column header" },
+  { key: "description", label: "Description column header" },
+  { key: "amount", label: "Amount column header" },
+  { key: "debit", label: "Debit column header" },
+  { key: "credit", label: "Credit column header" },
+];
 
 export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
   const router = useRouter();
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
   const [showCreate, setShowCreate] = useState(accounts.length === 0);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState<ImportResponse | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -49,6 +60,17 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
     setResult(null);
     const formData = new FormData(event.currentTarget);
     formData.set("accountId", accountId);
+    // Collapse the per-field Advanced inputs into the single columnMap JSON the
+    // route expects; drop the raw fields so they don't ride along unused.
+    const columnMap: Record<string, string> = {};
+    for (const { key } of COLUMN_FIELDS) {
+      const value = formData.get(`col-${key}`);
+      if (typeof value === "string" && value.trim()) columnMap[key] = value.trim();
+      formData.delete(`col-${key}`);
+    }
+    if (Object.keys(columnMap).length > 0) {
+      formData.set("columnMap", JSON.stringify(columnMap));
+    }
     setUploading(true);
     try {
       const res = await fetch("/api/import", { method: "POST", body: formData });
@@ -109,6 +131,30 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
           </select>
         </Field>
 
+        <div className="flex flex-col gap-3">
+          <button
+            type="button"
+            className="self-start text-xs text-ink-2 underline"
+            onClick={() => setShowAdvanced((v) => !v)}
+          >
+            {showAdvanced ? "Hide column mapping" : "Advanced: column mapping"}
+          </button>
+          {showAdvanced ? (
+            <div className="flex flex-col gap-3 rounded-lg border border-hairline bg-surface px-4 py-3">
+              <p className="text-xs text-ink-muted">
+                Only needed when auto-detection fails. Enter the exact header text
+                from your CSV for each field; leave blank to auto-detect. Provide
+                Amount, or Debit/Credit as a pair.
+              </p>
+              {COLUMN_FIELDS.map(({ key, label }) => (
+                <Field key={key} label={label}>
+                  <input name={`col-${key}`} className={inputClass} autoComplete="off" />
+                </Field>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
         <button
           type="submit"
           disabled={uploading || !accountId}
@@ -157,6 +203,13 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
             {result.imported} imported · {result.skipped.length} skipped as duplicates ·{" "}
             {result.errors.length} rows with errors
           </p>
+          {result.warnings.length > 0 ? (
+            <ul className="mt-2 list-disc pl-5 text-xs text-ink-2">
+              {result.warnings.map((warning) => (
+                <li key={warning}>⚠ {warning}</li>
+              ))}
+            </ul>
+          ) : null}
           {result.skipped.length > 0 ? (
             <div className="mt-3">
               <p className="text-xs text-ink-muted">
