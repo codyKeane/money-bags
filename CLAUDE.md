@@ -36,7 +36,11 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
   (`palette.ts`). Unit-tested, colocated `*.test.ts`.
 - `src/server/services/` — the only DB-touching layer; shared by RSC pages,
   Server Actions, API route handlers, and the import CLI. Add new data
-  access here, not in components/routes.
+  access here, not in components/routes. Each service has a colocated
+  `*.test.ts` integration test that drives a real throwaway SQLite file via
+  the `setupTestDb()` fixture (`src/test/test-db.ts`): call it at the top of a
+  `describe`, read `ctx.db` inside `beforeAll`/`it`. Test DBs are migrated but
+  get **no** default categories (`createTestDb`), so tests seed their own.
 - `src/app/` — RSC pages (`/`, `/transactions`, `/accounts`,
   `/categories`, `/import`), Server Actions for mutations, thin GET JSON
   routes under `/api` for local scripting.
@@ -130,6 +134,15 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
 - `npm run db:seed` — idempotent demo seed (re-run adds nothing)
 - `npm run db:studio` — Drizzle Studio DB browser
 - `npm run import -- --file <csv> --account "<name>" [--type CHECKING] [--date-format MDY]` — CLI import
+
+## Other docs
+
+- `TODO.md` — backlog and shipped milestones. Its IDs (P1–P7 perf, Q1–Q9 code
+  quality, O1/O2 ops, F#/… features) are the same tags used in commit-message
+  prefixes; check it before starting a "next milestone" task.
+- `USER_MANUAL.md` — end-user, plain-English feature guide. Consult it when a
+  change affects user-facing behavior so the manual stays in sync.
+- `README.md` — setup, home-server (systemd) and Tailscale/PWA deployment.
 
 ## Git
 
