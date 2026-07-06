@@ -3,14 +3,16 @@ import { AddTransactionSection } from "@/components/AddTransactionSection";
 import { ApplyRulesButton } from "@/components/ApplyRulesButton";
 import { TransactionFilters } from "@/components/TransactionFilters";
 import { TransactionTable } from "@/components/TransactionTable";
-import { isValidMonth } from "@/lib/month";
 import { getAccountOptions } from "@/server/services/accounts";
 import { getAllCategories } from "@/server/services/categories";
-import { getTransactionsPage } from "@/server/services/transactions";
+import { getTransactionsPage, parseTransactionQuery } from "@/server/services/transactions";
 
 export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 50;
+
+// The raw filter params to carry across pagination / into the export link.
+const FILTER_KEYS = ["q", "account", "category", "month", "from", "to"] as const;
 
 function first(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -22,23 +24,12 @@ export default async function TransactionsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const q = first(params.q)?.trim() || undefined;
-  const accountId = first(params.account) || undefined;
-  const rawCategory = first(params.category) || undefined;
-  const categoryId = rawCategory === "uncategorized" ? null : rawCategory;
-  const rawMonth = first(params.month);
-  const month = rawMonth && isValidMonth(rawMonth) ? rawMonth : undefined;
-  const page = Math.max(1, parseInt(first(params.page) ?? "1", 10) || 1);
+  const get = (key: string) => first(params[key]);
+  const query = parseTransactionQuery(get);
+  const page = Math.max(1, parseInt(get("page") ?? "1", 10) || 1);
 
   const [{ items, totalCount }, accounts, categories] = await Promise.all([
-    getTransactionsPage({
-      q,
-      accountId,
-      categoryId,
-      month,
-      limit: PAGE_SIZE,
-      offset: (page - 1) * PAGE_SIZE,
-    }),
+    getTransactionsPage({ ...query, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
     getAccountOptions(),
     getAllCategories(),
   ]);
@@ -47,20 +38,26 @@ export default async function TransactionsPage({
   const categoryOptions = categories.map((c) => ({ id: c.id, name: c.name }));
 
   const lastPage = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
-  const from = totalCount === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
-  const to = Math.min(page * PAGE_SIZE, totalCount);
+  const rowFrom = totalCount === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const rowTo = Math.min(page * PAGE_SIZE, totalCount);
 
-  // Prev/Next links preserve the current filters.
+  // Current filter params, shared by Prev/Next and the CSV export link.
+  const filterParams = () => {
+    const sp = new URLSearchParams();
+    for (const key of FILTER_KEYS) {
+      const value = get(key);
+      if (value) sp.set(key, value);
+    }
+    return sp;
+  };
   const pageHref = (target: number) => {
-    const next = new URLSearchParams();
-    if (q) next.set("q", q);
-    if (accountId) next.set("account", accountId);
-    if (rawCategory) next.set("category", rawCategory);
-    if (month) next.set("month", month);
+    const next = filterParams();
     if (target > 1) next.set("page", String(target));
     const qs = next.toString();
     return qs ? `/transactions?${qs}` : "/transactions";
   };
+  const exportQs = filterParams().toString();
+  const exportHref = exportQs ? `/api/export?${exportQs}` : "/api/export";
 
   return (
     <div className="flex flex-col gap-4">
@@ -80,8 +77,18 @@ export default async function TransactionsPage({
       <TransactionTable transactions={items} categories={categoryOptions} editable />
 
       <div className="flex items-center justify-between text-sm text-ink-muted">
-        <span>
-          Showing {from}–{to} of {totalCount}
+        <span className="inline-flex items-center gap-3">
+          <span>
+            Showing {rowFrom}–{rowTo} of {totalCount}
+          </span>
+          {totalCount > 0 ? (
+            <a
+              href={exportHref}
+              className="rounded-md border border-hairline bg-surface px-2 py-1 text-ink-2 hover:bg-gridline/40"
+            >
+              Export CSV
+            </a>
+          ) : null}
         </span>
         <span className="inline-flex items-center gap-2">
           {page > 1 ? (

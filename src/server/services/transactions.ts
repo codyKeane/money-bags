@@ -1,7 +1,7 @@
-import { and, desc, eq, gte, isNull, lt, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lt, lte, sql, type SQL } from "drizzle-orm";
 import { getDb, type Db } from "@/db/client";
 import { accounts, categories, transactions } from "@/db/schema";
-import { monthRange } from "@/lib/month";
+import { isValidIsoDate, isValidMonth, monthRange } from "@/lib/month";
 
 export interface TransactionListItem {
   id: string;
@@ -37,13 +37,40 @@ export async function getRecentTransactions(
   return items;
 }
 
-export interface TransactionFilter {
+// The filterable predicate set, shared by the paged list and the CSV export.
+export interface TransactionQuery {
   q?: string; // description substring, case-insensitive
   accountId?: string;
   categoryId?: string | null; // null = uncategorized, undefined = any
   month?: string; // YYYY-MM
+  from?: string; // YYYY-MM-DD inclusive lower bound (F7)
+  to?: string; // YYYY-MM-DD inclusive upper bound (F7)
+}
+
+export interface TransactionFilter extends TransactionQuery {
   limit: number;
   offset: number;
+}
+
+// Parse + validate the URL query shared by the transactions list and the CSV
+// export so both apply identical filters. `get` returns the first value for a
+// key (arrays already flattened by the caller). Invalid month/date bounds are
+// dropped rather than erroring — a bad ?month= just means "no month filter".
+export function parseTransactionQuery(
+  get: (key: string) => string | null | undefined,
+): TransactionQuery {
+  const validDate = (v: string | null | undefined) =>
+    v && isValidIsoDate(v) ? v : undefined;
+  const rawMonth = get("month") || undefined;
+  const rawCategory = get("category") || undefined;
+  return {
+    q: get("q")?.trim() || undefined,
+    accountId: get("account") || undefined,
+    categoryId: rawCategory === "uncategorized" ? null : rawCategory,
+    month: rawMonth && isValidMonth(rawMonth) ? rawMonth : undefined,
+    from: validDate(get("from")),
+    to: validDate(get("to")),
+  };
 }
 
 export interface TransactionPage {
@@ -51,7 +78,7 @@ export interface TransactionPage {
   totalCount: number;
 }
 
-function buildTransactionWhere(filter: TransactionFilter): SQL | undefined {
+function buildTransactionWhere(filter: TransactionQuery): SQL | undefined {
   const conditions: SQL[] = [];
   if (filter.q) {
     // escape LIKE wildcards so the user searches literal text
@@ -68,6 +95,10 @@ function buildTransactionWhere(filter: TransactionFilter): SQL | undefined {
     const { start, endExclusive } = monthRange(filter.month);
     conditions.push(gte(transactions.date, start), lt(transactions.date, endExclusive));
   }
+  // Date-only bounds; both inclusive since dates carry no time component. These
+  // AND with `month` if a caller passes both — an intentional intersection.
+  if (filter.from) conditions.push(gte(transactions.date, filter.from));
+  if (filter.to) conditions.push(lte(transactions.date, filter.to));
   return conditions.length > 0 ? and(...conditions) : undefined;
 }
 
@@ -90,6 +121,22 @@ export async function getTransactionsPage(
     .limit(filter.limit)
     .offset(filter.offset);
   return { items, totalCount: countRow?.n ?? 0 };
+}
+
+// All rows matching a filter, unpaged, for CSV export (F2). Oldest first so the
+// exported file reads like a statement. Shares buildTransactionWhere/projection
+// with the paged list so filters behave identically.
+export async function getTransactionsForExport(
+  query: TransactionQuery,
+  db: Db = getDb(),
+): Promise<TransactionListItem[]> {
+  return db
+    .select(transactionListColumns)
+    .from(transactions)
+    .innerJoin(accounts, eq(transactions.accountId, accounts.id))
+    .leftJoin(categories, eq(transactions.categoryId, categories.id))
+    .where(buildTransactionWhere(query))
+    .orderBy(transactions.date, transactions.createdAt);
 }
 
 export async function getLatestTransactionMonth(db: Db = getDb()): Promise<string | null> {

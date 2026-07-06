@@ -79,6 +79,22 @@ export function TransactionFilters({
         aria-label="Month"
         className={inputClass}
       />
+      <input
+        type="date"
+        value={params.get("from") ?? ""}
+        onChange={(e) => apply({ from: e.target.value })}
+        aria-label="From date"
+        title="From date"
+        className={inputClass}
+      />
+      <input
+        type="date"
+        value={params.get("to") ?? ""}
+        onChange={(e) => apply({ to: e.target.value })}
+        aria-label="To date"
+        title="To date"
+        className={inputClass}
+      />
       {params.size > 0 ? (
         <button
           type="button"
