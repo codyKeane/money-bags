@@ -123,6 +123,8 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
   restart)
 - `GET /api/health` — liveness probe (`{ok:true}` / 500) for uptime
   monitoring; `deploy/` holds systemd unit + backup timer examples
+- `GET /api/export?q=&account=&category=&month=&from=&to=` — the filtered
+  transaction view as a CSV download (same query parsing as `/transactions`)
 - `npm run build` / `npm start` — production build / serve
 - `npm test` / `npm run test:watch` — Vitest. Single file:
   `npm test -- src/lib/categorize.test.ts`; by name:
@@ -133,7 +135,7 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
   default categories install automatically when the table is empty)
 - `npm run db:seed` — idempotent demo seed (re-run adds nothing)
 - `npm run db:studio` — Drizzle Studio DB browser
-- `npm run import -- --file <csv> --account "<name>" [--type CHECKING] [--date-format MDY]` — CLI import
+- `npm run import -- --file <csv> --account "<name>" [--type CHECKING] [--date-format MDY] [--col-date "<header>"] [--col-amount "<header>"] …` — CLI import; `--col-*` flags override header detection (also exposed as a `columnMap` JSON field on `/api/import` and an "Advanced" section in the import UI)
 
 ## Other docs
 

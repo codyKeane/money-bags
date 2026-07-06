@@ -2,7 +2,9 @@
 
 Shipped milestones: foundation (`a17fad3`) → CSV/hardening/management UIs
 (`e882ed9`) → Tailscale/PWA/mobile (`9581add`) → **engineering milestone**
-(`6b3f85c`/`5bd9952`/this) — performance, code-quality refactors, and ops.
+(`6b3f85c`/`5bd9952`) — performance, code-quality refactors, and ops →
+**features milestone** (`56c58ef`/`5019ec8`/`f716fa1`/`390bbd2`/`b9d9575`) —
+budgets, CSV export, date filter, import robustness, error handling.
 
 ## ✅ Engineering milestone — DONE (verified byte-identical + tests green)
 
@@ -19,33 +21,22 @@ Shipped milestones: foundation (`a17fad3`) → CSV/hardening/management UIs
 - **Ops**: O1 systemd units (`deploy/`) + backup `--keep` retention ·
   O2 Node pin (`engines`/`.nvmrc`) + `/api/health`.
 
-## Remaining — pick a theme for the next milestone
+## ✅ Features milestone — DONE (all F1–F9, tests green, verified end-to-end)
 
-### Features (original TODO section 3)
-- [ ] **F1 · Budgets per category** (high, M). Nullable `monthlyBudgetCents`,
-  `getBudgetVsActual(month)`, dashboard progress + over-budget flag. Actuals
-  side (`getMonthlySpendingByCategory`) already exists.
-- [ ] **F2 · CSV export of the filtered view** (high, S). `GET /api/export`
-  reusing `buildTransactionWhere`; "Export CSV" link by the pagination footer.
-- [ ] **F3 · Import robustness** (high, M). Expose the tested-but-hidden
-  `columnMap` in `/api/import` + CLI + an "Advanced" UI; one file-level error
-  when no date/description/amount column resolves; a `warnings` field when
-  `auto` date format fell back to MDY without evidence.
-- [ ] **F4 · Error-handling bundle** (high, M). Root `error.tsx`; try/catch →
-  JSON in `/api/import` (+ Content-Length pre-check); `getCategoryById` guard
-  in `recategorizeAction`.
-- [ ] **F5 · Account → transactions links** (medium, S). Link to
-  `/transactions?account=<id>` from AccountsManager/TransactionTable.
-- [ ] **F6 · Drop dangling filter params** (medium, S). Discard `?category=`/
-  `?account=` ids not in the loaded option lists (mirror the `isValidMonth`
-  guard) in `transactions/page.tsx`.
-- [ ] **F7 · Date-range filter (from/to)** (medium, S/M). `gte/lte` on `date`
-  in `buildTransactionWhere`; two `type="date"` inputs; feeds F2 export.
-- [ ] **F8 · Currency: expose or guard** (medium, S). `accounts.currency` is
-  display-only dead state; either add a currency select + group net worth by
-  currency, or make mixed currencies impossible/loud.
-- [ ] **F9 · Missing tests** (medium, S). `month.ts` (`addMonths`/`monthRange`
-  boundaries), `getSpendingTrend` zero-fill window.
+- **F1 Budgets** — `monthly_budget_cents` (migration 0002), `getBudgetVsActual`,
+  category form input + dashboard progress with over-budget `--delta-bad`.
+- **F2 CSV export** — `GET /api/export` + pure `transactionsToCsv`, footer link.
+- **F3 Import robustness** — `columnMap` via route JSON / CLI `--col-*` / an
+  Advanced UI; single file-level error for missing columns; ambiguous-date
+  warnings surfaced everywhere.
+- **F4 Error handling** — root `error.tsx`; JSON errors + Content-Length
+  pre-check on `/api/import`; `getCategoryById` guard in `recategorizeAction`.
+- **F5** account → `/transactions?account=` links · **F6** dangling filter-param
+  drop · **F7** from/to date filter (shared `TransactionQuery`) · **F8**
+  `getNetWorthOverview` mixed-currency warning · **F9** `month.ts` +
+  `getSpendingTrend` tests.
+
+## Remaining — pick a theme for the next milestone
 
 ### Fresh functionality audit (new — ranked by user value)
 - [ ] Transaction splitting across categories (the "Target run") — needs a
