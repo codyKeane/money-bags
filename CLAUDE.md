@@ -90,13 +90,23 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
     description/amount feed the hash for files that were previously
     misparsed. Re-importing such a file inserts fresh rows because the old
     import stored corrupted values under different hashes — review import
-    counts and delete the corrupted rows first.
+    counts and **undo the bad import** (Recent imports list on `/import`, or
+    `undoImport(batchId)`) before re-importing.
 - **Categorization**: case-insensitive keyword match at import; longest
   matching keyword wins, ties broken by category name; no match →
   `categoryId = null` (rendered "Uncategorized"). Retroactive:
   `applyRulesToUncategorized` (Categories page "Apply rules" button →
   `applyRulesAction`) re-runs the matcher over **uncategorized rows only** —
   manual categorizations are never overwritten.
+- **Import batches / undo**: every import that inserts ≥1 row records one
+  `import_batches` row and stamps its id on each inserted transaction
+  (`transactions.batchId`, FK `set null`); all-duplicate imports record nothing.
+  `undoImport(batchId)` is an explicit two-step delete (rows first, then the
+  batch) — never a cascade — so manual rows (`batchId = null`) and other imports
+  are untouched; it returns the deleted count or null if the batch is gone. Pass
+  `filename` into `importStatement` from any new caller so history stays useful.
+  The `batch_id` FK's `ON DELETE set null` is hand-added to migration 0003
+  (drizzle-kit omits it from `ALTER TABLE ADD` — keep it if regenerating).
 - **Category colors**: constrained to the validated `CATEGORICAL_SLOTS` in
   `src/lib/palette.ts` (the Server Action rejects any other value). Only the
   first 8 categories get a hue; the rest render as neutral badges — never

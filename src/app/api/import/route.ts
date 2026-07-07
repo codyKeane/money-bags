@@ -88,6 +88,7 @@ export async function POST(request: Request) {
       csvText: await file.text(),
       dateFormat: parsed.data.dateFormat,
       columnMap: parseColumnMap(formData.get("columnMap")),
+      filename: file.name || undefined,
     });
 
     revalidatePath("/");

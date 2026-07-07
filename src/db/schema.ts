@@ -43,6 +43,23 @@ export const categories = sqliteTable("categories", {
     .$defaultFn(() => Date.now()),
 });
 
+// One row per CSV import that inserted at least one transaction. Lets the user
+// undo a whole import (delete every row it added) — CLAUDE.md's "delete the
+// corrupted rows first" workflow needs this. Imports that add nothing (all
+// duplicates) record no batch.
+export const importBatches = sqliteTable("import_batches", {
+  id: id(),
+  accountId: text("account_id")
+    .notNull()
+    .references(() => accounts.id, { onDelete: "cascade" }),
+  filename: text("filename"), // original CSV filename when known (UI upload / CLI path)
+  importedCount: integer("imported_count").notNull(), // rows inserted by this import
+  skippedCount: integer("skipped_count").notNull().default(0), // duplicates skipped
+  createdAt: integer("created_at")
+    .notNull()
+    .$defaultFn(() => Date.now()),
+});
+
 export const transactions = sqliteTable(
   "transactions",
   {
@@ -57,12 +74,19 @@ export const transactions = sqliteTable(
       onDelete: "set null",
     }),
     importHash: text("import_hash").unique(), // null for manually created rows
+    // The import that created this row; null for manual rows and rows imported
+    // before batch tracking existed. set null (not cascade) so undo is an
+    // explicit two-step delete in the service, not a silent FK side effect.
+    batchId: text("batch_id").references(() => importBatches.id, {
+      onDelete: "set null",
+    }),
     ...timestamps,
   },
   (t) => [
     index("transactions_account_date_idx").on(t.accountId, t.date),
     index("transactions_category_date_idx").on(t.categoryId, t.date),
     index("transactions_date_idx").on(t.date),
+    index("transactions_batch_idx").on(t.batchId), // undo deletes WHERE batch_id = ?
   ],
 );
 
@@ -72,3 +96,5 @@ export type Category = typeof categories.$inferSelect;
 export type NewCategory = typeof categories.$inferInsert;
 export type Transaction = typeof transactions.$inferSelect;
 export type NewTransaction = typeof transactions.$inferInsert;
+export type ImportBatch = typeof importBatches.$inferSelect;
+export type NewImportBatch = typeof importBatches.$inferInsert;

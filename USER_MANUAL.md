@@ -748,6 +748,31 @@ After you click **Import statement**, you get a summary like:
 - **Warnings** — non-fatal notes (like the ambiguous-date warning above). The
   rows still imported; a warning is just a heads-up worth a glance.
 
+### Undoing an import
+
+Imported the wrong file, picked the wrong account, or realized the amounts were
+parsed wrong? You don't have to hunt down the rows by hand. Below the import form
+is a **Recent imports** list — one line per import that actually added
+transactions, newest first, showing **when** it ran, the **account**, the
+**file** name, and how many rows it **added**. Click **Undo** on any line and the
+app permanently deletes exactly the transactions that import added — nothing
+else. Rows you typed in by hand, and rows from other imports, are left alone.
+
+A few things worth knowing:
+
+- Undo asks you to confirm first, and tells you how many transactions it will
+  remove.
+- Even if you later re-categorized or edited one of those imported rows, Undo
+  still removes it — it belongs to that import.
+- An import that added **nothing** (every row was a duplicate) doesn't appear in
+  the list, because there's nothing to undo.
+- Undo is permanent; there's no "redo." But re-importing the same file puts the
+  rows right back, so a mistaken undo is easy to reverse.
+
+This is the clean way to recover from the re-import edge case described under
+[duplicate detection](#how-duplicate-detection-works-and-its-one-limit): undo the
+bad import, fix the file or the settings, and import again.
+
 ### Where to keep your statement files
 
 Put real statement CSVs in the project's `data/imports/` folder. That folder —
@@ -767,6 +792,10 @@ npm run import -- --file statement.csv --account "Everyday Checking" --type CHEC
 mapping the web UI offers is available as flags — `--col-date "Txn Day"`,
 `--col-amount "Value"`, and likewise `--col-description`, `--col-debit`,
 `--col-credit`. Any warnings are printed alongside the imported/skipped counts.
+
+A command-line import is recorded the same way a web import is, so if it went in
+wrong you can undo the whole thing from the **Recent imports** list on the Import
+page — no need to delete rows by hand.
 
 ---
 

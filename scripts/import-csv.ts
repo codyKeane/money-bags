@@ -9,6 +9,7 @@ try {
 }
 
 import { readFileSync, statSync } from "node:fs";
+import { basename } from "node:path";
 import { parseArgs } from "node:util";
 import { z } from "zod";
 import { ACCOUNT_TYPES } from "../src/lib/account-types";
@@ -79,10 +80,16 @@ async function main() {
     csvText,
     dateFormat: args["date-format"],
     columnMap: buildColumnMap(args),
+    filename: basename(args.file),
   });
 
   for (const warning of result.warnings) console.log(`Warning: ${warning}`);
   console.log(`\nImported: ${result.imported}`);
+  if (result.batchId) {
+    console.log(
+      `Recorded import batch ${result.batchId} — undo it from the Import page if needed.`,
+    );
+  }
   console.log(`Skipped as duplicates: ${result.skipped.length}`);
   for (const row of result.skipped) {
     console.log(
