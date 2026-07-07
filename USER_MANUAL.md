@@ -423,14 +423,21 @@ on a filter for an account or category that no longer exists (e.g. an old
 bookmark after you deleted it), the app simply ignores that filter and shows
 everything, rather than a confusing empty page.
 
-**The table** shows Date, Description, Account, Category, and Amount. When you're
-on this page (not the dashboard), two extra things are true:
+**The table** shows Date, Description, Account, Category, and Amount. Dates read
+as **"Jul 7, 2026"** (hover to see the exact `YYYY-MM-DD`), and money coming
+**in** (a paycheck, a refund) is tinted **green** so it stands out; money going
+out stays in the normal text color, with its minus sign. (Red is saved for
+things that need attention — an error, or a budget you've gone over — so it keeps
+its meaning.) When you're on this page (not the dashboard), two extra things are
+true:
 
-- The **Category** column is a dropdown — change it to instantly re-label that
-  one transaction. (A transaction you've **split** across categories shows a
-  **Split** link here instead of the dropdown — see below.)
-- Each row has an **Edit** link (change any field) and a **Delete** button
-  (remove it; it asks you to confirm).
+- The **Category** column is a dropdown, with a **colored dot** that matches the
+  chosen category — change it to instantly re-label that one transaction. (A
+  transaction you've **split** across categories shows a **Split** link here
+  instead of the dropdown — see below.)
+- Each row has an **Edit** link (change any field) and a **Delete** button. Click
+  **Delete** and a **Confirm** button appears right there in the row (no browser
+  pop-up); click it to remove the transaction, or **Cancel** to back out.
 
 The **Account** name in each row is a link that filters the table down to that
 account.
@@ -774,8 +781,9 @@ else. Rows you typed in by hand, and rows from other imports, are left alone.
 
 A few things worth knowing:
 
-- Undo asks you to confirm first, and tells you how many transactions it will
-  remove.
+- Undo asks you to confirm first: clicking **Undo** turns into an **Undo import**
+  Confirm button (with the exact count and file in its tooltip) right in the row —
+  no browser pop-up. Click it to go ahead, or **Cancel**.
 - Even if you later re-categorized or edited one of those imported rows, Undo
   still removes it — it belongs to that import.
 - An import that added **nothing** (every row was a duplicate) doesn't appear in
@@ -848,6 +856,12 @@ your home screen so it opens like a real app:
 You'll get an icon and a clean, full-screen window. (There's intentionally no
 offline mode — your data lives on the server computer, so the app needs to reach
 it.)
+
+The interface is built to work under a thumb: buttons, menus, and the navigation
+bar are sized to comfortable **touch targets**, number fields pop the numeric
+keypad, confirmations happen **inline** (a Confirm button appears right where you
+tapped, instead of a browser pop-up), and wide tables show a soft shadow at the
+edge when there's more to scroll sideways to.
 
 > **Advanced / not recommended:** there are `npm run dev:lan` and
 > `npm run start:lan` commands that expose the app to your whole local network

@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { TransactionForm } from "@/components/TransactionForm";
 import type { CategoryOption } from "@/components/CategorySelect";
+import { FlashMessage, useFlash } from "@/components/ui/flash";
+import { toggleButtonClass } from "@/components/ui/form";
 
 export function AddTransactionSection({
   accounts,
@@ -12,22 +14,23 @@ export function AddTransactionSection({
   categories: CategoryOption[];
 }) {
   const [open, setOpen] = useState(false);
+  const [message, flash] = useFlash();
   return (
     <div className="flex flex-col gap-3">
-      <div>
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="rounded-md border border-hairline bg-surface px-3 py-1 text-sm font-medium hover:bg-gridline/40"
-        >
+      <div className="flex items-center gap-3">
+        <button type="button" onClick={() => setOpen((v) => !v)} className={toggleButtonClass}>
           {open ? "Cancel" : "Add transaction"}
         </button>
+        <FlashMessage message={message} />
       </div>
       {open ? (
         <TransactionForm
           accounts={accounts}
           categories={categories}
-          onDone={() => setOpen(false)}
+          onDone={() => {
+            setOpen(false);
+            flash("Transaction added");
+          }}
         />
       ) : null}
     </div>

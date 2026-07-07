@@ -80,9 +80,7 @@ export default async function DashboardPage({
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Link href="/accounts" className="block">
-          <StatCard label="Net worth" value={formatCents(netWorth.netWorthCents)} />
-        </Link>
+        <StatCard href="/accounts" label="Net worth" value={formatCents(netWorth.netWorthCents)} />
         <StatCard
           label={`Income · ${formatMonth(month)}`}
           value={formatCents(summary.incomeCents)}

@@ -6,7 +6,7 @@ export function MonthNav({ month }: { month: string }) {
   const next = addMonths(month, 1);
   const atCurrent = month >= currentUtcMonth();
   const linkClass =
-    "rounded-md border border-hairline bg-surface px-2 py-1 text-sm text-ink-2 hover:bg-gridline/40";
+    "inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-hairline bg-surface px-2 py-1 text-sm text-ink-2 hover:bg-gridline/40";
   return (
     <div className="flex items-center gap-3">
       <Link href={`/?month=${prev}`} aria-label="Previous month" className={linkClass}>

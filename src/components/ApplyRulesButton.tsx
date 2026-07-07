@@ -13,7 +13,7 @@ export function ApplyRulesButton() {
       <button
         type="button"
         disabled={pending}
-        className="rounded-md border border-hairline bg-surface px-3 py-1 text-sm text-ink-2 hover:bg-gridline/40 disabled:opacity-50"
+        className="inline-flex min-h-11 items-center rounded-md border border-hairline bg-surface px-3 py-1 text-sm text-ink-2 hover:bg-gridline/40 disabled:opacity-50"
         onClick={() =>
           startTransition(async () => {
             const result = await applyRulesAction();

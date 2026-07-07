@@ -51,6 +51,19 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
   default (the template never applies to its own segment). `not-found.tsx` is
   the global 404 that `notFound()` renders. Active nav uses
   `isActiveNav(pathname, href)` from `nav-links.ts`, not `pathname === href`.
+  UX round-2 shared primitives (reuse these, don't re-roll): destructive
+  confirmation is `ConfirmButton` (`ui/confirm-button.tsx`) — an inline arm →
+  Confirm/Cancel swap, **never** `window.confirm`; transient create-success is
+  `useFlash`/`FlashMessage` (`ui/flash.tsx`, an `aria-live` region); display a
+  ledger date with `formatIsoDate` (`lib/month.ts`, string-only/TZ-safe), keeping
+  raw ISO in a `title`; interactive controls get a 44px tap target via the shared
+  `inputClass`/`buttonClass`/`toggleButtonClass`/`rowActionClass` (`ui/form.tsx`,
+  all `min-h-11`); wide tables get an overflow cue from `.scroll-x-shadows`
+  (`globals.css`) on `TableCard`. The amount column tints **only income**
+  (`--delta-good`), beside the signed number (color is never the sole cue);
+  outflows stay in default ink so `--delta-bad` stays reserved for danger —
+  errors, over-budget. Both delta tokens are refined (softer emerald / muted
+  brick), not the raw categorical hues.
 - `src/server/actions/` — every UI mutation (accounts, categories,
   transactions, apply-rules) as `"use server"` modules split by domain
   (`accounts.ts`, `categories.ts`, `transactions.ts`), sharing helpers/types

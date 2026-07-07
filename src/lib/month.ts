@@ -49,6 +49,15 @@ export function formatMonthShort(month: string): string {
   return (MONTH_NAMES[(m ?? 1) - 1] ?? "").slice(0, 3);
 }
 
+// "2026-07-07" -> "Jul 7, 2026" for display (UX16). String-only, no Date
+// parsing, so it stays TZ-safe like the rest of ledger date math. Falls back to
+// the raw value if it isn't a well-formed ISO date.
+export function formatIsoDate(value: string): string {
+  if (!isValidIsoDate(value)) return value;
+  const [y, m, d] = value.split("-").map(Number);
+  return `${MONTH_NAMES[(m ?? 1) - 1]?.slice(0, 3)} ${d}, ${y}`;
+}
+
 // Calendar-checked YYYY-MM-DD (matches the ledger's date column format).
 export function isValidIsoDate(value: string): boolean {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
 import { undoImportAction } from "@/server/actions";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { TableCard, bodyRowClass, headRowClass, thClass } from "@/components/ui/table";
 
 export interface ImportHistoryRow {
@@ -14,32 +14,10 @@ export interface ImportHistoryRow {
 }
 
 // Lists recent imports and lets the user undo one — deleting every transaction
-// that import added. The action revalidates /import, so the undone row drops on
-// the server re-render carried in the response; no router.refresh (P2).
+// that import added. Undo is a styled inline confirm (UX9), not a native
+// dialog; the action revalidates /import, so the undone row drops on the server
+// re-render carried in the response — no router.refresh (P2).
 export function ImportHistory({ batches }: { batches: ImportHistoryRow[] }) {
-  const [pending, startTransition] = useTransition();
-  const [undoingId, setUndoingId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  function handleUndo(row: ImportHistoryRow) {
-    const noun = row.importedCount === 1 ? "transaction" : "transactions";
-    const source = row.filename ? ` from ${row.filename}` : "";
-    if (
-      !window.confirm(
-        `Undo this import? This permanently deletes the ${row.importedCount} ${noun} it added${source}.`,
-      )
-    ) {
-      return;
-    }
-    setError(null);
-    setUndoingId(row.id);
-    startTransition(async () => {
-      const res = await undoImportAction(row.id);
-      if (!res.ok) setError(res.error ?? "Undo failed.");
-      setUndoingId(null);
-    });
-  }
-
   return (
     <section className="flex flex-col gap-2">
       <h2 className="text-sm font-medium">Recent imports</h2>
@@ -49,19 +27,21 @@ export function ImportHistory({ batches }: { batches: ImportHistoryRow[] }) {
           it went in wrong.
         </p>
       ) : (
-        <>
-          <TableCard>
-            <thead>
-              <tr className={headRowClass}>
-                <th className={thClass}>When</th>
-                <th className={thClass}>Account</th>
-                <th className={thClass}>File</th>
-                <th className={`${thClass} text-right`}>Added</th>
-                <th className={thClass} />
-              </tr>
-            </thead>
-            <tbody>
-              {batches.map((row) => (
+        <TableCard>
+          <thead>
+            <tr className={headRowClass}>
+              <th className={thClass}>When</th>
+              <th className={thClass}>Account</th>
+              <th className={thClass}>File</th>
+              <th className={`${thClass} text-right`}>Added</th>
+              <th className={thClass} />
+            </tr>
+          </thead>
+          <tbody>
+            {batches.map((row) => {
+              const noun = row.importedCount === 1 ? "transaction" : "transactions";
+              const source = row.filename ? ` from ${row.filename}` : "";
+              return (
                 <tr key={row.id} className={bodyRowClass}>
                   <td className="px-3 py-2 whitespace-nowrap text-ink-2 tabular-nums">
                     {row.createdAtLabel}
@@ -75,21 +55,23 @@ export function ImportHistory({ batches }: { batches: ImportHistoryRow[] }) {
                     ) : null}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-right">
-                    <button
-                      type="button"
-                      disabled={pending}
-                      onClick={() => handleUndo(row)}
-                      className="text-xs text-ink-2 underline disabled:opacity-50"
-                    >
-                      {pending && undoingId === row.id ? "Undoing…" : "Undo"}
-                    </button>
+                    <ConfirmButton
+                      label="Undo"
+                      prompt="Undo?"
+                      title={`Undo this import — permanently deletes the ${row.importedCount} ${noun} it added${source}`}
+                      confirmLabel="Undo import"
+                      pendingLabel="Undoing…"
+                      onConfirm={async () => {
+                        const res = await undoImportAction(row.id);
+                        if (!res.ok) return res.error ?? "Undo failed.";
+                      }}
+                    />
                   </td>
                 </tr>
-              ))}
-            </tbody>
-          </TableCard>
-          {error ? <p className="text-sm text-ink-2">⚠ {error}</p> : null}
-        </>
+              );
+            })}
+          </tbody>
+        </TableCard>
       )}
     </section>
   );

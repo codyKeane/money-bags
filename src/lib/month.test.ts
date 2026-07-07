@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   addMonths,
   currentUtcMonth,
+  formatIsoDate,
   formatMonth,
   formatMonthShort,
   isValidIsoDate,
@@ -71,6 +72,21 @@ describe("formatMonth / formatMonthShort", () => {
     expect(formatMonth("2026-07")).toBe("July 2026");
     expect(formatMonth("2026-01")).toBe("January 2026");
     expect(formatMonthShort("2026-02")).toBe("Feb");
+  });
+});
+
+describe("formatIsoDate", () => {
+  it("formats a valid ISO date without timezone drift", () => {
+    expect(formatIsoDate("2026-07-07")).toBe("Jul 7, 2026");
+    expect(formatIsoDate("2026-01-01")).toBe("Jan 1, 2026");
+    expect(formatIsoDate("2026-12-31")).toBe("Dec 31, 2026");
+  });
+  it("drops the day's leading zero but keeps the ISO year", () => {
+    expect(formatIsoDate("2026-03-05")).toBe("Mar 5, 2026");
+  });
+  it("falls back to the raw value for malformed input", () => {
+    expect(formatIsoDate("2026-13-01")).toBe("2026-13-01");
+    expect(formatIsoDate("not-a-date")).toBe("not-a-date");
   });
 });
 

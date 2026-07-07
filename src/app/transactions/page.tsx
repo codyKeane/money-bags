@@ -48,7 +48,8 @@ export default async function TransactionsPage({
   });
 
   const accountOptions = accounts.map((a) => ({ id: a.id, name: a.name }));
-  const categoryOptions = categories.map((c) => ({ id: c.id, name: c.name }));
+  // color rides along so the in-row CategorySelect can show a matching dot (UX18).
+  const categoryOptions = categories.map((c) => ({ id: c.id, name: c.name, color: c.color }));
 
   // Distinguish "no matches for the current filters" from "the ledger is empty"
   // so the empty state can point the user at the right next step. categoryId is
@@ -101,7 +102,11 @@ export default async function TransactionsPage({
       <TransactionFilters accounts={accountOptions} categories={categoryOptions} />
 
       {items.length === 0 ? (
-        <div className="rounded-lg border border-hairline bg-surface px-6 py-10 text-center text-sm">
+        <div
+          role="status"
+          aria-live="polite"
+          className="rounded-lg border border-hairline bg-surface px-6 py-10 text-center text-sm"
+        >
           {hasActiveFilters ? (
             <>
               <p className="text-ink-2">No transactions match these filters.</p>
@@ -129,24 +134,24 @@ export default async function TransactionsPage({
       {totalCount > 0 ? (
         <div className="flex items-center justify-between text-sm text-ink-muted">
           <span className="inline-flex items-center gap-3">
-            <span>
+            <span role="status" aria-live="polite">
               Showing {rowFrom}–{rowTo} of {totalCount}
             </span>
             <a
               href={exportHref}
-              className="rounded-md border border-hairline bg-surface px-2 py-1 text-ink-2 hover:bg-gridline/40"
+              className="inline-flex min-h-11 items-center rounded-md border border-hairline bg-surface px-2 py-1 text-ink-2 hover:bg-gridline/40"
             >
               Export CSV
             </a>
           </span>
           <span className="inline-flex items-center gap-2">
             {page > 1 ? (
-              <Link href={pageHref(page - 1)} className="rounded-md border border-hairline bg-surface px-2 py-1 hover:bg-gridline/40">
+              <Link href={pageHref(page - 1)} className="inline-flex min-h-11 items-center rounded-md border border-hairline bg-surface px-2 py-1 hover:bg-gridline/40">
                 ← Prev
               </Link>
             ) : null}
             {page < lastPage ? (
-              <Link href={pageHref(page + 1)} className="rounded-md border border-hairline bg-surface px-2 py-1 hover:bg-gridline/40">
+              <Link href={pageHref(page + 1)} className="inline-flex min-h-11 items-center rounded-md border border-hairline bg-surface px-2 py-1 hover:bg-gridline/40">
                 Next →
               </Link>
             ) : null}

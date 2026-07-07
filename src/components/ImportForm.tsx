@@ -5,6 +5,8 @@ import { useState } from "react";
 import { createAccountAction, type CreateAccountState } from "@/server/actions";
 import { ACCOUNT_TYPES } from "@/lib/account-types";
 import { formatCents } from "@/lib/money";
+import { formatIsoDate } from "@/lib/month";
+import { FlashMessage, useFlash } from "@/components/ui/flash";
 import { Field, inputClass } from "@/components/ui/form";
 import { useServerForm } from "@/components/ui/use-server-form";
 import type { SkippedRow } from "@/server/services/import";
@@ -40,6 +42,7 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
   const [result, setResult] = useState<ImportResponse | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
+  const [message, flash] = useFlash();
   // createAccountAction revalidates /import, so the new account flows into the
   // RSC-provided `accounts` list on the re-render — no router.refresh (P2).
   const [createState, createFormAction, createPending] = useServerForm<CreateAccountState>(
@@ -49,6 +52,7 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
         if (state.accountId) {
           setAccountId(state.accountId);
           setShowCreate(false);
+          flash("Account created");
         }
       },
     },
@@ -111,11 +115,12 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
             </select>
             <button
               type="button"
-              className="text-xs text-ink-2 underline"
+              className="inline-flex min-h-11 items-center text-xs text-ink-2 underline"
               onClick={() => setShowCreate((v) => !v)}
             >
               {showCreate ? "Cancel" : "New account…"}
             </button>
+            <FlashMessage message={message} />
           </div>
         </Field>
 
@@ -158,11 +163,11 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
         <button
           type="submit"
           disabled={uploading || !accountId}
-          className="self-start rounded-md border border-hairline bg-surface px-4 py-1.5 text-sm font-medium hover:bg-gridline/40 disabled:opacity-50"
+          className="inline-flex min-h-11 items-center self-start rounded-md border border-hairline bg-surface px-4 py-1.5 text-sm font-medium hover:bg-gridline/40 disabled:opacity-50"
         >
           {uploading ? "Importing…" : "Import statement"}
         </button>
-        {uploadError ? <p className="text-sm text-ink-2">⚠ {uploadError}</p> : null}
+        {uploadError ? <p className="text-sm text-delta-bad">⚠ {uploadError}</p> : null}
       </form>
 
       {showCreate ? (
@@ -172,7 +177,7 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
         >
           <p className="text-sm font-medium">New account</p>
           <Field label="Name">
-            <input name="name" required maxLength={120} className={inputClass} />
+            <input name="name" required maxLength={120} className={inputClass} autoFocus />
           </Field>
           <Field label="Type">
             <select name="type" defaultValue="CHECKING" className={inputClass}>
@@ -186,12 +191,12 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
           <button
             type="submit"
             disabled={createPending}
-            className="self-start rounded-md border border-hairline px-3 py-1 text-sm hover:bg-gridline/40 disabled:opacity-50"
+            className="inline-flex min-h-11 items-center self-start rounded-md border border-hairline px-3 py-1 text-sm hover:bg-gridline/40 disabled:opacity-50"
           >
             {createPending ? "Creating…" : "Create account"}
           </button>
           {!createState.ok && createState.error ? (
-            <p className="text-sm text-ink-2">⚠ {createState.error}</p>
+            <p className="text-sm text-delta-bad">⚠ {createState.error}</p>
           ) : null}
         </form>
       ) : null}
@@ -222,7 +227,9 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
                   {result.skipped.map((row) => (
                     <tr key={`${row.rowNumber}`}>
                       <td className="pr-3 text-ink-muted">line {row.rowNumber}</td>
-                      <td className="pr-3 tabular-nums">{row.date}</td>
+                      <td className="pr-3 whitespace-nowrap tabular-nums" title={row.date}>
+                        {formatIsoDate(row.date)}
+                      </td>
                       <td className="pr-3 tabular-nums">{formatCents(row.amountCents)}</td>
                       <td>{row.description}</td>
                     </tr>

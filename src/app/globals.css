@@ -11,8 +11,8 @@
   --gridline: #e1e0d9;
   --baseline: #c3c2b7;
   --hairline: rgba(11, 11, 11, 0.1);
-  --delta-good: #006300;
-  --delta-bad: #e34948; /* palette red slot — pairs with text, never color-alone */
+  --delta-good: #147a41; /* refined emerald — money in / success, always with text */
+  --delta-bad: #c34a3f; /* muted brick red — money out / error / over-budget, never color-alone */
 }
 
 @theme inline {
@@ -43,8 +43,8 @@
     --gridline: #2c2c2a;
     --baseline: #383835;
     --hairline: rgba(255, 255, 255, 0.1);
-    --delta-good: #0ca30c;
-    --delta-bad: #e66767;
+    --delta-good: #3ecf8e; /* brighter emerald so it reads on the dark ground */
+    --delta-bad: #ef8078; /* soft coral — calmer than a saturated red on dark */
   }
 }
 
@@ -60,4 +60,26 @@ body {
   [data-has-color] {
     background-color: var(--dot-dark) !important;
   }
+}
+
+/* Horizontal-scroll affordance for wide tables (UX13). Pure CSS "scroll
+   shadows": two surface-colored covers scroll WITH the content (local) and two
+   hairline shadows stay pinned to the edges (scroll). At rest the cover sits
+   over the shadow, so nothing shows; once there's content scrolled off an edge,
+   its cover moves away and the shadow peeks in — a cue appears only when, and on
+   the side where, more table exists. Layered as background-IMAGE so Tailwind's
+   `bg-surface` (background-color) still fills the card. */
+.scroll-x-shadows {
+  background-image: linear-gradient(
+      to right,
+      var(--surface) 30%,
+      transparent
+    ),
+    linear-gradient(to left, var(--surface) 30%, transparent),
+    linear-gradient(to right, var(--hairline), transparent),
+    linear-gradient(to left, var(--hairline), transparent);
+  background-position: 0 0, 100% 0, 0 0, 100% 0;
+  background-size: 32px 100%, 32px 100%, 16px 100%, 16px 100%;
+  background-repeat: no-repeat;
+  background-attachment: local, local, scroll, scroll;
 }

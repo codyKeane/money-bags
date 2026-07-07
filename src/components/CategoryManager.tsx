@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import {
   createCategoryAction,
   deleteCategoryAction,
@@ -10,7 +10,9 @@ import {
 import { CATEGORICAL_SLOTS } from "@/lib/palette";
 import { ColorDot } from "@/components/CategoryBadge";
 import { formatCents } from "@/lib/money";
-import { Field, FormError, buttonClass, inputClass, toggleButtonClass } from "@/components/ui/form";
+import { ConfirmButton } from "@/components/ui/confirm-button";
+import { FlashMessage, useFlash } from "@/components/ui/flash";
+import { Field, FormError, buttonClass, inputClass, rowActionClass, toggleButtonClass } from "@/components/ui/form";
 import { useServerForm } from "@/components/ui/use-server-form";
 import {
   TableCard,
@@ -46,7 +48,7 @@ function CategoryFields({
   return (
     <>
       <Field label="Name">
-        <input name="name" required maxLength={60} defaultValue={initial?.name} className={inputClass} />
+        <input name="name" required maxLength={60} defaultValue={initial?.name} className={inputClass} autoFocus />
       </Field>
       <Field label="Keywords (comma-separated, matched against descriptions)">
         <input
@@ -108,19 +110,25 @@ function EditRow({ category, onDone }: { category: CategoryWithStats; onDone: ()
 export function CategoryManager({ categories }: { categories: CategoryWithStats[] }) {
   const [showCreate, setShowCreate] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [deletePending, startDelete] = useTransition();
+  const [message, flash] = useFlash();
 
   const [createState, createFormAction, createPending] = useServerForm<CategoryFormState>(
     createCategoryAction,
-    { onSuccess: () => setShowCreate(false) },
+    {
+      onSuccess: () => {
+        setShowCreate(false);
+        flash("Category created");
+      },
+    },
   );
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
+      <div className="flex items-center gap-3">
         <button type="button" onClick={() => setShowCreate((v) => !v)} className={toggleButtonClass}>
           {showCreate ? "Cancel" : "New category"}
         </button>
+        <FlashMessage message={message} />
       </div>
 
       {showCreate ? (
@@ -178,31 +186,22 @@ export function CategoryManager({ categories }: { categories: CategoryWithStats[
                   <td className="px-3 py-2 text-ink-2">{c.excludeFromSpending ? "Yes" : ""}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{c.transactionCount}</td>
                   <td className="px-3 py-2 whitespace-nowrap text-right">
-                    <button
-                      type="button"
-                      onClick={() => setEditingId(c.id)}
-                      className="text-xs text-ink-2 underline"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      disabled={deletePending}
-                      className="ml-3 text-xs text-ink-2 underline disabled:opacity-50"
-                      onClick={() => {
-                        if (
-                          !window.confirm(
-                            `Delete "${c.name}"? Its ${c.transactionCount} transactions become Uncategorized.`,
-                          )
-                        )
-                          return;
-                        startDelete(async () => {
-                          await deleteCategoryAction(c.id);
-                        });
-                      }}
-                    >
-                      Delete
-                    </button>
+                    <span className="inline-flex items-center gap-3">
+                      <button type="button" onClick={() => setEditingId(c.id)} className={rowActionClass}>
+                        Edit
+                      </button>
+                      <ConfirmButton
+                        label="Delete"
+                        prompt="Delete?"
+                        title={`Delete "${c.name}" — its ${c.transactionCount} transactions become Uncategorized`}
+                        confirmLabel="Delete"
+                        pendingLabel="Deleting…"
+                        onConfirm={async () => {
+                          const res = await deleteCategoryAction(c.id);
+                          if (!res.ok) return res.error ?? "Delete failed";
+                        }}
+                      />
+                    </span>
                   </td>
                 </>
               )}

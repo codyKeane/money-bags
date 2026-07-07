@@ -36,5 +36,5 @@ export const CHROME = {
   inkMuted: { light: "#898781", dark: "#898781" },
   gridline: { light: "#e1e0d9", dark: "#2c2c2a" },
   baseline: { light: "#c3c2b7", dark: "#383835" },
-  deltaGood: { light: "#006300", dark: "#0ca30c" },
+  deltaGood: { light: "#147a41", dark: "#3ecf8e" }, // keep in sync with --delta-good
 } as const;

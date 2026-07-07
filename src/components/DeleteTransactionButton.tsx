@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { deleteTransactionAction } from "@/server/actions";
 
 export function DeleteTransactionButton({
@@ -10,22 +10,19 @@ export function DeleteTransactionButton({
   transactionId: string;
   description: string;
 }) {
-  const [pending, startTransition] = useTransition();
   return (
-    <button
-      type="button"
-      disabled={pending}
-      className="text-xs text-ink-2 underline disabled:opacity-50"
-      onClick={() => {
-        if (!window.confirm(`Delete "${description}"?`)) return;
-        // The action revalidates /transactions; the row drops on the server
-        // re-render carried in the action response — no refresh needed (P2).
-        startTransition(async () => {
-          await deleteTransactionAction(transactionId);
-        });
+    <ConfirmButton
+      label="Delete"
+      prompt="Delete?"
+      title={`Delete "${description}"`}
+      confirmLabel="Delete"
+      pendingLabel="Deleting…"
+      // The action revalidates /transactions; the row drops on the server
+      // re-render carried in the action response — no refresh needed (P2).
+      onConfirm={async () => {
+        const res = await deleteTransactionAction(transactionId);
+        if (!res.ok) return res.error ?? "Delete failed";
       }}
-    >
-      Delete
-    </button>
+    />
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import type { CategoryOption } from "@/components/CategorySelect";
 import { inputClass } from "@/components/ui/form";
 
@@ -17,6 +17,10 @@ export function TransactionFilters({
   const router = useRouter();
   const params = useSearchParams();
   const [q, setQ] = useState(params.get("q") ?? "");
+  // Wrapping router.replace in a transition surfaces the RSC round-trip as
+  // `pending`, so a filter change shows "Updating…" instead of feeling frozen
+  // while the server re-queries (UX7).
+  const [pending, startTransition] = useTransition();
 
   function apply(patch: Record<string, string>) {
     const next = new URLSearchParams(params.toString());
@@ -26,12 +30,15 @@ export function TransactionFilters({
     }
     next.delete("page"); // filters change the result set — restart at page 1
     const qs = next.toString();
-    router.replace(qs ? `/transactions?${qs}` : "/transactions");
+    startTransition(() => {
+      router.replace(qs ? `/transactions?${qs}` : "/transactions");
+    });
   }
 
   return (
     <form
       className="flex flex-wrap items-center gap-2"
+      aria-busy={pending}
       onSubmit={(e) => {
         e.preventDefault();
         apply({ q: q.trim() });
@@ -100,13 +107,16 @@ export function TransactionFilters({
           type="button"
           onClick={() => {
             setQ("");
-            router.replace("/transactions");
+            startTransition(() => router.replace("/transactions"));
           }}
-          className="text-xs text-ink-muted underline"
+          className="inline-flex min-h-11 items-center text-xs text-ink-muted underline"
         >
           Clear filters
         </button>
       ) : null}
+      <span role="status" aria-live="polite" className="text-xs text-ink-muted">
+        {pending ? "Updating…" : ""}
+      </span>
     </form>
   );
 }

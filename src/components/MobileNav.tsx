@@ -23,7 +23,7 @@ export function MobileNav() {
           aria-expanded={open}
           aria-label={open ? "Close navigation" : "Open navigation"}
           onClick={() => setOpen((v) => !v)}
-          className="rounded-md border border-hairline px-3 py-1.5 text-sm text-ink-2 hover:bg-gridline/40"
+          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-hairline px-3 py-1.5 text-sm text-ink-2 hover:bg-gridline/40"
         >
           {open ? "✕" : "☰"}
         </button>
@@ -37,7 +37,7 @@ export function MobileNav() {
                 key={href}
                 href={href}
                 onClick={() => setOpen(false)}
-                className={`rounded-md px-3 py-2 text-sm ${
+                className={`flex min-h-11 items-center rounded-md px-3 py-2 text-sm ${
                   active
                     ? "bg-gridline/60 font-medium text-ink"
                     : "text-ink-2 hover:bg-gridline/40"

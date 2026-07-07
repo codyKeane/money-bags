@@ -28,7 +28,10 @@ export default async function EditTransactionPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <Link href="/transactions" className="text-sm text-ink-2 underline underline-offset-2">
+      <Link
+        href="/transactions"
+        className="inline-flex min-h-11 items-center self-start text-sm text-ink-2 underline underline-offset-2"
+      >
         ← Back to transactions
       </Link>
       <h1 className="text-lg font-semibold">Edit transaction</h1>

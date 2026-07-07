@@ -10,7 +10,8 @@ import {
 } from "@/server/actions";
 import { ACCOUNT_TYPES } from "@/lib/account-types";
 import { formatCents } from "@/lib/money";
-import { Field, FormError, buttonClass, inputClass, toggleButtonClass } from "@/components/ui/form";
+import { FlashMessage, useFlash } from "@/components/ui/flash";
+import { Field, FormError, buttonClass, inputClass, rowActionClass, toggleButtonClass } from "@/components/ui/form";
 import { useServerForm } from "@/components/ui/use-server-form";
 import {
   TableCard,
@@ -24,7 +25,7 @@ function AccountFields({ initial }: { initial?: AccountWithBalance }) {
   return (
     <>
       <Field label="Name">
-        <input name="name" required maxLength={120} defaultValue={initial?.name} className={inputClass} />
+        <input name="name" required maxLength={120} defaultValue={initial?.name} className={inputClass} autoFocus />
       </Field>
       <Field label="Type">
         <select name="type" defaultValue={initial?.type ?? "CHECKING"} className={inputClass}>
@@ -92,7 +93,7 @@ function DeleteRow({ account, onDone }: { account: AccountWithBalance; onDone: (
         <button
           type="button"
           disabled={typed !== account.name || pending}
-          className="rounded-md border border-hairline px-3 py-1 text-sm hover:bg-gridline/40 disabled:opacity-40"
+          className="inline-flex min-h-11 items-center rounded-md border border-delta-bad/50 px-3 py-1 text-sm text-delta-bad hover:bg-delta-bad/10 disabled:opacity-40"
           onClick={() =>
             // deleteAccountAction revalidates; no refresh needed (P2).
             startTransition(async () => {
@@ -108,7 +109,7 @@ function DeleteRow({ account, onDone }: { account: AccountWithBalance; onDone: (
           Cancel
         </button>
       </div>
-      {error ? <p className="text-ink-2">⚠ {error}</p> : null}
+      {error ? <p className="text-delta-bad">⚠ {error}</p> : null}
     </div>
   );
 }
@@ -118,17 +119,24 @@ export function AccountsManager({ accounts }: { accounts: AccountWithBalance[] }
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  const [message, flash] = useFlash();
   const [createState, createFormAction, createPending] = useServerForm<CreateAccountState>(
     createAccountAction,
-    { onSuccess: () => setShowCreate(false) },
+    {
+      onSuccess: () => {
+        setShowCreate(false);
+        flash("Account created");
+      },
+    },
   );
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
+      <div className="flex items-center gap-3">
         <button type="button" onClick={() => setShowCreate((v) => !v)} className={toggleButtonClass}>
           {showCreate ? "Cancel" : "New account"}
         </button>
+        <FlashMessage message={message} />
       </div>
 
       {showCreate ? (
@@ -190,20 +198,14 @@ export function AccountsManager({ accounts }: { accounts: AccountWithBalance[] }
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{a.transactionCount}</td>
                   <td className="px-3 py-2 whitespace-nowrap text-right">
-                    <button
-                      type="button"
-                      onClick={() => setEditingId(a.id)}
-                      className="text-xs text-ink-2 underline"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDeletingId(a.id)}
-                      className="ml-3 text-xs text-ink-2 underline"
-                    >
-                      Delete
-                    </button>
+                    <span className="inline-flex items-center gap-3">
+                      <button type="button" onClick={() => setEditingId(a.id)} className={rowActionClass}>
+                        Edit
+                      </button>
+                      <button type="button" onClick={() => setDeletingId(a.id)} className={rowActionClass}>
+                        Delete
+                      </button>
+                    </span>
                   </td>
                 </>
               )}

@@ -12,7 +12,7 @@ export const bodyRowClass = "border-b border-hairline last:border-b-0";
 
 export function TableCard({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-hairline bg-surface">
+    <div className="scroll-x-shadows overflow-x-auto rounded-lg border border-hairline bg-surface">
       <table className="w-full text-sm">{children}</table>
     </div>
   );

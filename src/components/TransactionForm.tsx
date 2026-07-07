@@ -49,7 +49,7 @@ export function TransactionForm({
     >
       {initial ? <input type="hidden" name="transactionId" value={initial.transactionId} /> : null}
       <Field label="Account">
-        <select name="accountId" required defaultValue={initial?.accountId ?? ""} className={inputClass}>
+        <select name="accountId" required defaultValue={initial?.accountId ?? ""} className={inputClass} autoFocus>
           {!initial ? <option value="">Select an account…</option> : null}
           {accounts.map((a) => (
             <option key={a.id} value={a.id}>
@@ -88,7 +88,7 @@ export function TransactionForm({
         <button
           type="submit"
           disabled={pending}
-          className="self-start rounded-md border border-hairline px-3 py-1 text-sm font-medium hover:bg-gridline/40 disabled:opacity-50"
+          className="inline-flex min-h-11 items-center self-start rounded-md border border-hairline px-3 py-1 text-sm font-medium hover:bg-gridline/40 disabled:opacity-50"
         >
           {pending ? "Saving…" : mode === "edit" ? "Save changes" : "Add transaction"}
         </button>

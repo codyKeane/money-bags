@@ -164,7 +164,7 @@ export function SplitEditor({
           type="button"
           onClick={save}
           disabled={pending || !canSave}
-          className="rounded-md border border-hairline px-3 py-1 text-sm font-medium hover:bg-gridline/40 disabled:opacity-50"
+          className="inline-flex min-h-11 items-center rounded-md border border-hairline px-3 py-1 text-sm font-medium hover:bg-gridline/40 disabled:opacity-50"
         >
           {pending ? "Saving…" : alreadySplit ? "Update split" : "Save split"}
         </button>
@@ -178,7 +178,7 @@ export function SplitEditor({
             Remove split
           </button>
         ) : null}
-        {error ? <p className="text-sm text-ink-2">⚠ {error}</p> : null}
+        {error ? <p className="text-sm text-delta-bad">⚠ {error}</p> : null}
       </div>
     </section>
   );
