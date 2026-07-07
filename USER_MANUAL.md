@@ -155,6 +155,11 @@ owe.** The app gets it by adding up the balance of every account. Because credit
 cards have negative balances, debts subtract automatically. If your checking is
 `+$3,000` and your credit card is `-$700`, your net worth is `+$2,300`.
 
+Net worth only makes sense when all your accounts use the **same currency**
+(the app assumes US dollars). If it ever detects accounts in different
+currencies, the dashboard shows a warning instead of a misleading total — see
+the [Troubleshooting & FAQ](#11-troubleshooting--faq) note on currencies.
+
 ### Income vs. spending
 
 - **Income** = money that came in during a month (all the positive amounts).
@@ -177,6 +182,16 @@ transactions into them **automatically**.
 A transaction the app couldn't confidently label is left **Uncategorized**.
 That's normal — you can label it yourself in one click, and it still counts
 toward your income and spending totals.
+
+### Budget (optional)
+
+A **monthly spending target** you can attach to any category — say $500 for
+Groceries. Budgets are entirely optional; a category with none behaves exactly
+as before. Once you set one, the dashboard shows a **Budget vs actual** bar for
+that category: how much you've spent this month against the target, with the bar
+turning **red** and reading "Over by …" if you cross it. Refunds and other
+categories' spending never affect the bar. Setting a budget changes nothing
+about your totals — it's just a goalpost.
 
 ### Transfer (and why it isn't spending)
 
@@ -291,12 +306,18 @@ actually has data**, so it's never blank. You can't go past the current month.
 
 | Card | What it shows |
 |---|---|
-| **Net worth** | Every account's balance added together. Click it to jump to the Accounts page. |
+| **Net worth** | Every account's balance added together. Click it to jump to the Accounts page. (If your accounts span more than one currency, a warning appears below the cards instead of a meaningless total.) |
 | **Income · [month]** | Money that came in during the selected month. |
 | **Spending · [month]** | Money that went out during the selected month. |
 
 **Spending by category** — a chart breaking that month's spending into
 categories, biggest first. If nothing was spent that month, it says so.
+
+**Budget vs actual** — only appears once you've given at least one category a
+[monthly budget](#budget-optional). It lists each budgeted category with a
+progress bar: this month's spending against the target. Bars go **red** with an
+"Over by …" note when you exceed the budget, and stay neutral with a "… left"
+note while you're under.
 
 **Income vs. spending · last 6 months** — a chart comparing what came in versus
 what went out for each of the last six months. This is the best view for
@@ -314,7 +335,7 @@ The table shows one row per account with these columns:
 
 | Column | Meaning |
 |---|---|
-| **Account** | The name you gave it (e.g. *Everyday Checking*). |
+| **Account** | The name you gave it (e.g. *Everyday Checking*). Click it to see just that account's transactions. |
 | **Type** | CHECKING, SAVINGS, CREDIT_CARD, CASH, or INVESTMENT. |
 | **Institution** | The bank or company (optional). |
 | **Opening** | The opening balance you set. |
@@ -345,12 +366,16 @@ Each category has:
   `WHOLE HARVEST MARKET` is auto-labeled Groceries.
 - A **Color** — pick **None** or one of eight named colors (Blue, Aqua, Yellow,
   Green, Violet, Red, Magenta, Orange). Color is just for the charts and badges.
+- A **Monthly budget (optional)** — a dollar target (e.g. `500`). Leave it blank
+  for no budget. When set, it powers the dashboard's [Budget vs
+  actual](#41-dashboard-the-home-page) bars. See [Budget](#budget-optional).
 - An **"Exclude from income/spending"** checkbox — turn this on for
   transfer-type categories so they don't distort your totals (see
   [Transfers](#transfer-and-why-it-isnt-spending)).
 
-The table columns are **Category**, **Keywords**, **Excluded** (Yes/blank), and
-**Transactions** (how many transactions currently use it).
+The table columns are **Category**, **Keywords**, **Budget** (the monthly target
+or a dash), **Excluded** (Yes/blank), and **Transactions** (how many
+transactions currently use it).
 
 **Buttons:**
 
@@ -387,10 +412,16 @@ Click **Add transaction** to save.
 - **All categories** — narrow to one category, or pick **Uncategorized** to find
   transactions that still need a label.
 - **Month picker** — narrow to one month.
+- **From / To dates** — narrow to a custom date range (either end can be left
+  blank for an open-ended range). Use this instead of the month picker when you
+  want, say, "the last two weeks" or "the whole tax year."
 - **Clear filters** — appears once any filter is active; resets everything.
 
 Every filter is saved in the page's web address, so you can **bookmark a filtered
-view** (like "all Dining transactions") and it'll still work later.
+view** (like "all Dining transactions") and it'll still work later. If you land
+on a filter for an account or category that no longer exists (e.g. an old
+bookmark after you deleted it), the app simply ignores that filter and shows
+everything, rather than a confusing empty page.
 
 **The table** shows Date, Description, Account, Category, and Amount. When you're
 on this page (not the dashboard), two extra things are true:
@@ -399,6 +430,14 @@ on this page (not the dashboard), two extra things are true:
   one transaction.
 - Each row has an **Edit** link (change any field) and a **Delete** button
   (remove it; it asks you to confirm).
+
+The **Account** name in each row is a link that filters the table down to that
+account.
+
+**Export CSV** — next to the "Showing …" count sits an **Export CSV** link. It
+downloads exactly the rows your current filters produce (not just the page
+you're looking at) as a spreadsheet file — handy for taxes, sharing with an
+accountant, or your own analysis. Clear the filters first to export everything.
 
 **Pagination** — the table shows 50 transactions at a time. At the bottom you'll
 see *"Showing 1–50 of 320"* with **← Prev** and **Next →** links. Your filters
@@ -523,6 +562,27 @@ npm run db:backup
 This writes a timestamped copy into `data/backups/`. It's safe to run even while
 the app is open. Do it regularly (or on a schedule).
 
+### Recipe I — Set a monthly budget for a category
+
+1. Go to **Categories**.
+2. Click **Edit** on the category you want to budget (e.g. *Groceries*).
+3. In **Monthly budget**, type the dollar target (e.g. `500`). Leave it blank
+   later if you ever want to remove the budget.
+4. Click **Save**.
+5. Open the **Dashboard**. A **Budget vs actual** section now shows a bar for
+   that category — green-ish and "… left" while you're under, red and "Over
+   by …" once you pass it. Switch months with the arrows to check other months.
+
+### Recipe J — Export transactions to a spreadsheet
+
+1. Go to **Transactions**.
+2. (Optional) Set any filters — account, category, month, a From/To date range,
+   or a search — to narrow down what you export. To export everything, click
+   **Clear filters** first.
+3. Click **Export CSV** (next to the "Showing …" count).
+4. Your browser downloads a `.csv` file containing exactly those rows. Open it in
+   any spreadsheet program, or hand it to your accountant.
+
 ---
 
 ## 6. How the app thinks
@@ -625,6 +685,20 @@ Date,Description,Amount
 2026-06-04,BLUE DOOR CAFE,-14.75
 ```
 
+If a required column is missing entirely, the app stops and gives you **one
+clear message** ("Could not find a date … column. Headers seen: …") instead of
+flagging every single row — so you know immediately it's a header problem, not
+bad data.
+
+### Advanced: telling the app which column is which
+
+If your bank uses unusual header names the app doesn't recognize, expand
+**Advanced: column mapping** on the Import screen. It gives you a box for each
+field — **Date, Description, Amount, Debit, Credit** — where you type the *exact*
+header text from your file. Fill in only the ones that need it; leave the rest
+blank to keep auto-detection. For example, if your file's date column is headed
+`Txn Day`, put `Txn Day` in the Date box and import as normal.
+
 ### Amount formats it understands
 
 The parser is flexible about how amounts are written. All of these are accepted:
@@ -653,7 +727,10 @@ The **Date format in file** dropdown offers:
 
 Auto-detect works for almost everything. Force a specific order only if you check
 your imported dates and they look swapped (e.g. a June 3rd showing up as March
-6th).
+6th). When auto-detect meets a genuinely ambiguous date (like `03/04`, which
+could be March 4th or April 3rd), it reads it as **MM/DD** and adds a
+**warning** to the import result so you can re-import with the right order if
+your bank uses DD/MM.
 
 ### The import result
 
@@ -668,6 +745,8 @@ After you click **Import statement**, you get a summary like:
 - **Rows with errors** — lines the app couldn't read, each with its line number
   and the reason. Fix those lines in the file and re-import; the good rows are
   already saved and won't double up.
+- **Warnings** — non-fatal notes (like the ambiguous-date warning above). The
+  rows still imported; a warning is just a heads-up worth a glance.
 
 ### Where to keep your statement files
 
@@ -684,7 +763,10 @@ If you prefer the terminal, you can import without the web page:
 npm run import -- --file statement.csv --account "Everyday Checking" --type CHECKING --date-format MDY
 ```
 
-`--type` and `--date-format` are optional.
+`--type` and `--date-format` are optional. For unusual headers, the same column
+mapping the web UI offers is available as flags — `--col-date "Txn Day"`,
+`--col-amount "Value"`, and likewise `--col-description`, `--col-debit`,
+`--col-credit`. Any warnings are printed alongside the imported/skipped counts.
 
 ---
 
@@ -834,8 +916,19 @@ app's code — not your data.
 Yes — create as many accounts as you like, of any types, from any institutions.
 
 **Does it handle multiple currencies?**
-Amounts are shown in US dollars. Mixing currencies in one database isn't
-supported yet, so stick to one currency.
+Amounts are shown in US dollars, and mixing currencies in one database isn't
+supported yet, so stick to one currency. As a safeguard, if the app ever sees
+accounts in more than one currency it shows a warning on the dashboard instead
+of adding them into a meaningless net-worth total.
+
+**How do I set a budget?**
+On the **Categories** page, edit a category and fill in **Monthly budget**. The
+dashboard then shows a Budget vs actual bar for it. See
+[Recipe I](#recipe-i--set-a-monthly-budget-for-a-category).
+
+**How do I get my transactions out of the app?**
+Use the **Export CSV** link on the Transactions page — it downloads whatever
+your current filters show. See [Recipe J](#recipe-j--export-transactions-to-a-spreadsheet).
 
 ---
 
@@ -846,8 +939,14 @@ supported yet, so stick to one currency.
   money in, negative = money out.
 - **Balance** — how much is currently in an account (opening balance + all its
   transactions).
+- **Budget** — an optional monthly spending target on a category, shown as a
+  Budget vs actual bar on the dashboard.
 - **Category** — a label that groups similar transactions (Groceries, Dining, …).
+- **Column mapping** — telling the import which CSV header is the date, amount,
+  etc., when the app can't guess (the Import screen's "Advanced" section).
 - **CSV** — a plain "comma-separated values" file; the standard export from banks.
+- **Export** — downloading your (optionally filtered) transactions as a CSV file
+  from the Transactions page.
 - **Dashboard** — the home screen with your totals and charts.
 - **Import** — loading transactions into the app from a bank's CSV file.
 - **Income** — money that came in during a month (positive amounts).

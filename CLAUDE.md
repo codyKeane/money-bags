@@ -105,6 +105,15 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
   a category flagged `excludeFromSpending` (e.g. Transfers) is left out of
   spending, income, and the trend chart; uncategorized rows always count.
   Spending = negative `amountCents`, income = positive.
+- **Budgets**: `categories.monthlyBudgetCents` is a nullable positive-cents
+  target (null = no budget). `getBudgetVsActual(month)` LEFT-JOINs each budgeted
+  category to its month outflow, computing spend the same way as spending math
+  (negative-only, refunds don't reduce it) so a zero-spend budget still shows.
+- **Currency**: `accounts.currency` defaults `USD` and net-worth SUM assumes a
+  single currency. `getNetWorthOverview` returns the distinct currencies; the
+  dashboard warns (not sums) when there's more than one. Money deltas use the
+  `--delta-good` / `--delta-bad` tokens, always paired with text (never color
+  alone) per the CVD-safe palette rule.
 - **Input safety**: zod-validate every external input; Drizzle query builder
   or parameterized `sql` fragments only — never string-built SQL. Uploads
   capped at 5 MB, CSV text only.
