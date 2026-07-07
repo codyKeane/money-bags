@@ -68,6 +68,7 @@ export function TransactionForm({
         <input
           name="amount"
           required
+          inputMode="decimal"
           placeholder="-12.50"
           defaultValue={initial ? (initial.amountCents / 100).toFixed(2) : ""}
           className={inputClass}

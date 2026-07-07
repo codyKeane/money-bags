@@ -41,6 +41,7 @@ function AccountFields({ initial }: { initial?: AccountWithBalance }) {
       <Field label="Opening balance (signed dollars, e.g. -250.00)">
         <input
           name="openingBalance"
+          inputMode="decimal"
           defaultValue={initial ? (initial.openingBalanceCents / 100).toFixed(2) : ""}
           placeholder="0.00"
           className={inputClass}

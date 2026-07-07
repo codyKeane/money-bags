@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { NAV_LINKS } from "./nav-links";
+import { NAV_LINKS, isActiveNav } from "./nav-links";
 
 // Small-screen top bar; the desktop Sidebar is hidden below md and this is
 // hidden at md and up.
@@ -31,7 +31,7 @@ export function MobileNav() {
       {open ? (
         <nav className="flex flex-col gap-1 border-t border-hairline px-4 py-2">
           {NAV_LINKS.map(({ href, label }) => {
-            const active = pathname === href;
+            const active = isActiveNav(pathname, href);
             return (
               <Link
                 key={href}

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { NAV_LINKS } from "./nav-links";
+import { NAV_LINKS, isActiveNav } from "./nav-links";
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -14,7 +14,7 @@ export function Sidebar() {
       </div>
       <nav className="flex flex-col gap-1">
         {NAV_LINKS.map(({ href, label }) => {
-          const active = pathname === href;
+          const active = isActiveNav(pathname, href);
           return (
             <Link
               key={href}

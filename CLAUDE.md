@@ -43,7 +43,14 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
   get **no** default categories (`createTestDb`), so tests seed their own.
 - `src/app/` — RSC pages (`/`, `/transactions`, `/accounts`,
   `/categories`, `/import`), Server Actions for mutations, thin GET JSON
-  routes under `/api` for local scripting.
+  routes under `/api` for local scripting. Every page is `force-dynamic`, so a
+  `loading.tsx` (root + a table-shaped one for `/transactions`) shows a
+  `Skeleton` (`ui/skeleton.tsx`) instead of freezing on nav — add one for any
+  new heavy route. Titles come from the layout's `title.template`
+  (`%s · Finance Engine`) + a per-page `metadata.title`; the root page keeps the
+  default (the template never applies to its own segment). `not-found.tsx` is
+  the global 404 that `notFound()` renders. Active nav uses
+  `isActiveNav(pathname, href)` from `nav-links.ts`, not `pathname === href`.
 - `src/server/actions/` — every UI mutation (accounts, categories,
   transactions, apply-rules) as `"use server"` modules split by domain
   (`accounts.ts`, `categories.ts`, `transactions.ts`), sharing helpers/types

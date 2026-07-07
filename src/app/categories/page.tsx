@@ -4,6 +4,8 @@ import { getCategoriesWithStats } from "@/server/services/categories";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "Categories" };
+
 export default async function CategoriesPage() {
   const categories = await getCategoriesWithStats();
   return (

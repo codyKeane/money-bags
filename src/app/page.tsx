@@ -22,6 +22,10 @@ import {
 // Synchronous SQLite reads must never bake into a prerender.
 export const dynamic = "force-dynamic";
 
+// No title override here: the layout's title.template applies to child segments,
+// not the root page, so the home tab shows the app-name default "Finance Engine"
+// (the conventional home title); sub-pages get "<Page> · Finance Engine".
+
 export default async function DashboardPage({
   searchParams,
 }: {

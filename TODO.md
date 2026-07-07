@@ -6,7 +6,8 @@ Shipped milestones: foundation (`a17fad3`) → CSV/hardening/management UIs
 **features milestone** (`56c58ef`/`5019ec8`/`f716fa1`/`390bbd2`/`b9d9575`) —
 budgets, CSV export, date filter, import robustness, error handling →
 **import-undo milestone** (U1, migration 0003) — batch-tracked imports with a
-one-click undo.
+one-click undo → **UX-polish milestone r1** (UX1–UX6) — loading skeletons,
+per-page titles, active-nav sub-routes, decimal inputs, empty states, not-found.
 
 ## ✅ Engineering milestone — DONE (verified byte-identical + tests green)
 
@@ -50,6 +51,25 @@ one-click undo.
   server-side. `/import` now shows a "Recent imports" table with per-row Undo.
   Closes the CLAUDE.md "delete the corrupted rows first" gap.
 
+## ✅ UX-polish milestone (round 1) — DONE (build/tests green, verified at runtime)
+
+- **UX1 loading skeletons** — `Skeleton` primitive (`ui/skeleton.tsx`) + root
+  `app/loading.tsx` and a table-shaped `app/transactions/loading.tsx`, so
+  force-dynamic pages show structure instantly instead of freezing on nav.
+- **UX2 per-page titles** — layout `title.template` (`%s · Finance Engine`) +
+  per-page `metadata.title` (Transactions/Accounts/Categories/Import/Edit). Home
+  keeps the app-name default (template doesn't apply to the root segment).
+- **UX3 active-nav sub-routes** — `isActiveNav(pathname, href)` (exact for `/`,
+  prefix for the rest, unit-tested) shared by Sidebar + MobileNav, so
+  `/transactions/[id]/edit` keeps Transactions lit.
+- **UX4 decimal inputs** — `inputMode="decimal"` on the amount + opening-balance
+  inputs (mobile numeric keypad; budget input already had it).
+- **UX5 smarter empty states** — `/transactions` distinguishes empty-ledger
+  ("add one / import") from empty-filter ("Clear filters"); footer hidden at 0.
+- **UX6 not-found + return nav** — global `app/not-found.tsx` (used by
+  `notFound()` on a deleted transaction) + "← Back to transactions" on the edit
+  page.
+
 ## Remaining — pick a theme for the next milestone
 
 ### Fresh functionality audit (new — ranked by user value)
@@ -65,15 +85,16 @@ one-click undo.
   rollup (M) · near-duplicate import detection (S) · running-balance import
   guard (S) · opening-balance dating (S/M) · refund semantics (M).
 
-### Fresh UX audit (new — mostly S, high perceived quality)
-- [ ] `loading.tsx` skeletons (force-dynamic pages freeze on nav) · filter
-  pending feedback · `inputMode="decimal"` on money inputs · success feedback
-  after create · styled deletes (replace `window.confirm`) · smarter empty
-  states (empty-filter vs empty-ledger) · inflow/outflow color (+`--delta-bad`
-  token) · edit-page return nav + `not-found.tsx` · error danger color ·
-  ≥44px tap targets · table scroll affordance · per-page `<title>`s ·
-  active-nav sub-route matching · `aria-live` on results · autofocus on open ·
-  formatted dates · StatCard link affordance · CategorySelect color dot.
+### Fresh UX audit — round 2 (remaining; mostly S, high perceived quality)
+Shipped in round 1: loading skeletons · `inputMode` money inputs · empty-filter
+vs empty-ledger · edit-page return nav + `not-found.tsx` · per-page `<title>`s ·
+active-nav sub-route matching. Still open:
+- [ ] filter pending feedback (`useFormStatus`/`useTransition`) · success
+  feedback after create · styled deletes (replace `window.confirm`, incl. the
+  new import-undo confirm) · inflow/outflow color (+`--delta-bad` token) ·
+  error danger color · ≥44px tap targets · table scroll affordance ·
+  `aria-live` on results · autofocus on open · formatted dates ·
+  StatCard link affordance · CategorySelect color dot.
 
 ### Deferred by design
 Recurring-transaction auto-detection, OFX/QIF, multi-currency conversion,

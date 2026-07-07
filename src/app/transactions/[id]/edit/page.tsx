@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { TransactionForm } from "@/components/TransactionForm";
 import { getAccountOptions } from "@/server/services/accounts";
@@ -5,6 +6,8 @@ import { getAllCategories } from "@/server/services/categories";
 import { getTransactionById } from "@/server/services/transactions";
 
 export const dynamic = "force-dynamic";
+
+export const metadata = { title: "Edit transaction" };
 
 export default async function EditTransactionPage({
   params,
@@ -22,6 +25,9 @@ export default async function EditTransactionPage({
 
   return (
     <div className="flex flex-col gap-4">
+      <Link href="/transactions" className="text-sm text-ink-2 underline underline-offset-2">
+        ← Back to transactions
+      </Link>
       <h1 className="text-lg font-semibold">Edit transaction</h1>
       <TransactionForm
         accounts={accounts.map((a) => ({ id: a.id, name: a.name }))}

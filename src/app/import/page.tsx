@@ -5,6 +5,8 @@ import { getRecentImportBatches } from "@/server/services/import";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "Import" };
+
 // Compact local timestamp. Formatted here (server) rather than in the client
 // component so the two renders can't disagree on timezone/locale.
 const timestamp = new Intl.DateTimeFormat("en-US", {

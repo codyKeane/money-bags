@@ -4,7 +4,11 @@ import { MobileNav } from "@/components/MobileNav";
 import { Sidebar } from "@/components/Sidebar";
 
 export const metadata: Metadata = {
-  title: "Finance Engine",
+  // Per-page titles fill the %s; pages without their own title get the default.
+  title: {
+    default: "Finance Engine",
+    template: "%s · Finance Engine",
+  },
   applicationName: "Finance Engine",
   description: "Private, locally self-hosted personal finance engine",
   appleWebApp: {

@@ -3,6 +3,8 @@ import { getAccountsWithBalances } from "@/server/services/accounts";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "Accounts" };
+
 export default async function AccountsPage() {
   const accounts = await getAccountsWithBalances();
   return (
