@@ -9,6 +9,19 @@ export function formatCents(cents: number, currency = "USD"): string {
   return fmt.format(cents / 100);
 }
 
+// Parse a user-typed dollar string ("-80.00", "$1,234.5", "12") to signed cents,
+// or null if it isn't a number. Client-safe (no deps) so the split editor can
+// show a live remainder; the split action re-validates the resulting sum
+// server-side, so this stays a UI convenience, not the source of truth. The CSV
+// importer uses the stricter parseAmountToCents (bank formats, decimal commas).
+export function dollarsToCents(input: string): number | null {
+  const cleaned = input.trim().replace(/[$,\s]/g, "");
+  if (!/^[-+]?(\d+\.?\d*|\.\d+)$/.test(cleaned)) return null;
+  const value = Number(cleaned);
+  if (!Number.isFinite(value)) return null;
+  return Math.round(value * 100);
+}
+
 // Compact form for chart axis ticks and direct labels: "$1.9K" above $1,000,
 // whole dollars below ("$151.5" reads as a typo on a money label).
 const compactFormatters = new Map<string, Intl.NumberFormat>();

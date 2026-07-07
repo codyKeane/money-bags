@@ -7,7 +7,9 @@ Shipped milestones: foundation (`a17fad3`) → CSV/hardening/management UIs
 budgets, CSV export, date filter, import robustness, error handling →
 **import-undo milestone** (U1, migration 0003) — batch-tracked imports with a
 one-click undo → **UX-polish milestone r1** (UX1–UX6) — loading skeletons,
-per-page titles, active-nav sub-routes, decimal inputs, empty states, not-found.
+per-page titles, active-nav sub-routes, decimal inputs, empty states, not-found
+→ **transaction-splitting milestone** (SP1, migration 0004) — split one charge
+across categories; all spending aggregates are split-aware.
 
 ## ✅ Engineering milestone — DONE (verified byte-identical + tests green)
 
@@ -70,11 +72,24 @@ per-page titles, active-nav sub-routes, decimal inputs, empty states, not-found.
   `notFound()` on a deleted transaction) + "← Back to transactions" on the edit
   page.
 
+## ✅ Transaction-splitting milestone — DONE (migration 0004, 100 tests green, verified)
+
+- **SP1 Transaction splitting** — `transaction_splits` table (migration 0004,
+  FK cascade on the transaction / set-null on the category). A transaction with
+  ≥1 splits is categorized by its parts, not its own `categoryId`; the parts must
+  sum to the transaction amount (`splitTransactionAction` enforces it
+  server-side). New `spendingLineItems()` UNION abstraction in `summary.ts` makes
+  **all four** spending aggregates (by-category, budget-vs-actual, monthly
+  summary, trend) split-aware — an excluded split part drops out on its own.
+  Services `getSplitsForTransaction`/`replaceSplits`; `clearSplitsAction` reverts.
+  `SplitEditor` on the edit page (live remainder, balance check); the list shows
+  a "Split" badge (`isSplit`) instead of a no-op category dropdown.
+
 ## Remaining — pick a theme for the next milestone
 
 ### Fresh functionality audit (new — ranked by user value)
-- [ ] Transaction splitting across categories (the "Target run") — needs a
-  splits table + aggregation changes (L).
+- [x] ~~Transaction splitting across categories (the "Target run")~~ — shipped
+  (SP1, migration 0004).
 - [x] ~~Import batch id + undo-an-import~~ — shipped (U1, migration 0003).
 - [ ] Per-transaction exclude-from-spending override (M).
 - [ ] Transfer pairing/detection — a missed keyword silently inflates both

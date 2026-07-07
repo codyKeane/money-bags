@@ -1,11 +1,15 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import { type Db } from "@/db/client";
 import { setupTestDb } from "@/test/test-db";
+import { transactionSplits } from "@/db/schema";
 import {
   createTransaction,
   deleteTransaction,
+  getSplitsForTransaction,
   getTransactionById,
   getTransactionsPage,
+  replaceSplits,
   updateTransaction,
 } from "./transactions";
 import { createAccount, getAccountsWithBalances } from "./accounts";
@@ -162,5 +166,72 @@ describe("transactions service (integration, temp DB)", () => {
       db,
     );
     expect(combined.totalCount).toBe(0);
+  });
+});
+
+describe("transaction splits service (integration, temp DB)", () => {
+  const ctx = setupTestDb("finance-splits-");
+  let db: Db;
+  let accountId: string;
+  let catA: string;
+  let catB: string;
+  let txId: string;
+
+  beforeAll(async () => {
+    db = ctx.db;
+    accountId = (await createAccount({ name: "SplitAcct", type: "CHECKING" }, db)).id;
+    catA = (await createCategory({ name: "CatA", color: null, keywords: [], excludeFromSpending: false }, db)).id;
+    catB = (await createCategory({ name: "CatB", color: null, keywords: [], excludeFromSpending: false }, db)).id;
+    txId = (
+      await createTransaction(
+        { accountId, categoryId: null, date: "2026-06-10", description: "SPLIT ME", amountCents: -10000 },
+        db,
+      )
+    ).id;
+  });
+
+  it("replaceSplits persists parts that getSplitsForTransaction reads back", async () => {
+    await replaceSplits(
+      txId,
+      [
+        { categoryId: catA, amountCents: -6000 },
+        { categoryId: catB, amountCents: -4000 },
+      ],
+      db,
+    );
+    const splits = await getSplitsForTransaction(txId, db);
+    expect(splits).toHaveLength(2);
+    expect(splits.reduce((a, s) => a + s.amountCents, 0)).toBe(-10000);
+  });
+
+  it("flags the row as split in the transaction list", async () => {
+    const { items } = await getTransactionsPage({ q: "SPLIT ME", limit: 10, offset: 0 }, db);
+    expect(items[0]?.isSplit).toBe(true);
+  });
+
+  it("replaceSplits replaces rather than appends; empty parts clear the split", async () => {
+    await replaceSplits(txId, [{ categoryId: catA, amountCents: -10000 }], db);
+    expect(await getSplitsForTransaction(txId, db)).toHaveLength(1); // replaced, not 3
+    await replaceSplits(txId, [], db);
+    expect(await getSplitsForTransaction(txId, db)).toHaveLength(0);
+    const { items } = await getTransactionsPage({ q: "SPLIT ME", limit: 10, offset: 0 }, db);
+    expect(items[0]?.isSplit).toBe(false);
+  });
+
+  it("deleting the transaction cascades to its splits", async () => {
+    await replaceSplits(
+      txId,
+      [
+        { categoryId: catA, amountCents: -6000 },
+        { categoryId: catB, amountCents: -4000 },
+      ],
+      db,
+    );
+    await deleteTransaction(txId, db);
+    const remaining = await db
+      .select()
+      .from(transactionSplits)
+      .where(eq(transactionSplits.transactionId, txId));
+    expect(remaining).toHaveLength(0);
   });
 });

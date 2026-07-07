@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { SplitEditor } from "@/components/SplitEditor";
 import { TransactionForm } from "@/components/TransactionForm";
-import { getAccountOptions } from "@/server/services/accounts";
+import { getAccountById, getAccountOptions } from "@/server/services/accounts";
 import { getAllCategories } from "@/server/services/categories";
-import { getTransactionById } from "@/server/services/transactions";
+import { getSplitsForTransaction, getTransactionById } from "@/server/services/transactions";
 
 export const dynamic = "force-dynamic";
 
@@ -18,9 +19,11 @@ export default async function EditTransactionPage({
   const transaction = await getTransactionById(id);
   if (!transaction) notFound();
 
-  const [accounts, categories] = await Promise.all([
+  const [accounts, categories, splits, account] = await Promise.all([
     getAccountOptions(),
     getAllCategories(),
+    getSplitsForTransaction(transaction.id),
+    getAccountById(transaction.accountId),
   ]);
 
   return (
@@ -40,6 +43,13 @@ export default async function EditTransactionPage({
           description: transaction.description,
           amountCents: transaction.amountCents,
         }}
+      />
+      <SplitEditor
+        transactionId={transaction.id}
+        amountCents={transaction.amountCents}
+        currency={account?.currency ?? "USD"}
+        categories={categories.map((c) => ({ id: c.id, name: c.name }))}
+        initialSplits={splits.map((s) => ({ categoryId: s.categoryId, amountCents: s.amountCents }))}
       />
     </div>
   );

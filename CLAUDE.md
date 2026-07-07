@@ -122,6 +122,19 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
   a category flagged `excludeFromSpending` (e.g. Transfers) is left out of
   spending, income, and the trend chart; uncategorized rows always count.
   Spending = negative `amountCents`, income = positive.
+- **Transaction splits**: a transaction can be divided across categories in
+  `transaction_splits` (migration 0004). When a transaction has ≥1 split rows the
+  splits define its categorization for **every** spending aggregate and its own
+  `categoryId` is ignored; the splits' signed amounts must sum to the
+  transaction `amountCents` (enforced in `splitTransactionAction`, not the DB —
+  the DB only cascades split deletes when the transaction is deleted). All four
+  aggregates read `spendingLineItems()` in `summary.ts` — a UNION of split rows +
+  unsplit transactions with the date range pushed into both branches (P1) — so a
+  single part can sit in an excluded category without pulling the whole
+  transaction in or out of spending. `replaceSplits(id, [])` reverts to the
+  single `categoryId`. The transaction list carries `isSplit`; split rows show a
+  "Split" badge (linking to the edit page) instead of the category dropdown,
+  which would otherwise silently no-op. Edit splits on the transaction edit page.
 - **Budgets**: `categories.monthlyBudgetCents` is a nullable positive-cents
   target (null = no budget). `getBudgetVsActual(month)` LEFT-JOINs each budgeted
   category to its month outflow, computing spend the same way as spending math

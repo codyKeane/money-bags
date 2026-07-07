@@ -1,10 +1,15 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { type Db } from "@/db/client";
 import { setupTestDb } from "@/test/test-db";
-import { transactions } from "@/db/schema";
+import { transactions, transactionSplits } from "@/db/schema";
 import { getOrCreateAccountByName } from "./accounts";
 import { createCategory } from "./categories";
-import { getBudgetVsActual, getSpendingTrend } from "./summary";
+import {
+  getBudgetVsActual,
+  getMonthlySpendingByCategory,
+  getMonthlySummary,
+  getSpendingTrend,
+} from "./summary";
 
 describe("getBudgetVsActual (integration, temp DB)", () => {
   const ctx = setupTestDb("finance-budget-");
@@ -119,5 +124,68 @@ describe("getSpendingTrend (integration, temp DB)", () => {
     const points = await getSpendingTrend("2026-05", 6, ctx.db);
     expect(points).toHaveLength(6);
     expect(points[0]).toMatchObject({ month: "2025-12", incomeCents: 0, spendingCents: 0 });
+  });
+});
+
+describe("split-aware spending aggregates (integration, temp DB)", () => {
+  const ctx = setupTestDb("finance-splitagg-");
+  let db: Db;
+
+  beforeAll(async () => {
+    db = ctx.db;
+    const { account } = await getOrCreateAccountByName("Split Agg", "CHECKING", db);
+    const accountId = account.id;
+    const groceries = (
+      await createCategory(
+        { name: "Groceries", color: null, keywords: [], excludeFromSpending: false, monthlyBudgetCents: 50000 },
+        db,
+      )
+    ).id;
+    const household = (
+      await createCategory({ name: "Household", color: null, keywords: [], excludeFromSpending: false }, db)
+    ).id;
+    const gift = (
+      await createCategory({ name: "Gift", color: null, keywords: [], excludeFromSpending: true }, db)
+    ).id;
+
+    // A -100.00 store run split three ways: 60 groceries + 30 household + 10
+    // gift (excluded). Its own categoryId is null and must be ignored.
+    await db
+      .insert(transactions)
+      .values({ id: "split-run", date: "2026-06-10", description: "TARGET RUN", amountCents: -10000, accountId, categoryId: null });
+    await db.insert(transactionSplits).values([
+      { transactionId: "split-run", categoryId: groceries, amountCents: -6000 },
+      { transactionId: "split-run", categoryId: household, amountCents: -3000 },
+      { transactionId: "split-run", categoryId: gift, amountCents: -1000 },
+    ]);
+    // A whole grocery buy (unsplit) and an income row.
+    await db.insert(transactions).values([
+      { date: "2026-06-11", description: "MARKET", amountCents: -2000, accountId, categoryId: groceries },
+      { date: "2026-06-01", description: "PAY", amountCents: 200000, accountId, categoryId: null },
+    ]);
+  });
+
+  it("spending-by-category counts each split part in its own category; excluded parts drop", async () => {
+    const spend = await getMonthlySpendingByCategory("2026-06", db);
+    const by = Object.fromEntries(spend.map((s) => [s.categoryName, s.spentCents]));
+    expect(by.Groceries).toBe(8000); // 6000 split part + 2000 whole
+    expect(by.Household).toBe(3000);
+    expect("Gift" in by).toBe(false); // excluded split part not counted
+  });
+
+  it("monthly summary drops the excluded split part from the spending total", async () => {
+    const s = await getMonthlySummary("2026-06", db);
+    expect(s.spendingCents).toBe(11000); // 6000 + 3000 + 2000; gift 1000 excluded
+    expect(s.incomeCents).toBe(200000);
+  });
+
+  it("budget vs actual counts the split part assigned to the budgeted category", async () => {
+    const rows = await getBudgetVsActual("2026-06", db);
+    expect(rows.find((r) => r.categoryName === "Groceries")?.spentCents).toBe(8000);
+  });
+
+  it("spending trend reflects splits (excluded part dropped)", async () => {
+    const points = await getSpendingTrend("2026-06", 1, db);
+    expect(points[0]).toMatchObject({ month: "2026-06", spendingCents: 11000, incomeCents: 200000 });
   });
 });

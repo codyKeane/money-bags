@@ -427,12 +427,26 @@ everything, rather than a confusing empty page.
 on this page (not the dashboard), two extra things are true:
 
 - The **Category** column is a dropdown — change it to instantly re-label that
-  one transaction.
+  one transaction. (A transaction you've **split** across categories shows a
+  **Split** link here instead of the dropdown — see below.)
 - Each row has an **Edit** link (change any field) and a **Delete** button
   (remove it; it asks you to confirm).
 
 The **Account** name in each row is a link that filters the table down to that
 account.
+
+**Split a transaction across categories** — sometimes one charge is really
+several things: a single store run might be $60 groceries, $30 household, and a
+$10 gift. Open the transaction's **Edit** page and use the **Split across
+categories** box: add a part for each category and type how much of the total
+goes to it. A running **Remainder** shows how much is still unassigned; once the
+parts add up exactly to the transaction total it reads **Balanced ✓** and you can
+**Save split**. From then on, each part counts toward *its own* category in your
+spending, budgets, and charts — and if one part is a category you've marked "not
+spending" (like a reimbursed item), only that part is left out, not the whole
+charge. The transaction keeps its single line in the ledger; only the category
+breakdown changes. Click **Remove split** to turn it back into a normal
+single-category transaction.
 
 **Export CSV** — next to the "Showing …" count sits an **Export CSV** link. It
 downloads exactly the rows your current filters produce (not just the page

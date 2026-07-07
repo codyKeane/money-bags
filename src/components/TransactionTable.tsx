@@ -46,7 +46,17 @@ export function TransactionTable({
                 </Link>
               </td>
               <td className="px-3 py-2 whitespace-nowrap">
-                {categories ? (
+                {t.isSplit ? (
+                  // A split row's single categoryId is ignored by the aggregates,
+                  // so offer the split (on the edit page) instead of a dropdown
+                  // that would look like it did nothing.
+                  <Link
+                    href={`/transactions/${t.id}/edit`}
+                    className="inline-flex items-center gap-1.5 text-sm text-ink-2 underline decoration-hairline underline-offset-2 hover:decoration-ink-2"
+                  >
+                    <span aria-hidden>⧉</span> Split
+                  </Link>
+                ) : categories ? (
                   <CategorySelect
                     transactionId={t.id}
                     categoryId={t.categoryId}

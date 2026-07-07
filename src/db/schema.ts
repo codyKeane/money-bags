@@ -90,6 +90,27 @@ export const transactions = sqliteTable(
   ],
 );
 
+// A transaction can be split across categories (e.g. one store run = groceries
+// + household + a gift). When a transaction has ≥1 split rows, the splits define
+// its categorization for all spending aggregates and its own categoryId is
+// ignored; the splits' signed amounts must sum to the transaction amountCents
+// (enforced in the split action, not the DB). Remove all splits to revert to the
+// single categoryId.
+export const transactionSplits = sqliteTable(
+  "transaction_splits",
+  {
+    id: id(),
+    transactionId: text("transaction_id")
+      .notNull()
+      .references(() => transactions.id, { onDelete: "cascade" }),
+    categoryId: text("category_id").references(() => categories.id, {
+      onDelete: "set null",
+    }),
+    amountCents: integer("amount_cents").notNull(), // signed; same sign convention as transactions
+  },
+  (t) => [index("transaction_splits_transaction_idx").on(t.transactionId)],
+);
+
 export type Account = typeof accounts.$inferSelect;
 export type NewAccount = typeof accounts.$inferInsert;
 export type Category = typeof categories.$inferSelect;
@@ -98,3 +119,5 @@ export type Transaction = typeof transactions.$inferSelect;
 export type NewTransaction = typeof transactions.$inferInsert;
 export type ImportBatch = typeof importBatches.$inferSelect;
 export type NewImportBatch = typeof importBatches.$inferInsert;
+export type TransactionSplit = typeof transactionSplits.$inferSelect;
+export type NewTransactionSplit = typeof transactionSplits.$inferInsert;

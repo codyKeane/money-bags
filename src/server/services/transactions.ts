@@ -1,6 +1,12 @@
 import { and, desc, eq, gte, isNull, lt, lte, sql, type SQL } from "drizzle-orm";
 import { getDb, type Db } from "@/db/client";
-import { accounts, categories, transactions } from "@/db/schema";
+import {
+  accounts,
+  categories,
+  transactions,
+  transactionSplits,
+  type TransactionSplit,
+} from "@/db/schema";
 import { isValidIsoDate, isValidMonth, monthRange } from "@/lib/month";
 
 export interface TransactionListItem {
@@ -14,10 +20,12 @@ export interface TransactionListItem {
   categoryId: string | null;
   categoryName: string | null;
   categoryColor: string | null;
+  isSplit: boolean; // has rows in transaction_splits — categoryId is then ignored
 }
 
 // Single source of the list projection + joins, shared by the paged query and
-// getRecentTransactions (Q5).
+// getRecentTransactions (Q5). isSplit rides along as 0/1 (coerced to boolean by
+// the callers) so the list can flag split rows without a second query.
 const transactionListColumns = {
   id: transactions.id,
   date: transactions.date,
@@ -29,6 +37,7 @@ const transactionListColumns = {
   categoryId: transactions.categoryId,
   categoryName: categories.name,
   categoryColor: categories.color,
+  isSplit: sql<number>`(exists (select 1 from ${transactionSplits} where ${transactionSplits.transactionId} = ${transactions.id}))`,
 } as const;
 
 export async function getRecentTransactions(
@@ -113,7 +122,7 @@ export async function getTransactionsPage(
     .select({ n: sql<number>`count(*)` })
     .from(transactions)
     .where(where);
-  const items = await db
+  const rows = await db
     .select(transactionListColumns)
     .from(transactions)
     .innerJoin(accounts, eq(transactions.accountId, accounts.id))
@@ -122,6 +131,7 @@ export async function getTransactionsPage(
     .orderBy(desc(transactions.date), desc(transactions.createdAt))
     .limit(filter.limit)
     .offset(filter.offset);
+  const items = rows.map((r) => ({ ...r, isSplit: r.isSplit > 0 }));
   return { items, totalCount: countRow?.n ?? 0 };
 }
 
@@ -132,13 +142,14 @@ export async function getTransactionsForExport(
   query: TransactionQuery,
   db: Db = getDb(),
 ): Promise<TransactionListItem[]> {
-  return db
+  const rows = await db
     .select(transactionListColumns)
     .from(transactions)
     .innerJoin(accounts, eq(transactions.accountId, accounts.id))
     .leftJoin(categories, eq(transactions.categoryId, categories.id))
     .where(buildTransactionWhere(query))
     .orderBy(transactions.date, transactions.createdAt);
+  return rows.map((r) => ({ ...r, isSplit: r.isSplit > 0 }));
 }
 
 export async function getLatestTransactionMonth(db: Db = getDb()): Promise<string | null> {
@@ -204,4 +215,47 @@ export async function deleteTransaction(id: string, db: Db = getDb()): Promise<s
 export async function getTransactionById(id: string, db: Db = getDb()) {
   const [row] = await db.select().from(transactions).where(eq(transactions.id, id)).limit(1);
   return row ?? null;
+}
+
+// ---------- transaction splits ----------
+
+export interface SplitInput {
+  categoryId: string | null;
+  amountCents: number; // signed; same convention as transactions
+}
+
+export async function getSplitsForTransaction(
+  transactionId: string,
+  db: Db = getDb(),
+): Promise<TransactionSplit[]> {
+  return db
+    .select()
+    .from(transactionSplits)
+    .where(eq(transactionSplits.transactionId, transactionId));
+}
+
+// Replace every split for a transaction in one DB transaction. Empty `parts`
+// clears the split, reverting the transaction to its own categoryId. The caller
+// is responsible for validating that the parts sum to the transaction amount.
+export async function replaceSplits(
+  transactionId: string,
+  parts: SplitInput[],
+  db: Db = getDb(),
+): Promise<void> {
+  db.transaction((tx) => {
+    tx.delete(transactionSplits)
+      .where(eq(transactionSplits.transactionId, transactionId))
+      .run();
+    if (parts.length > 0) {
+      tx.insert(transactionSplits)
+        .values(
+          parts.map((p) => ({
+            transactionId,
+            categoryId: p.categoryId,
+            amountCents: p.amountCents,
+          })),
+        )
+        .run();
+    }
+  });
 }
