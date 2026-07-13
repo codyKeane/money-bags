@@ -69,15 +69,20 @@ That's the whole app. The rest of this manual is just detail.
 ### The fastest way to try it
 
 If the app is set up (see [Section 3](#3-getting-the-app-running)), you can load
-six months of **fake demo data** and click around with zero risk to real
-information. One command does it:
+six months of **fake demo data** into a new disposable demo ledger:
 
 ```bash
 npm run db:seed
 ```
 
-Then open the app and explore. When you're ready for your real money, you can
-delete the demo accounts or start a fresh database.
+> **Important:** the current seed command is not guarded against an existing
+> ledger. It can update accounts and categories whose names match the demo. Do
+> not run it against a ledger that contains, or may contain, personal data. If
+> there is any uncertainty, stop and make a validated backup first. A
+> code-level safety guard is planned in WP-03 of `IMPLEMENTATION_GUIDE.md`.
+
+Then open the disposable demo ledger and explore. Start a separate fresh
+database before loading real money.
 
 ### Who this manual is for
 
@@ -253,9 +258,9 @@ That's it — the app is running.
 - The first time it starts, the app also installs the 12 built-in categories
   automatically, so auto-sorting works right away.
 
-### Try it with demo data (recommended for your first look)
+### Try it with demo data (new disposable ledger only)
 
-Before you load real statements, load fake data to explore safely:
+Only in a newly created disposable demo ledger, load fake data with:
 
 ```bash
 npm run db:seed
@@ -263,8 +268,11 @@ npm run db:seed
 
 This creates **two demo accounts** (an *Everyday Checking* and a *Rewards Credit
 Card*) and about **six months of realistic transactions** — paychecks, rent,
-groceries, gas, Netflix, a credit-card payment, and more. It's safe to run more
-than once; it won't create duplicates. Now the dashboard has something to show.
+groceries, gas, Netflix, a credit-card payment, and more. The command is
+currently unguarded and may update same-named accounts or categories in an
+existing ledger. Do not run it if the target might contain personal data; make
+and validate a backup before any uncertainty. The planned WP-03 guard has not
+landed yet.
 
 ### Running it "for real" (production mode)
 
@@ -275,6 +283,11 @@ faster version that you leave running on a home server, use:
 npm run build        # prepare an optimized version (do this once after updates)
 npm start            # run that optimized version on 127.0.0.1:3100
 ```
+
+Until the planned WP-01D safety wrapper lands, a build can resolve, open, or
+migrate the configured database. Do not point a build used for testing or
+validation at a real ledger; project build verification waits for the wrapper
+described in `IMPLEMENTATION_GUIDE.md`.
 
 ### Stopping the app
 
@@ -295,7 +308,7 @@ The app automatically matches your system's **light or dark theme**.
 ### 4.1 Dashboard (the home page)
 
 This is your at-a-glance summary. If you have no transactions yet, it shows a
-short "Welcome" message pointing you to import data or run the demo seed.
+short "Welcome" message pointing you to import a statement.
 Otherwise you'll see:
 
 **A month switcher** (top right): `← July 2026 →`. Click the arrows to move
@@ -580,7 +593,8 @@ Your data is one file on your computer. Protect it (details in
 npm run db:backup
 ```
 
-This writes a timestamped copy into `data/backups/`. It's safe to run even while
+This writes a timestamped copy into the `backups/` directory beside the active
+database (`data/backups/` for the default target). It's safe to run even while
 the app is open. Do it regularly (or on a schedule).
 
 ### Recipe I — Set a monthly budget for a category
@@ -797,10 +811,11 @@ bad import, fix the file or the settings, and import again.
 
 ### Where to keep your statement files
 
-Put real statement CSVs in the project's `data/imports/` folder. That folder —
-and the database itself — is deliberately kept out of version control, so your
-financial files are never uploaded or shared. The `data/samples/` folder holds
-fake data for testing.
+Put real statement CSVs in the project's `data/imports/` folder. That folder
+and the default `data/*.db*` database targets are deliberately kept out of
+version control. A custom `DB_FILE_NAME` may not be covered until WP-12B, so
+keep it outside the repository or verify an explicit ignore rule. The
+`data/samples/` folder holds fake data for testing.
 
 ### Importing from the command line (optional)
 
@@ -872,9 +887,10 @@ edge when there's more to scroll sideways to.
 
 ## 9. Keeping your data safe
 
-Everything lives in **one file**: `data/finance.db` inside the project folder.
-That's great for privacy, but it means **you** are responsible for backups — no
-cloud is doing it for you.
+Everything lives in **one file**. By default it is `data/finance.db` inside the
+project folder; `DB_FILE_NAME` can select a different exact target. That's great
+for privacy, but it means **you** are responsible for backups — no cloud is
+doing it for you.
 
 ### Make a backup
 
@@ -882,23 +898,29 @@ cloud is doing it for you.
 npm run db:backup
 ```
 
-This safely copies the database to `data/backups/finance-<timestamp>.db`, even
-while the app is running. Run it often. (A good habit: back up before and after
-importing a big statement.)
+This safely copies the database to `backups/finance-<timestamp>.db` beside the
+active database, even while the app is running. With the default target that is
+`data/backups/finance-<timestamp>.db`. Run it often. (A good habit: back up
+before and after importing a big statement.)
 
 ### Restore from a backup
 
 1. **Stop the app** (Ctrl + C in its terminal).
-2. Copy your chosen backup file over `data/finance.db` (replace the current one).
-3. Delete the leftover helper files `data/finance.db-wal` and
-   `data/finance.db-shm` if they exist.
-4. **Start the app** again.
+2. Identify the exact active database target resolved from `DB_FILE_NAME`
+   (`data/finance.db` only when the default is in use). Never guess that a
+   custom-path ledger belongs at the default path.
+3. Copy your chosen backup file over that exact target.
+4. Delete the matching `<target>-wal` and `<target>-shm` helper files if they
+   exist.
+5. **Start the app** again.
 
 ### Privacy reminders
 
 - The app makes **zero** network calls while running. It doesn't phone home.
-- The database and your imported statements are excluded from version control, so
-  they can't be accidentally committed or uploaded.
+- The default `data/*.db*` database targets and `data/imports/` statements are
+  excluded from version control. A custom `DB_FILE_NAME` may fall outside those
+  rules until WP-12B; keep it outside the repository or verify explicit ignore
+  protection.
 - Because there's **no login**, treat "who can reach the app" as "who can see
   your money." Keep it on `127.0.0.1` or behind Tailscale.
 
@@ -912,10 +934,10 @@ Run these from the project folder in a terminal.
 |---|---|
 | `npm install` | One-time: download the app's building blocks. |
 | `npm run dev` | Start the app (development mode) at `http://127.0.0.1:3100`. |
-| `npm run build` then `npm start` | Start the faster production version. |
+| `npm run build` then `npm start` | Start the faster production version; builds can open the configured DB before WP-01D. |
 | `npm run db:migrate` | Create/upgrade the database file. |
-| `npm run db:seed` | Load six months of fake demo data (safe to repeat). |
-| `npm run db:backup` | Make a timestamped backup in `data/backups/`. |
+| `npm run db:seed` | Unguarded demo seed; new disposable ledgers only. |
+| `npm run db:backup` | Make a timestamped backup beside the active database. |
 | `npm run import -- --file <f> --account "<name>"` | Import a statement from the terminal. |
 | `npm run db:studio` | Open a database browser to inspect the raw data. |
 | `npm test` | Run the app's automated self-checks. |
@@ -929,8 +951,9 @@ Run these from the project folder in a terminal.
 ## 11. Troubleshooting & FAQ
 
 **The dashboard is blank / says "Welcome."**
-You have no transactions yet. Run `npm run db:seed` for demo data, or go to
-**Import** and load a statement.
+You have no transactions yet. Go to **Import** and load a statement. Use
+`npm run db:seed` only in a separate new disposable demo ledger; its WP-03
+safety guard has not landed yet.
 
 **My credit card shows a negative balance — is that a bug?**
 No, that's correct. A credit-card balance is money you **owe**, so it's stored as

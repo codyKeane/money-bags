@@ -1,8 +1,8 @@
-// npm run db:backup — WAL-safe online backup to data/backups/.
+// npm run db:backup — WAL-safe online backup beside the resolved DB target.
 // Uses better-sqlite3's incremental backup API, so it is safe to run while
 // the server is up (a plain file copy would miss transactions still in the
-// -wal file). Restore: stop the server, copy the backup over
-// data/finance.db, delete stale finance.db-wal / -shm, restart.
+// -wal file). Restore: stop the server, copy the backup over the exact target
+// resolved from DB_FILE_NAME, delete that target's -wal / -shm, restart.
 try {
   process.loadEnvFile();
 } catch {

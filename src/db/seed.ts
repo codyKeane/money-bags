@@ -1,9 +1,9 @@
-// Idempotent demo seed: accounts/categories upsert by unique name;
-// transactions get real importHashes (dogfooding src/lib/import-hash) and
-// insert with ON CONFLICT DO NOTHING, so re-running adds nothing. Rows are
-// generated deterministically per CALENDAR MONTH (last 6 months up to the
-// current UTC month), so runs in different months converge on the same rows
-// for overlapping months.
+// Legacy deterministic demo seed for a new disposable ledger only. Transactions
+// use real importHashes and ON CONFLICT DO NOTHING, but accounts/categories
+// upsert by name and can overwrite matching user settings. WP-03 will add the
+// code-level real-data guard. Rows are generated per CALENDAR MONTH (last 6
+// months up to the current UTC month), so runs in different months converge on
+// the same transaction rows for overlapping months.
 try {
   process.loadEnvFile();
 } catch {

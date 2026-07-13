@@ -128,35 +128,48 @@ autofocus-on-open, formatted dates, StatCard link affordance, category color dot
   controlled and shows a `ColorDot` that tracks the live selection (color rides
   along on `CategoryOption`).
 
-## ▶ Next milestone plan (ranked most-critical first)
+## Audit-remediation program — ACTIVE
+
+`IMPLEMENTATION_GUIDE.md` is the authoritative dependency-ordered delivery
+plan for current correctness, privacy, and operational work. Completed on
+2026-07-13: WP-00 and WP-01A/B/C. The next slice is WP-12A, followed by WP-01D
+and WP-12B; do not skip to financial behavior packages or the decision-gated
+transfer/refund/deduplication RFCs.
+
+The product backlog below is retained as historical product context. Its rank
+does not override the guide, and an unchecked item is not implementation
+authorization when the guide classifies it as an RFC or non-goal.
+
+## Historical product backlog (not the remediation delivery order)
 
 State at planning time (2026-07-07): build/lint/103 tests all green; no `TODO`/
 `FIXME` markers in code. Criticality order = at-risk work → data integrity →
 value-per-effort. Sizes: S ≈ ½ day, M ≈ 1–2 days.
 
-### P0 — operational (before any feature work)
-- [ ] **Commit the UX-polish round-2 milestone — it is entirely uncommitted.**
-  UX7–UX18 are marked DONE above, but the last commit is `c9a5e1f feat(SP1)`;
-  the whole milestone is in the working tree, including two **untracked** files
-  (`src/components/ui/confirm-button.tsx`, `src/components/ui/flash.tsx`) not yet
-  `git add`-ed. `git add` them, review, commit as `feat(UX7-UX18)`. Push needs a
-  real terminal (`! git push`) — passphrase key, no agent.
+### P0 — operational (historical resolution)
+
+UX7–UX18 landed in `3d967ba` (`feat(UX7-UX18): UX-polish round 2`); the stale
+pre-commit task is retained only by this resolution note, not as live work.
 
 ### P1 — data integrity & correctness of the headline numbers
-- [ ] **Transfer pairing/detection (M).** Transfers are excluded only by keyword
-  match (`Transfers` category, `excludeFromSpending`, `lib/default-categories.ts`).
+- [ ] **Transfer pairing/detection (M; decision-gated RFC-02).** Transfers are
+  excluded only by keyword match (`Transfers` category,
+  `excludeFromSpending`, `lib/default-categories.ts`).
   A transfer whose description misses `transfer`/`payment received`/`payment to
   rewards card` is **double-counted** — outflow on the source account *and*
   inflow on the destination — inflating both Spending and Income. Detect matched
-  +/− pairs (same amount, near date, different accounts) instead.
-- [ ] **Near-duplicate import detection + cross-file gap (S–M).** The frozen
-  dedupe contract silently skips a *legitimately* identical transaction when it
-  arrives in a different CSV file (both hash `occurrenceIndex 0`) — real data
-  loss. Add a **running-balance import guard (S)**: when the statement carries a
-  balance column, check `openingBalance + Σamounts` to catch dropped/dup rows.
-- [ ] **Refund semantics (M).** Refunds (positive amounts in a spend category)
-  don't reduce category spend (see `getBudgetVsActual`, `summary.ts`). A fully
-  refunded $200 purchase still reads as $200 spent. Decide + implement netting.
+  +/− pairs (same amount, near date, different accounts) only after the pairing
+  policy is explicitly approved.
+- [ ] **Near-duplicate import detection + cross-file gap (S–M; decision-gated
+  RFC-01).** The frozen dedupe contract silently skips a *legitimately*
+  identical transaction when it arrives in a different CSV file (both hash
+  `occurrenceIndex 0`) — real data loss. Add a **running-balance import guard
+  (S)** when the statement carries a balance column, without changing the
+  frozen hash or adding an override unless approved.
+- [ ] **Refund semantics (M; decision-gated RFC-03).** Refunds (positive amounts
+  in a spend category) don't reduce category spend (see `getBudgetVsActual`,
+  `summary.ts`). A fully refunded $200 purchase still reads as $200 spent.
+  Decide the policy before implementing netting.
 
 ### P2 — high-value functionality gaps (value-per-effort order)
 - [ ] **Uncategorized count on the dashboard (S)** — best value/effort. Absent
@@ -189,5 +202,7 @@ value-per-effort. Sizes: S ≈ ½ day, M ≈ 1–2 days.
 ### Deferred by design
 Recurring-transaction auto-detection, OFX/QIF, multi-currency conversion,
 Docker, auth, double-entry ledger, chart accessibility layer, month jump
-picker, pagination page numbers, `db:seed` real-data guard, bulk recategorize,
-analytics round 2 (per-category trend, net-worth-over-time).
+picker, pagination page numbers, bulk recategorize, analytics round 2
+(per-category trend, net-worth-over-time). The `db:seed` real-data guard is no
+longer deferred; it is selected remediation work in WP-03 after WP-02A and
+WP-12A.

@@ -1,7 +1,7 @@
 import { eq, isNull } from "drizzle-orm";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { type Db } from "@/db/client";
-import { setupTestDb } from "@/test/test-db";
+import { setupTestDbPerTest } from "@/test/test-db";
 import { transactions } from "@/db/schema";
 import {
   applyRulesToUncategorized,
@@ -13,13 +13,13 @@ import {
 import { getOrCreateAccountByName } from "./accounts";
 
 describe("categories service (integration, temp DB)", () => {
-  const ctx = setupTestDb("finance-cat-");
+  const ctx = setupTestDbPerTest("finance-cat-");
   let db: Db;
   let accountId: string;
   let groceriesId: string;
   let diningId: string;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     db = ctx.db;
     const { account } = await getOrCreateAccountByName("Cat Test", "CHECKING", db);
     accountId = account.id;
@@ -112,6 +112,10 @@ describe("categories service (integration, temp DB)", () => {
   });
 
   it("deleting a category nulls its transactions' categoryId", async () => {
+    await db
+      .update(transactions)
+      .set({ categoryId: groceriesId })
+      .where(eq(transactions.description, "FARMERS MARKET"));
     expect(await deleteCategory(groceriesId, db)).toBe(groceriesId);
     const orphans = await db
       .select()

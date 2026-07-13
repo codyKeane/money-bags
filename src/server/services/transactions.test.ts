@@ -1,7 +1,7 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { type Db } from "@/db/client";
-import { setupTestDb } from "@/test/test-db";
+import { setupTestDbPerTest } from "@/test/test-db";
 import { transactionSplits } from "@/db/schema";
 import {
   createTransaction,
@@ -16,13 +16,13 @@ import { createAccount, getAccountsWithBalances } from "./accounts";
 import { createCategory } from "./categories";
 
 describe("transactions service (integration, temp DB)", () => {
-  const ctx = setupTestDb("finance-txn-");
+  const ctx = setupTestDbPerTest("finance-txn-");
   let db: Db;
   let accountA: string;
   let accountB: string;
   let groceriesId: string;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     db = ctx.db;
     accountA = (await createAccount({ name: "A", type: "CHECKING" }, db)).id;
     accountB = (await createAccount({ name: "B", type: "CREDIT_CARD" }, db)).id;
@@ -117,9 +117,19 @@ describe("transactions service (integration, temp DB)", () => {
   });
 
   it("balances include manual rows", async () => {
+    await createTransaction(
+      {
+        accountId: accountA,
+        categoryId: null,
+        date: "2026-06-15",
+        description: "MANUAL BALANCE ROW",
+        amountCents: -750,
+      },
+      db,
+    );
     const rows = await getAccountsWithBalances(db);
     const a = rows.find((r) => r.id === accountA);
-    expect(a?.transactionCount).toBeGreaterThan(60);
+    expect(a?.transactionCount).toBe(62);
   });
 
   it("paginates with a correct total count", async () => {
@@ -170,14 +180,14 @@ describe("transactions service (integration, temp DB)", () => {
 });
 
 describe("transaction splits service (integration, temp DB)", () => {
-  const ctx = setupTestDb("finance-splits-");
+  const ctx = setupTestDbPerTest("finance-splits-");
   let db: Db;
   let accountId: string;
   let catA: string;
   let catB: string;
   let txId: string;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     db = ctx.db;
     accountId = (await createAccount({ name: "SplitAcct", type: "CHECKING" }, db)).id;
     catA = (await createCategory({ name: "CatA", color: null, keywords: [], excludeFromSpending: false }, db)).id;
@@ -205,11 +215,27 @@ describe("transaction splits service (integration, temp DB)", () => {
   });
 
   it("flags the row as split in the transaction list", async () => {
+    await replaceSplits(
+      txId,
+      [
+        { categoryId: catA, amountCents: -6000 },
+        { categoryId: catB, amountCents: -4000 },
+      ],
+      db,
+    );
     const { items } = await getTransactionsPage({ q: "SPLIT ME", limit: 10, offset: 0 }, db);
     expect(items[0]?.isSplit).toBe(true);
   });
 
   it("replaceSplits replaces rather than appends; empty parts clear the split", async () => {
+    await replaceSplits(
+      txId,
+      [
+        { categoryId: catA, amountCents: -6000 },
+        { categoryId: catB, amountCents: -4000 },
+      ],
+      db,
+    );
     await replaceSplits(txId, [{ categoryId: catA, amountCents: -10000 }], db);
     expect(await getSplitsForTransaction(txId, db)).toHaveLength(1); // replaced, not 3
     await replaceSplits(txId, [], db);

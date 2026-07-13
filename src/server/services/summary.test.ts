@@ -11,6 +11,8 @@ import {
   getSpendingTrend,
 } from "./summary";
 
+// These three suites intentionally share one temp DB each: setup completes in
+// beforeAll, and every test treats the resulting rows as an immutable fixture.
 describe("getBudgetVsActual (integration, temp DB)", () => {
   const ctx = setupTestDb("finance-budget-");
   let db: Db;

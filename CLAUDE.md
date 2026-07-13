@@ -38,9 +38,10 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
   Server Actions, API route handlers, and the import CLI. Add new data
   access here, not in components/routes. Each service has a colocated
   `*.test.ts` integration test that drives a real throwaway SQLite file via
-  the `setupTestDb()` fixture (`src/test/test-db.ts`): call it at the top of a
-  `describe`, read `ctx.db` inside `beforeAll`/`it`. Test DBs are migrated but
-  get **no** default categories (`createTestDb`), so tests seed their own.
+  `src/test/test-db.ts`. Mutable suites use `setupTestDbPerTest()` so every
+  `it` gets an independent database; `setupTestDb()` is reserved for fixtures
+  that every test treats as immutable. Test DBs are migrated but get **no**
+  default categories (`createTestDb`), so tests seed their own.
 - `src/app/` — RSC pages (`/`, `/transactions`, `/accounts`,
   `/categories`, `/import`), Server Actions for mutations, thin GET JSON
   routes under `/api` for local scripting. Every page is `force-dynamic`, so a
@@ -126,7 +127,9 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
   are untouched; it returns the deleted count or null if the batch is gone. Pass
   `filename` into `importStatement` from any new caller so history stays useful.
   The `batch_id` FK's `ON DELETE set null` is hand-added to migration 0003
-  (drizzle-kit omits it from `ALTER TABLE ADD` — keep it if regenerating).
+  (drizzle-kit omits it from `ALTER TABLE ADD`). Migrations 0000–0004 are
+  historical and byte-locked by `src/db/migrations.test.ts`; never regenerate
+  or edit them. Append a reviewed migration for future schema work.
 - **Category colors**: constrained to the validated `CATEGORICAL_SLOTS` in
   `src/lib/palette.ts` (the Server Action rejects any other value). Only the
   first 8 categories get a hue; the rest render as neutral badges — never
@@ -170,30 +173,41 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
   another local service; loopback-only by default — the app has no auth.
   `dev:lan` / `start:lan` bind 0.0.0.0 as an explicit opt-in)
 - `npm run db:backup [-- --keep N]` — WAL-safe online backup to
-  `data/backups/` (optional `--keep N` prunes to the N newest; restore: stop
-  server, copy back over `data/finance.db`, delete stale `-wal`/`-shm`,
-  restart)
+  `backups/` beside the resolved `DB_FILE_NAME` target (optional `--keep N`
+  prunes to the N newest; restore: stop server, copy back over that exact
+  target, delete its matching `<target>-wal`/`<target>-shm`, restart)
 - `GET /api/health` — liveness probe (`{ok:true}` / 500) for uptime
   monitoring; `deploy/` holds systemd unit + backup timer examples
 - `GET /api/export?q=&account=&category=&month=&from=&to=` — the filtered
   transaction view as a CSV download (same query parsing as `/transactions`)
-- `npm run build` / `npm start` — production build / serve
+- `npm run build` / `npm start` — production build / serve. During remediation,
+  do not use a bare build as a validation command until WP-01D supplies the
+  mandatory temporary-database wrapper; follow `IMPLEMENTATION_GUIDE.md`.
 - `npm test` / `npm run test:watch` — Vitest. Single file:
   `npm test -- src/lib/categorize.test.ts`; by name:
   `npm test -- -t "dedupe"`
 - `npm run lint` — ESLint
-- `npm run db:generate` — generate migration from schema changes
+- `npm run db:generate` — generate a new append-only migration from schema
+  changes; never regenerate or edit migrations 0000–0004
 - `npm run db:migrate` — apply migrations (also auto-applied on startup;
-  default categories install automatically when the table is empty)
-- `npm run db:seed` — idempotent demo seed (re-run adds nothing)
+  default categories install automatically when the table is empty). Historical
+  migrations 0000–0004 are byte-locked compatibility assets.
+- `npm run db:seed` — currently unguarded demo seed; use only with a new
+  disposable ledger (WP-03 adds the code-level real-data guard)
 - `npm run db:studio` — Drizzle Studio DB browser
 - `npm run import -- --file <csv> --account "<name>" [--type CHECKING] [--date-format MDY] [--col-date "<header>"] [--col-amount "<header>"] …` — CLI import; `--col-*` flags override header detection (also exposed as a `columnMap` JSON field on `/api/import` and an "Advanced" section in the import UI)
 
 ## Other docs
 
-- `TODO.md` — backlog and shipped milestones. Its IDs (P1–P7 perf, Q1–Q9 code
-  quality, O1/O2 ops, F#/… features) are the same tags used in commit-message
-  prefixes; check it before starting a "next milestone" task.
+- `IMPLEMENTATION_GUIDE.md` — audit-remediation north star: immutable contracts,
+  decision gates, dependency-ordered work packages, rollback, and acceptance
+  tests. WP-00 and WP-01A/B/C are complete; WP-12A is the prepared next slice.
+  Read it before implementing audit findings or selecting the next
+  correctness/privacy/operations package.
+- `TODO.md` — historical/product backlog and shipped milestones. Its IDs
+  (P1–P7 perf, Q1–Q9 code quality, O1/O2 ops, F#/… features) are the same tags
+  used in commit-message prefixes; `IMPLEMENTATION_GUIDE.md`, not backlog rank,
+  controls the current remediation order.
 - `USER_MANUAL.md` — end-user, plain-English feature guide. Consult it when a
   change affects user-facing behavior so the manual stays in sync.
 - `README.md` — setup, home-server (systemd) and Tailscale/PWA deployment.

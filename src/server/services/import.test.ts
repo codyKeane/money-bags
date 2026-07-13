@@ -1,7 +1,7 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { type Db } from "@/db/client";
-import { setupTestDb } from "@/test/test-db";
+import { setupTestDbPerTest } from "@/test/test-db";
 import { categories, transactions } from "@/db/schema";
 import {
   getRecentImportBatches,
@@ -22,11 +22,11 @@ const CSV = [
 ].join("\n");
 
 describe("importStatement (integration, temp DB)", () => {
-  const ctx = setupTestDb("finance-test-");
+  const ctx = setupTestDbPerTest("finance-test-");
   let db: Db;
   let accountId: string;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     db = ctx.db;
     await db.insert(categories).values([
       { name: "Groceries", keywords: JSON.stringify(["market"]) },
@@ -61,6 +61,9 @@ describe("importStatement (integration, temp DB)", () => {
   });
 
   it("re-importing the same file imports 0 and reports every row as skipped", async () => {
+    const first = await importStatement({ accountId, csvText: CSV }, db);
+    expect(first.imported).toBe(5);
+
     const result = await importStatement({ accountId, csvText: CSV }, db);
     expect(result.imported).toBe(0);
     expect(result.skipped).toHaveLength(5);
@@ -68,6 +71,9 @@ describe("importStatement (integration, temp DB)", () => {
   });
 
   it("balances reflect opening balance plus imported rows", async () => {
+    const result = await importStatement({ accountId, csvText: CSV }, db);
+    expect(result.imported).toBe(5);
+
     const [account] = await getAccountsWithBalances(db);
     expect(account?.balanceCents).toBe(260000 - 7812 - 450 - 450 - 70000);
     expect(await getNetWorth(db)).toBe(account?.balanceCents);
@@ -75,12 +81,11 @@ describe("importStatement (integration, temp DB)", () => {
 });
 
 describe("import batches + undo (integration, temp DB)", () => {
-  const ctx = setupTestDb("finance-batches-");
+  const ctx = setupTestDbPerTest("finance-batches-");
   let db: Db;
   let accountId: string;
-  let batchId = "";
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     db = ctx.db;
     await db.insert(categories).values([
       { name: "Groceries", keywords: JSON.stringify(["market"]) },
@@ -99,7 +104,7 @@ describe("import batches + undo (integration, temp DB)", () => {
     const result = await importStatement({ accountId, csvText: CSV, filename: "june.csv" }, db);
     expect(result.imported).toBe(5);
     expect(result.batchId).toBeTypeOf("string");
-    batchId = result.batchId ?? "";
+    const batchId = result.batchId ?? "";
 
     const batch = (await getRecentImportBatches(50, db)).find((b) => b.id === batchId);
     expect(batch).toMatchObject({
@@ -117,6 +122,12 @@ describe("import batches + undo (integration, temp DB)", () => {
   });
 
   it("re-importing the same file records no new batch (nothing to undo)", async () => {
+    const first = await importStatement(
+      { accountId, csvText: CSV, filename: "june.csv" },
+      db,
+    );
+    expect(first.imported).toBe(5);
+
     const before = await getRecentImportBatches(50, db);
     const result = await importStatement({ accountId, csvText: CSV, filename: "june.csv" }, db);
     expect(result.imported).toBe(0);
@@ -126,6 +137,13 @@ describe("import batches + undo (integration, temp DB)", () => {
   });
 
   it("undo deletes exactly the batch's rows and leaves manual rows untouched", async () => {
+    const imported = await importStatement(
+      { accountId, csvText: CSV, filename: "june.csv" },
+      db,
+    );
+    expect(imported.imported).toBe(5);
+    const batchId = imported.batchId ?? "";
+
     // A manual transaction (batchId null) that must survive the undo.
     await createTransaction(
       {
@@ -152,6 +170,13 @@ describe("import batches + undo (integration, temp DB)", () => {
   });
 
   it("undoing an already-undone (or unknown) batch returns null", async () => {
+    const imported = await importStatement(
+      { accountId, csvText: CSV, filename: "june.csv" },
+      db,
+    );
+    const batchId = imported.batchId ?? "";
+    expect(await undoImport(batchId, db)).toEqual({ deletedCount: 5, filename: "june.csv" });
+
     expect(await undoImport(batchId, db)).toBeNull();
     expect(await undoImport("does-not-exist", db)).toBeNull();
   });

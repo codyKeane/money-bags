@@ -17,7 +17,6 @@ project ever performs is `npm install` at development time.
 ```bash
 npm install
 npm run db:migrate   # create data/finance.db
-npm run db:seed      # optional: 6 months of demo data (idempotent)
 npm run dev          # http://localhost:3100
 ```
 
@@ -26,13 +25,27 @@ The app listens on **port 3100** (3000 is assumed taken) and binds
 to your LAN is an explicit choice: use `npm run dev:lan` / `npm run
 start:lan` to bind all interfaces. For production: `npm run build && npm
 start`. Migrations and the default category set are applied automatically
-on startup; `npm run db:seed` is only for demo data.
+on startup.
+
+> **Build-validation warning:** until WP-01D lands, `npm run build` can resolve,
+> open, or migrate the configured database. Do not use a real ledger for build
+> validation. Project build verification must wait for the temporary-target
+> wrapper; follow `IMPLEMENTATION_GUIDE.md` for the guarded non-build checks
+> permitted before then.
+
+> **Demo seed warning:** the current `npm run db:seed` command is unguarded.
+> Use it only with a new disposable demo ledger. It can update named accounts
+> and categories in an existing ledger. If there is any uncertainty, do not run
+> it until you have made and validated a backup; a code-level guard is planned
+> in WP-03 of `IMPLEMENTATION_GUIDE.md`.
 
 **Backups**: `npm run db:backup` writes a WAL-safe online copy to
-`data/backups/` (safe while the server runs); `npm run db:backup -- --keep 14`
-also prunes all but the 14 newest. To restore: stop the server, copy the
-backup over `data/finance.db`, delete stale `finance.db-wal` /
-`finance.db-shm`, restart.
+the `backups/` directory beside the active database (safe while the server
+runs); `npm run db:backup -- --keep 14` also prunes all but the 14 newest. To
+restore, first stop the server. Copy the backup over the exact database target
+resolved from `DB_FILE_NAME` (the default is `data/finance.db`), remove the
+matching `<target>-wal` and `<target>-shm` sidecars if present, then restart.
+Never restore a custom-path ledger into the default path by assumption.
 
 ## Run on a home server
 
@@ -45,6 +58,10 @@ npm ci && npm run build
 
 Node ≥ 20.12 is required (`.nvmrc` pins 22; `nvm use`). Run it under systemd
 with the example units in `deploy/` — edit `User`/`WorkingDirectory`, then:
+
+> The example units currently call `/usr/bin/npm`. That requires a compatible
+> system-wide Node/npm installation; systemd does not load an interactive
+> shell's NVM environment. Verify that path and version before enabling them.
 
 ```bash
 sudo cp deploy/finance*.{service,timer} /etc/systemd/system/
@@ -106,8 +123,10 @@ guessed); ISO/MDY/DMY dates. Negative Debit values are treated as refunds
 (inflows). Re-importing the same file is safe — duplicates are skipped and
 reported row by row.
 
-Keep real statement CSVs in `data/imports/` — it is gitignored, as is the
-database itself. `data/samples/` contains fake data for testing.
+Keep real statement CSVs in the default `data/imports/` directory; it and the
+default `data/*.db*` targets are gitignored. A custom `DB_FILE_NAME` is not
+guaranteed to be covered by those rules before WP-12B, so keep custom targets
+outside the repository or add and verify explicit protection.
 
 ## Commands
 
@@ -115,11 +134,11 @@ database itself. `data/samples/` contains fake data for testing.
 |---|---|
 | `npm run dev` / `npm run build && npm start` | dev / production server on 127.0.0.1:3100 |
 | `npm run dev:lan` / `npm run start:lan` | same, bound to all interfaces (no auth — deliberate opt-in) |
-| `npm run db:backup` | WAL-safe online backup to `data/backups/` |
+| `npm run db:backup` | WAL-safe online backup beside the active database |
 | `npm test` | Vitest suite (parser, categorizer, dedupe, DB integration) |
 | `npm run lint` | ESLint |
 | `npm run db:generate` / `db:migrate` | create / apply schema migrations |
-| `npm run db:seed` | idempotent demo seed |
+| `npm run db:seed` | unguarded demo seed; new disposable ledgers only |
 | `npm run db:studio` | Drizzle Studio DB browser |
 | `npm run import -- …` | CLI statement import |
 

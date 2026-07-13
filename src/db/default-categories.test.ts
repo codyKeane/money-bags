@@ -1,17 +1,17 @@
 import { eq, sql } from "drizzle-orm";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { type Db } from "./client";
-import { setupTestDb } from "@/test/test-db";
+import { setupTestDbPerTest } from "@/test/test-db";
 import { categories } from "./schema";
 import { ensureDefaultCategories } from "./default-categories";
 import { DEFAULT_CATEGORIES } from "../lib/default-categories";
 import { parseKeywords } from "../lib/categorize";
 
 describe("ensureDefaultCategories", () => {
-  const ctx = setupTestDb("finance-defaults-");
+  const ctx = setupTestDbPerTest("finance-defaults-");
   let db: Db;
 
-  beforeAll(() => {
+  beforeEach(() => {
     db = ctx.db;
   });
 
@@ -33,10 +33,12 @@ describe("ensureDefaultCategories", () => {
 
   it("is a no-op when categories already exist", async () => {
     ensureDefaultCategories(db);
+    ensureDefaultCategories(db);
     expect(await count()).toBe(DEFAULT_CATEGORIES.length);
   });
 
   it("never resurrects deleted categories or overwrites edits", async () => {
+    ensureDefaultCategories(db);
     await db
       .update(categories)
       .set({ keywords: JSON.stringify(["custom"]) })

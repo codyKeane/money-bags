@@ -39,17 +39,13 @@ export default async function DashboardPage({
     return (
       <div className="rounded-lg border border-hairline bg-surface px-6 py-8 text-sm">
         <h1 className="text-lg font-semibold">Welcome to your finance engine</h1>
-        <p className="mt-2 text-ink-2">There are no transactions yet. To get started:</p>
-        <ul className="mt-2 list-disc pl-5 text-ink-2">
-          <li>
-            seed demo data: <code className="font-mono text-xs">npm run db:seed</code>, or
-          </li>
-          <li>
-            <Link href="/import" className="underline">
-              import a bank statement CSV
-            </Link>
-          </li>
-        </ul>
+        <p className="mt-2 text-ink-2">
+          There are no transactions yet. Open{" "}
+          <Link href="/import" className="underline">
+            Import
+          </Link>{" "}
+          to load a bank statement CSV.
+        </p>
       </div>
     );
   }

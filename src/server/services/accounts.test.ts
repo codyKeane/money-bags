@@ -1,6 +1,6 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { type Db } from "@/db/client";
-import { setupTestDb } from "@/test/test-db";
+import { setupTestDbPerTest } from "@/test/test-db";
 import { accounts, transactions } from "@/db/schema";
 import {
   createAccount,
@@ -12,12 +12,12 @@ import {
 } from "./accounts";
 
 describe("accounts service (integration, temp DB)", () => {
-  const ctx = setupTestDb("finance-acct-");
+  const ctx = setupTestDbPerTest("finance-acct-");
   let db: Db;
   let checkingId: string;
   let cardId: string;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     db = ctx.db;
     checkingId = (
       await createAccount({ name: "Checking", type: "CHECKING", openingBalanceCents: 10000 }, db)
@@ -53,6 +53,11 @@ describe("accounts service (integration, temp DB)", () => {
   });
 
   it("deleting an account cascades to its transactions only", async () => {
+    await updateAccount(
+      checkingId,
+      { name: "Checking", type: "CHECKING", institution: "Bank", openingBalanceCents: 20000 },
+      db,
+    );
     expect(await deleteAccount(cardId, db)).toBe(cardId);
     const remaining = await db.select().from(transactions);
     expect(remaining).toHaveLength(1);
@@ -62,9 +67,9 @@ describe("accounts service (integration, temp DB)", () => {
 });
 
 describe("getNetWorthOverview (integration, temp DB)", () => {
-  const ctx = setupTestDb("finance-networth-");
+  const ctx = setupTestDbPerTest("finance-networth-");
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     await ctx.db.insert(accounts).values([
       { name: "USD A", type: "CHECKING", currency: "USD", openingBalanceCents: 10000 },
       { name: "USD B", type: "SAVINGS", currency: "USD", openingBalanceCents: 5000 },
