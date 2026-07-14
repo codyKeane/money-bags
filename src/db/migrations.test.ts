@@ -13,6 +13,8 @@ import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { describe, expect, it } from "vitest";
+import { REVIEWED_MIGRATION_JOURNAL } from "./migration-manifest";
+import { findRepositoryRoot } from "./path";
 
 interface JournalEntry {
   idx: number;
@@ -33,7 +35,10 @@ interface AppliedMigration {
   createdAt: number;
 }
 
-const MIGRATIONS_FOLDER = path.resolve(process.cwd(), "drizzle");
+const MIGRATIONS_FOLDER = path.join(
+  findRepositoryRoot({ moduleDirectory: __dirname }),
+  "drizzle",
+);
 const JOURNAL = JSON.parse(
   readFileSync(path.join(MIGRATIONS_FOLDER, "meta", "_journal.json"), "utf8"),
 ) as MigrationJournal;
@@ -794,6 +799,14 @@ function assertForeignKeyBehavior(sqlite: Database.Database): void {
 
 describe("migration compatibility", () => {
   it("pins the first five journal entries and migration SQL bytes", () => {
+    // This independent test oracle intentionally duplicates the production
+    // manifest so a coordinated journal/manifest edit cannot bless itself.
+    expect(REVIEWED_MIGRATION_JOURNAL).toEqual({
+      version: "7",
+      dialect: "sqlite",
+      entries: EXPECTED_MIGRATIONS,
+    });
+    expect(JOURNAL.version).toBe("7");
     expect(JOURNAL.dialect).toBe("sqlite");
     expect(JOURNAL.entries.length).toBeGreaterThanOrEqual(EXPECTED_MIGRATIONS.length);
     expect(JOURNAL.entries.slice(0, EXPECTED_MIGRATIONS.length)).toEqual(

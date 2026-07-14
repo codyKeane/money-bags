@@ -24,9 +24,14 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
 ## Architecture
 
 - `src/db/` — Drizzle schema (`schema.ts`), connection singleton
-  (`client.ts`: absolute DB path from `DB_FILE_NAME`, WAL + foreign_keys
-  pragmas), `seed.ts`. Migrations live in `drizzle/`. `client.ts` also
-  applies pending migrations and runs `ensureDefaultCategories`
+  (`client.ts`: preflighted DB path from `DB_FILE_NAME`, WAL + foreign_keys
+  pragmas), and side-effect-free path/environment/migration-asset preflight,
+  plus `seed.ts`. The default target is `data/finance.db`; relative targets
+  must remain canonically below `data/`, while external targets must be
+  canonical absolute paths. Migrations live in `drizzle/`, and their reviewed
+  journal metadata and SQL hashes are validated before any directory creation
+  or SQLite open. `client.ts` then applies pending migrations and runs
+  `ensureDefaultCategories`
   (`db/default-categories.ts`, insert-only when the table is empty) on
   first connect — so a fresh DB has working auto-categorization with no
   seed step.
@@ -201,7 +206,8 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
 
 - `IMPLEMENTATION_GUIDE.md` — audit-remediation north star: immutable contracts,
   decision gates, dependency-ordered work packages, rollback, and acceptance
-  tests. WP-00 and WP-01A/B/C are complete; WP-12A is the prepared next slice.
+  tests. WP-00, WP-01A/B/C, and WP-12A are complete; WP-01D is the prepared
+  next slice.
   Read it before implementing audit findings or selecting the next
   correctness/privacy/operations package.
 - `TODO.md` — historical/product backlog and shipped milestones. Its IDs

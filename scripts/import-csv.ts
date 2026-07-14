@@ -2,12 +2,6 @@
 // Usage: npm run import -- --file <csv> --account "<name>" [--type CHECKING]
 //        [--date-format MDY] [--col-date "<header>"] [--col-description ...]
 //        [--col-amount ...] [--col-debit ...] [--col-credit ...]
-try {
-  process.loadEnvFile();
-} catch {
-  // no .env — defaults apply
-}
-
 import { readFileSync, statSync } from "node:fs";
 import { basename } from "node:path";
 import { parseArgs } from "node:util";

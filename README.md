@@ -47,6 +47,25 @@ resolved from `DB_FILE_NAME` (the default is `data/finance.db`), remove the
 matching `<target>-wal` and `<target>-shm` sidecars if present, then restart.
 Never restore a custom-path ledger into the default path by assumption.
 
+**Database path policy**: when `DB_FILE_NAME` is relative, it is resolved from
+the repository root and must stay below `data/` (for example,
+`data/ledgers/home.sqlite`). A target outside the repository must be configured
+as its canonical absolute path. Empty values, traversal, symlink aliases, and
+in-repository targets outside `data/` are refused before a directory or SQLite
+file is created. Startup also validates the root `.env` as UTF-8 assignment
+syntax and verifies the migration journal plus reviewed SQL hashes before
+opening the ledger; a missing `.env` is the only ignored environment-file
+condition.
+
+If an older installation points to a ledger elsewhere inside this checkout,
+do not start the new version and do not let it create a replacement default.
+While the old version still accepts that path, stop all writers and make and
+verify a backup. Then explicitly restore or move that offline ledger below
+`data/`, update `DB_FILE_NAME`, and only then start the new version. An older
+relative path that resolves outside the checkout can instead be written as its
+canonical external absolute path. The application never relocates a ledger
+automatically.
+
 ## Run on a home server
 
 Use `npm ci` (not `npm install`) for a reproducible install matching the
@@ -124,9 +143,10 @@ guessed); ISO/MDY/DMY dates. Negative Debit values are treated as refunds
 reported row by row.
 
 Keep real statement CSVs in the default `data/imports/` directory; it and the
-default `data/*.db*` targets are gitignored. A custom `DB_FILE_NAME` is not
-guaranteed to be covered by those rules before WP-12B, so keep custom targets
-outside the repository or add and verify explicit protection.
+default `data/*.db*` targets are gitignored. Until WP-12B broadens and audits
+the Git boundary, keep custom in-repository targets below `data/` only with an
+explicit verified ignore rule, or use a canonical absolute path outside the
+repository.
 
 ## Commands
 

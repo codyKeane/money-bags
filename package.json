@@ -2,6 +2,7 @@
   "name": "repo",
   "version": "0.1.0",
   "private": true,
+  "moneybagsRepositoryRoot": true,
   "engines": {
     "node": ">=20.12"
   },

@@ -3,17 +3,11 @@
 // the server is up (a plain file copy would miss transactions still in the
 // -wal file). Restore: stop the server, copy the backup over the exact target
 // resolved from DB_FILE_NAME, delete that target's -wal / -shm, restart.
-try {
-  process.loadEnvFile();
-} catch {
-  // no .env — default path applies
-}
-
 import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { resolveDbPath } from "../src/db/client";
+import { preflightDatabaseOpen } from "../src/db/preflight";
 
 // Keep only the newest N `finance-*.db` backups; delete the rest. Names are
 // ISO-stamped so lexical sort == chronological.
@@ -35,7 +29,7 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  const src = resolveDbPath();
+  const src = preflightDatabaseOpen().databasePath;
   if (!fs.existsSync(src)) {
     console.error(`No database found at ${src} — nothing to back up.`);
     process.exit(2);

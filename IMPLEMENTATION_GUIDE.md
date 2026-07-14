@@ -2,11 +2,11 @@
 
 > Status: active, decision-complete implementation north star for the audit-remediation program
 > Code baseline: clean historical snapshot `main` at `3d967baf8d7451f8c8202f3f9489401771bcc3b7` (`3d967ba`)
-> Implementation checkpoint: WP-00 and WP-01A/B/C completed 2026-07-13; WP-12A is next
-> Checkpoint verification: default and shuffled suites passed 14 files / 112 tests; recorded shuffle seeds are `17`, `2718`, and `20260713`; the integration exact-name matrix passed 45/45
-> Additional gates: ESLint, TypeScript, migration integrity, temp cleanup, documentation checks, and independent package review passed
+> Implementation checkpoint: WP-00 and WP-01A/B/C completed 2026-07-13; WP-12A completed 2026-07-14; WP-01D is next
+> Checkpoint verification: default and shuffled suites passed 16 files / 148 tests; WP-12A shuffle seeds are `17`, `2718`, and `20260714`; its focused preflight/migration run passed 4 files / 46 tests; the earlier integration exact-name matrix passed 45/45
+> Additional gates: ESLint, TypeScript, migration integrity, cross-cwd resolution, zero-artifact guards, documentation checks, and independent package review passed
 > Safety gate: no Next build was run; a bare build remains prohibited until WP-01D supplies the temporary-target wrapper
-> Prepared: 2026-07-13
+> Prepared: 2026-07-14
 > Scope: correctness, data integrity, privacy, operational safety, architecture, and accessibility
 > Dependency policy: use the existing Node.js 20+, Next.js, Drizzle, better-sqlite3, Zod, and Vitest stack; do not add a package unless a later decision record explicitly justifies it
 
@@ -124,7 +124,7 @@ Three states must not be conflated:
 
 1. **Historical audit snapshot.** Commit `3d967ba` on `main` (tracking `origin/main`) was the clean code snapshot audited: `feat(UX7-UX18): UX-polish round 2 — feedback, confirms, a11y, mobile`.
 2. **Implementation-start documentation state.** Before the first remediation implementation commit, `HEAD` remained `3d967ba`; the maintainer owned a tracked `CLAUDE.md` edit linking this guide and the untracked `IMPLEMENTATION_GUIDE.md` / `IMPLEMENTATION_PLAN_ANALYSIS.md` planning artifacts. Those files were preserved and incorporated rather than replaced.
-3. **Current implementation checkpoint.** WP-00 and WP-01A/B/C are complete in the commit containing this handoff. The default suite and shuffled seeds `17`, `2718`, and `20260713` each passed 14 files / 112 tests; all 45 collected integration-test names passed when selected individually. ESLint, TypeScript, migration-integrity, temp-cleanup, documentation, and independent-review gates also passed. The 103-test result below remains the historical audit result, not the current suite count.
+3. **Current implementation checkpoint.** WP-00, WP-01A/B/C, and WP-12A are complete in the checkpoint containing this handoff. The current default suite and shuffled seeds `17`, `2718`, and `20260714` each passed 16 files / 148 tests; WP-12A's focused resolver/preflight/migration run passed 4 files / 46 tests. All 45 previously collected integration-test names passed when selected individually. ESLint, TypeScript, migration-integrity, cross-cwd, zero-artifact, documentation, and independent-review gates also passed. The 103-test result below remains the historical audit result, not the current suite count.
 
 Installed and locked baseline:
 
@@ -2129,31 +2129,43 @@ Uncertainty requiring user input:
 
 ### Completed checkpoint evidence
 
-- Default order: 14 test files / 112 tests passed.
-- Shuffled order: 14 test files / 112 tests passed with each recorded seed:
-  `17`, `2718`, and `20260713`.
+- Before WP-12A, a fake temporary `createTestDb()` reproduction invoked from a
+  directory without migrations threw only after creating the configured parent
+  and SQLite file. The replacement preflight tests prove malformed env, path,
+  journal, SQL, and checksum inputs fail before the target parent, DB, WAL, or
+  SHM can exist.
+- WP-12A focused validation: 4 test files / 46 tests passed, covering the
+  stable-root marker, strict atomic env parsing, lexical/canonical path policy,
+  fixed migration metadata and hashes, preflight ordering, cross-cwd behavior,
+  and adapter wiring.
+- Current default order: 16 test files / 148 tests passed.
+- Current shuffled order: 16 test files / 148 tests passed with each recorded
+  WP-12A seed: `17`, `2718`, and `20260714`.
 - Exact-name isolation: Vitest collected 45 tests under `src/server/services/`
   and `src/db/`; every full test name passed as the sole selected test in its
   file. The two originally failing import/re-import and undo names also passed
   in their dedicated focused runs.
-- ESLint and `npx tsc --noEmit` passed. Every explicit database guard path and
-  temporary migration directory remained absent after cleanup.
+- Repository-wide ESLint and `tsc --noEmit` passed. Migration SQL 0000–0004 and
+  the lockfile remained unchanged. Every explicit WP-12A guard path remained
+  absent, and the independent review found no remaining database-open ordering
+  or security blocker after the cwd fallback was removed.
 - No Next build was run; WP-01D remains the prerequisite for build evidence.
 
-Exact guarded command forms used for the checkpoint:
+Exact guarded command forms used for WP-12A:
 
 ```bash
-DB_FILE_NAME=/tmp/moneybags-precommit-normal-20260713/default.db npm test
-DB_FILE_NAME=/tmp/moneybags-precommit-shuffle-17/default.db npm test -- --sequence.shuffle --sequence.seed 17
-DB_FILE_NAME=/tmp/moneybags-precommit-shuffle-2718/default.db npm test -- --sequence.shuffle --sequence.seed 2718
-DB_FILE_NAME=/tmp/moneybags-precommit-shuffle-20260713/default.db npm test -- --sequence.shuffle --sequence.seed 20260713
-DB_FILE_NAME=/tmp/moneybags-precommit-reimport-20260713/default.db npm test -- -t "re-importing the same file imports 0"
-DB_FILE_NAME=/tmp/moneybags-precommit-undo-20260713/default.db npm test -- -t "undo deletes exactly the batch's rows"
+DB_FILE_NAME=/tmp/moneybags-wp12a-final-focused-20260714-1/default.db ./node_modules/.bin/vitest run src/db/path.test.ts src/db/preflight.test.ts src/db/migrations.test.ts src/db/default-categories.test.ts --reporter=dot
+DB_FILE_NAME=/tmp/moneybags-wp12a-final-full-20260714-1/default.db npm test
+DB_FILE_NAME=/tmp/moneybags-wp12a-final-shuffle-17-20260714-1/default.db npm test -- --sequence.shuffle --sequence.seed 17
+DB_FILE_NAME=/tmp/moneybags-wp12a-final-shuffle-2718-20260714-1/default.db npm test -- --sequence.shuffle --sequence.seed 2718
+DB_FILE_NAME=/tmp/moneybags-wp12a-final-shuffle-20260714-20260714-1/default.db npm test -- --sequence.shuffle --sequence.seed 20260714
 npm run lint
-npx tsc --noEmit
+./node_modules/.bin/tsc --noEmit
+git diff --check
 ```
 
-The full exact-name matrix was collected with the following guarded command:
+The earlier full exact-name matrix was collected with the following guarded
+command:
 
 ```bash
 DB_FILE_NAME=/tmp/moneybags-exact-list-20260713/default.db npx vitest list src/server/services src/db --json
@@ -2166,26 +2178,29 @@ For each of its 45 `{ file, name }` results, the command runner invoked
 invocations passed, and a post-run `/tmp/moneybags-exact-*` search plus direct
 checks of the default/shuffle/focused guard directories found no artifacts.
 
-### Prepared handoff: WP-12A
+### Prepared handoff: WP-01D
 
-The next session should select **WP-12A — Resolver and environment foundation**. WP-00 and WP-01A/B/C are complete; do not skip ahead to WP-01D, WP-12B, financial behavior work, or a deferred RFC.
+The next session should select **WP-01D — Make the no-real-data test/build rule
+executable**. WP-00, WP-01A/B/C, and WP-12A are complete. Build the safe harness
+before the first Next build; do not skip ahead to packaging, financial behavior,
+or a deferred RFC.
 
 ```text
-Selected package/slice: WP-12A
-Finding IDs addressed: MB-010
-Decision gates resolved: use the target path policy and preflight order in Section 9
+Selected package/slice: WP-01D
+Finding IDs addressed: MB-015, PG-06
+Decision gates resolved: use the dependency-free temporary-target wrapper, per-worker Vitest target, and sanitized copied-workspace build policy in Section 9
 Repository root: the checkout root; confirm it before running any command
 Branch / starting state: main at the commit containing this handoff; reconfirm a clean worktree
 Applicable instructions: repository-root AGENTS.md plus any active session working agreement
 Installed versions to preserve: Next 16.2.10, Drizzle ORM 0.45.2, better-sqlite3 12.11.1, Node >=20.12
-Fake fixture/temp DB plan: unique absolute paths under the OS temp directory; malformed env/path/journal fixtures must leave no DB, WAL, SHM, or parent artifact
-Expected files changed: narrow path/env/migration-preflight helpers, their direct adapters/callers, focused tests, and documentation only where the resulting operator contract changes
-Expected migration/lockfile impact: none; 0000-0004 remain byte-identical and dependency versions remain unchanged
-Failing reproduction/test: prove current env/path/migration failures can occur after directory or SQLite creation, then prove the new preflight fails before mutation
-Rollback plan: revert the resolver/preflight adapters together; never restore broad error swallowing or preflight-after-open ordering
-Focused validation: pure resolver/env/migration-asset tests plus fake target artifact checks
-Repository validation: guarded npm test, npm run lint, npx tsc --noEmit, git diff --check; no Next build before WP-01D
-Uncertainty requiring user input: none currently; stop if repository evidence conflicts with the selected path policy
+Fake fixture/temp DB plan: wrapper-owned unique OS-temp roots; a separate per-worker target; sentinels only in a sanitized copied workspace; deterministic success/failure/signal cleanup
+Expected files changed: a dependency-free bounded-command wrapper, package scripts, Vitest global/setup/teardown wiring, focused wrapper/sentinel tests, and narrow documentation updates
+Expected migration/lockfile impact: none; do not edit schema, migrations 0000-0004, dependency versions, or package-lock.json
+Failing reproduction/test: an uninjected getDb/build can currently select the configured/default ledger; prove the wrapper and worker setup select only new absolute external temporary targets
+Rollback plan: revert wrapper and test-runner wiring together; never restore a bare build or shared implicit test database
+Focused validation: wrapper target/refusal/status/signal-cleanup tests, per-worker isolation, uninjected-service sentinel, and explicit zero-artifact checks
+Repository validation: guarded tests/lint/typecheck first; only after the harness exists, run the first Next build through it in a sanitized copied workspace and inspect cleanup
+Uncertainty requiring user input: none currently; stop if installed Next/Vitest behavior conflicts with the Section 9 harness contract
 ```
 
 ## 17. Handoff template for every completed package

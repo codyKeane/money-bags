@@ -4,12 +4,6 @@
 // code-level real-data guard. Rows are generated per CALENDAR MONTH (last 6
 // months up to the current UTC month), so runs in different months converge on
 // the same transaction rows for overlapping months.
-try {
-  process.loadEnvFile();
-} catch {
-  // no .env — client falls back to the default path
-}
-
 import { getDb } from "./client";
 import { accounts, categories, transactions } from "./schema";
 import { computeImportHashes, type HashableRow } from "../lib/import-hash";

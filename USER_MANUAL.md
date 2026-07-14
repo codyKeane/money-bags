@@ -813,8 +813,9 @@ bad import, fix the file or the settings, and import again.
 
 Put real statement CSVs in the project's `data/imports/` folder. That folder
 and the default `data/*.db*` database targets are deliberately kept out of
-version control. A custom `DB_FILE_NAME` may not be covered until WP-12B, so
-keep it outside the repository or verify an explicit ignore rule. The
+version control. Until WP-12B broadens and audits the Git boundary, keep a
+custom in-repository target below `data/` only with an explicit verified ignore
+rule, or use a canonical absolute path outside the repository. The
 `data/samples/` folder holds fake data for testing.
 
 ### Importing from the command line (optional)
@@ -888,9 +889,24 @@ edge when there's more to scroll sideways to.
 ## 9. Keeping your data safe
 
 Everything lives in **one file**. By default it is `data/finance.db` inside the
-project folder; `DB_FILE_NAME` can select a different exact target. That's great
-for privacy, but it means **you** are responsible for backups — no cloud is
-doing it for you.
+project folder. `DB_FILE_NAME` can select another path below `data/`, or a
+canonical absolute path outside the project. Other relative paths, traversal,
+symlink aliases, and paths elsewhere inside the project are refused before a
+file is created. That's great for privacy, but it means **you** are responsible
+for backups — no cloud is doing it for you.
+
+Before opening the database, Money Bags also checks that the optional root
+`.env` file is valid UTF-8 assignment syntax and that every migration named by
+the migration journal is the reviewed, unchanged SQL file. Only a missing
+`.env` is ignored; malformed or unreadable configuration stops startup instead
+of silently selecting a different ledger.
+
+If an older setup uses a database elsewhere inside the project, stop before
+upgrading. With the old version, stop all writers and make and verify a backup.
+Then explicitly restore or move the offline ledger below `data/`, update
+`DB_FILE_NAME`, and start the new version. If an older relative path actually
+points outside the project, replace it with that ledger's canonical absolute
+path. Money Bags never moves a database automatically.
 
 ### Make a backup
 
@@ -918,9 +934,9 @@ before and after importing a big statement.)
 
 - The app makes **zero** network calls while running. It doesn't phone home.
 - The default `data/*.db*` database targets and `data/imports/` statements are
-  excluded from version control. A custom `DB_FILE_NAME` may fall outside those
-  rules until WP-12B; keep it outside the repository or verify explicit ignore
-  protection.
+  excluded from version control. Until WP-12B, keep a custom in-repository
+  target below `data/` only with verified ignore protection, or use a canonical
+  external absolute path.
 - Because there's **no login**, treat "who can reach the app" as "who can see
   your money." Keep it on `127.0.0.1` or behind Tailscale.
 

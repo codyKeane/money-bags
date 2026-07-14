@@ -1,17 +1,14 @@
 import { defineConfig } from "drizzle-kit";
+import path from "node:path";
+import { preflightDatabaseOpen } from "./src/db/preflight";
 
-// drizzle-kit runs outside Next, so load .env ourselves (Node 22 built-in).
-try {
-  process.loadEnvFile();
-} catch {
-  // no .env file — fall back to defaults below
-}
+const preflight = preflightDatabaseOpen();
 
 export default defineConfig({
-  schema: "./src/db/schema.ts",
-  out: "./drizzle",
+  schema: path.join(preflight.repositoryRoot, "src", "db", "schema.ts"),
+  out: preflight.migrationsFolder,
   dialect: "sqlite",
   dbCredentials: {
-    url: process.env.DB_FILE_NAME ?? "data/finance.db",
+    url: preflight.databasePath,
   },
 });

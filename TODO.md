@@ -131,10 +131,10 @@ autofocus-on-open, formatted dates, StatCard link affordance, category color dot
 ## Audit-remediation program — ACTIVE
 
 `IMPLEMENTATION_GUIDE.md` is the authoritative dependency-ordered delivery
-plan for current correctness, privacy, and operational work. Completed on
-2026-07-13: WP-00 and WP-01A/B/C. The next slice is WP-12A, followed by WP-01D
-and WP-12B; do not skip to financial behavior packages or the decision-gated
-transfer/refund/deduplication RFCs.
+plan for current correctness, privacy, and operational work. WP-00 and
+WP-01A/B/C completed on 2026-07-13; WP-12A completed on 2026-07-14. The next
+slice is WP-01D, followed by WP-12B; do not skip to financial behavior packages
+or the decision-gated transfer/refund/deduplication RFCs.
 
 The product backlog below is retained as historical product context. Its rank
 does not override the guide, and an unchecked item is not implementation
