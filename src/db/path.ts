@@ -8,6 +8,7 @@ import path from "node:path";
 import { parseEnv } from "node:util";
 
 const REPOSITORY_MARKER = "moneybagsRepositoryRoot";
+export const REPOSITORY_ROOT_ENV_NAME = "MONEYBAGS_REPOSITORY_ROOT";
 const DEFAULT_DATABASE_TARGET = "data/finance.db";
 const MODULE_DIRECTORY = __dirname;
 const ENVIRONMENT_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*/;
@@ -89,6 +90,27 @@ function searchFrom(start: string): string | undefined {
 export function findRepositoryRoot(
   options: RepositoryRootSearchOptions = {},
 ): string {
+  const launcherRoot =
+    options.moduleDirectory === undefined
+      ? process.env[REPOSITORY_ROOT_ENV_NAME]
+      : undefined;
+  if (launcherRoot !== undefined) {
+    if (!path.isAbsolute(launcherRoot)) {
+      throw new Error("Configured launcher root must be absolute and canonical.");
+    }
+    const requestedLauncherRoot = path.resolve(launcherRoot);
+    const canonicalPath = realpathSync(requestedLauncherRoot);
+    const canonicalLauncherRoot = searchFrom(canonicalPath);
+    if (
+      canonicalLauncherRoot === undefined ||
+      canonicalPath !== requestedLauncherRoot ||
+      canonicalLauncherRoot !== canonicalPath
+    ) {
+      throw new Error("Configured launcher root must be the marked repository root.");
+    }
+    return canonicalLauncherRoot;
+  }
+
   const root = searchFrom(options.moduleDirectory ?? MODULE_DIRECTORY);
   if (root !== undefined) return root;
   throw new Error(

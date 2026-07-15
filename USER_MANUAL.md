@@ -284,10 +284,18 @@ npm run build        # prepare an optimized version (do this once after updates)
 npm start            # run that optimized version on 127.0.0.1:3100
 ```
 
-Until the planned WP-01D safety wrapper lands, a build can resolve, open, or
-migrate the configured database. Do not point a build used for testing or
-validation at a real ledger; project build verification waits for the wrapper
-described in `IMPLEMENTATION_GUIDE.md`.
+The build command runs with a new database in the operating system's temporary
+directory; it does not open the configured ledger. The wrapper removes that
+database and its SQLite sidecars when the build finishes or receives Ctrl+C or
+a catchable termination signal. `npm start` then opens the configured ledger at
+runtime, as normal. Until the separate WP-04 packaging-privacy work is complete,
+maintainer validation builds still use a sanitized copied workspace containing
+no real ledger, sidecars, imports, backups, or private `.env*` files. A forced
+kill or power loss can leave the uniquely marked temporary folder behind. The
+safe build/test wrappers currently require macOS, Linux, or WSL. They stop
+before creating a temporary folder on native Windows because that platform
+needs a stronger child-process supervisor; ordinary development mode still
+works on Windows.
 
 ### Stopping the app
 
@@ -950,13 +958,14 @@ Run these from the project folder in a terminal.
 |---|---|
 | `npm install` | One-time: download the app's building blocks. |
 | `npm run dev` | Start the app (development mode) at `http://127.0.0.1:3100`. |
-| `npm run build` then `npm start` | Start the faster production version; builds can open the configured DB before WP-01D. |
+| `npm run build` then `npm start` | Build without opening the configured ledger, then start the faster production version on that ledger; see the pre-WP-04 packaging caveat above. |
+| `npm run smoke:dev` / `npm run smoke:start` | Run a bounded loopback health check with a temporary ledger; the start smoke needs an existing build. |
 | `npm run db:migrate` | Create/upgrade the database file. |
 | `npm run db:seed` | Unguarded demo seed; new disposable ledgers only. |
 | `npm run db:backup` | Make a timestamped backup beside the active database. |
 | `npm run import -- --file <f> --account "<name>"` | Import a statement from the terminal. |
 | `npm run db:studio` | Open a database browser to inspect the raw data. |
-| `npm test` | Run the app's automated self-checks. |
+| `npm test` | Run the app's automated self-checks with fresh temporary DB targets. |
 
 > **Tip:** in these commands, the app listens on port **3100** (not the usual
 > 3000). If your browser shows nothing, double-check the address is

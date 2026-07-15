@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  REPOSITORY_ROOT_ENV_NAME,
   findRepositoryRoot,
   loadEnvironmentStrict,
   resolveDatabasePath,
@@ -53,6 +54,28 @@ describe("findRepositoryRoot", () => {
     expect(() => findRepositoryRoot({ moduleDirectory: unmarkedModuleTree })).toThrow(
       /Repository root not found/,
     );
+  });
+
+  it("accepts only an exact marked root injected by a Next launcher", () => {
+    const launcherRoot = makeRepository();
+    const nested = path.join(launcherRoot, "nested");
+    const alias = path.join(makeTemp("moneybags-launcher-alias-"), "repository");
+    mkdirSync(nested);
+    symlinkSync(launcherRoot, alias, "dir");
+    const inherited = process.env[REPOSITORY_ROOT_ENV_NAME];
+    try {
+      process.env[REPOSITORY_ROOT_ENV_NAME] = launcherRoot;
+      expect(findRepositoryRoot()).toBe(launcherRoot);
+      process.env[REPOSITORY_ROOT_ENV_NAME] = nested;
+      expect(() => findRepositoryRoot()).toThrow(/must be the marked repository root/);
+      process.env[REPOSITORY_ROOT_ENV_NAME] = alias;
+      expect(() => findRepositoryRoot()).toThrow(/must be the marked repository root/);
+      process.env[REPOSITORY_ROOT_ENV_NAME] = ".";
+      expect(() => findRepositoryRoot()).toThrow(/absolute and canonical/);
+    } finally {
+      if (inherited === undefined) delete process.env[REPOSITORY_ROOT_ENV_NAME];
+      else process.env[REPOSITORY_ROOT_ENV_NAME] = inherited;
+    }
   });
 });
 

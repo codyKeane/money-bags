@@ -185,13 +185,22 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
   monitoring; `deploy/` holds systemd unit + backup timer examples
 - `GET /api/export?q=&account=&category=&month=&from=&to=` — the filtered
   transaction view as a CSV download (same query parsing as `/transactions`)
-- `npm run build` / `npm start` — production build / serve. During remediation,
-  do not use a bare build as a validation command until WP-01D supplies the
-  mandatory temporary-database wrapper; follow `IMPLEMENTATION_GUIDE.md`.
-- `npm test` / `npm run test:watch` — Vitest. Single file:
+- `npm run build` / `npm start` — production build / serve. Build runs through
+  the mandatory external temporary-database wrapper; start deliberately opens
+  the configured runtime ledger. `smoke:dev` / `smoke:start` run a bounded
+  loopback health check on a temporary ledger (`smoke:start` needs a build).
+  Until WP-04, run validation/packaging builds only in a sanitized copied
+  workspace with no real ledger, sidecar, import, backup, or private `.env*`
+  below the trace root: the wrapper prevents DB access but does not yet prove
+  output-trace privacy. Safe validation wrappers require POSIX process-group
+  ownership (Linux, macOS, or WSL) and fail before lease creation on native
+  Windows; ordinary dev/start support remains unchanged.
+- `npm test` / `npm run test:watch` — Vitest through the same outer cleanup
+  wrapper; setup gives every test file a fresh implicit temporary DB. Single file:
   `npm test -- src/lib/categorize.test.ts`; by name:
   `npm test -- -t "dedupe"`
-- `npm run lint` — ESLint
+- `npm run lint` — ESLint through a temporary lease that fails if lint opens DB
+  artifacts
 - `npm run db:generate` — generate a new append-only migration from schema
   changes; never regenerate or edit migrations 0000–0004
 - `npm run db:migrate` — apply migrations (also auto-applied on startup;
@@ -206,7 +215,7 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
 
 - `IMPLEMENTATION_GUIDE.md` — audit-remediation north star: immutable contracts,
   decision gates, dependency-ordered work packages, rollback, and acceptance
-  tests. WP-00, WP-01A/B/C, and WP-12A are complete; WP-01D is the prepared
+  tests. WP-00, WP-01A/B/C/D, and WP-12A are complete; WP-12B is the prepared
   next slice.
   Read it before implementing audit findings or selecting the next
   correctness/privacy/operations package.

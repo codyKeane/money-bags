@@ -27,11 +27,21 @@ start:lan` to bind all interfaces. For production: `npm run build && npm
 start`. Migrations and the default category set are applied automatically
 on startup.
 
-> **Build-validation warning:** until WP-01D lands, `npm run build` can resolve,
-> open, or migrate the configured database. Do not use a real ledger for build
-> validation. Project build verification must wait for the temporary-target
-> wrapper; follow `IMPLEMENTATION_GUIDE.md` for the guarded non-build checks
-> permitted before then.
+**Safe validation targets:** `npm test`, `npm run lint`, and `npm run build`
+run through a fail-closed wrapper that replaces `DB_FILE_NAME` with a unique
+database below the OS temporary directory. Tests narrow that further to a fresh
+target per test file. The wrapper removes the temporary database and SQLite
+sidecars after success, failure, Ctrl+C, or a catchable termination signal.
+`npm start` is deliberately different: it opens the configured real ledger at
+runtime. Until WP-04 adds and verifies output-trace exclusions, validation or
+packaging builds must still run from a sanitized copied workspace with no real
+ledger, sidecar, import, backup, or private `.env*` file anywhere below the
+trace root. The wrapper prevents database access; it does not yet establish
+build-output privacy. An uncatchable kill or power loss can leave the uniquely
+marked temporary directory for manual removal. These validation wrappers
+currently require Linux, macOS, or WSL; on native Windows they fail before
+creating a lease because reliable descendant-process cleanup is not available.
+Normal `npm run dev` / `npm start` runtime support is unchanged.
 
 > **Demo seed warning:** the current `npm run db:seed` command is unguarded.
 > Use it only with a new disposable demo ledger. It can update named accounts
@@ -154,6 +164,7 @@ repository.
 |---|---|
 | `npm run dev` / `npm run build && npm start` | dev / production server on 127.0.0.1:3100 |
 | `npm run dev:lan` / `npm run start:lan` | same, bound to all interfaces (no auth — deliberate opt-in) |
+| `npm run smoke:dev` / `npm run smoke:start` | bounded loopback health smoke with a temporary ledger (`smoke:start` requires an existing build) |
 | `npm run db:backup` | WAL-safe online backup beside the active database |
 | `npm test` | Vitest suite (parser, categorizer, dedupe, DB integration) |
 | `npm run lint` | ESLint |

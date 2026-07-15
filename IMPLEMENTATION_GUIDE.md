@@ -2,11 +2,11 @@
 
 > Status: active, decision-complete implementation north star for the audit-remediation program
 > Code baseline: clean historical snapshot `main` at `3d967baf8d7451f8c8202f3f9489401771bcc3b7` (`3d967ba`)
-> Implementation checkpoint: WP-00 and WP-01A/B/C completed 2026-07-13; WP-12A completed 2026-07-14; WP-01D is next
-> Checkpoint verification: default and shuffled suites passed 16 files / 148 tests; WP-12A shuffle seeds are `17`, `2718`, and `20260714`; its focused preflight/migration run passed 4 files / 46 tests; the earlier integration exact-name matrix passed 45/45
-> Additional gates: ESLint, TypeScript, migration integrity, cross-cwd resolution, zero-artifact guards, documentation checks, and independent package review passed
-> Safety gate: no Next build was run; a bare build remains prohibited until WP-01D supplies the temporary-target wrapper
-> Prepared: 2026-07-14
+> Implementation checkpoint: WP-00 and WP-01A/B/C completed 2026-07-13; WP-12A completed 2026-07-14; WP-01D completed 2026-07-15; WP-12B is next
+> Checkpoint verification: default and shuffled suites passed 20 files / 191 tests with seeds `17`, `2718`, and `20260714`; the sanitized copied-workspace gate passed tests, lint, real dev/start health smokes, and the first wrapped production build
+> Additional gates: ESLint, TypeScript, migration integrity, cross-cwd and bundled-launcher root resolution, direct-Vitest fallback, zero-artifact guards, and documentation checks passed; security audit cleared the implementation, while independent review recorded the disclosed native-Windows validation limitation
+> Safety gate: no Next build ran in the working repository; the only build used an allowlisted sanitized copy, a clean HOME/TMPDIR, and an unchanged fake default-ledger sentinel. Until WP-04, all validation/packaging builds retain this copied-workspace restriction
+> Prepared: 2026-07-15
 > Scope: correctness, data integrity, privacy, operational safety, architecture, and accessibility
 > Dependency policy: use the existing Node.js 20+, Next.js, Drizzle, better-sqlite3, Zod, and Vitest stack; do not add a package unless a later decision record explicitly justifies it
 
@@ -124,7 +124,7 @@ Three states must not be conflated:
 
 1. **Historical audit snapshot.** Commit `3d967ba` on `main` (tracking `origin/main`) was the clean code snapshot audited: `feat(UX7-UX18): UX-polish round 2 — feedback, confirms, a11y, mobile`.
 2. **Implementation-start documentation state.** Before the first remediation implementation commit, `HEAD` remained `3d967ba`; the maintainer owned a tracked `CLAUDE.md` edit linking this guide and the untracked `IMPLEMENTATION_GUIDE.md` / `IMPLEMENTATION_PLAN_ANALYSIS.md` planning artifacts. Those files were preserved and incorporated rather than replaced.
-3. **Current implementation checkpoint.** WP-00, WP-01A/B/C, and WP-12A are complete in the checkpoint containing this handoff. The current default suite and shuffled seeds `17`, `2718`, and `20260714` each passed 16 files / 148 tests; WP-12A's focused resolver/preflight/migration run passed 4 files / 46 tests. All 45 previously collected integration-test names passed when selected individually. ESLint, TypeScript, migration-integrity, cross-cwd, zero-artifact, documentation, and independent-review gates also passed. The 103-test result below remains the historical audit result, not the current suite count.
+3. **Current implementation checkpoint.** WP-00, WP-01A/B/C, WP-12A, and WP-01D are complete in the checkpoint containing this handoff. The current default suite and shuffled seeds `17`, `2718`, and `20260714` each passed 20 files / 191 tests. WP-12A's focused resolver/preflight/migration run passed 4 files / 46 tests; the final WP-01D focused wrapper/smoke/worker/implicit/root run passed 5 files / 64 tests. All 45 previously collected integration-test names passed when selected individually. ESLint, TypeScript, migration-integrity, cross-cwd, bundled Next launcher-root, direct-Vitest, zero-artifact, and documentation gates passed; security audit found no remaining blocker, and independent review cleared POSIX behavior while recording the disclosed native-Windows validation limitation. The 103-test result below remains the historical audit result, not the current suite count.
 
 Installed and locked baseline:
 
@@ -148,7 +148,7 @@ Validation evidence from the audit must be reported precisely:
 - The two frozen import-hash golden values in Section 3: **matched** the current implementation.
 - `git diff --check`: **passed** for the audited documentation state.
 
-No successful production build is evidence for this plan. A bare `npm run build` can resolve/open the default ledger and is itself within WP-01D's safe-target remediation; it must not be rerun or cited until the temporary-target wrapper exists. Historical trace metadata still established the narrower MB-003 fact: route NFT manifests referenced fake/sample SQLite DB, WAL, and SHM paths. Current configuration does not enable `output: "standalone"`, so this proves sensitive trace inclusion and future copy risk, not that `npm start` copied runtime data.
+The only successful production build evidence for this plan is WP-01D's wrapped build in an allowlisted sanitized copied workspace. Its fake `data/finance.db` sentinel remained byte-for-byte unchanged and no sidecar or wrapper lease survived. The build emitted Next's whole-project NFT warning, so this is DB-access evidence, not trace-privacy evidence: builds in the working repository remain prohibited as validation/packaging evidence until WP-04. Historical trace metadata established the narrower MB-003 fact that route NFT manifests referenced fake/sample SQLite DB, WAL, and SHM paths. Current configuration does not enable `output: "standalone"`, so this proves sensitive trace inclusion and future copy risk, not that `npm start` copied runtime data.
 
 Additional observed evidence:
 
@@ -2149,7 +2149,36 @@ Uncertainty requiring user input:
   the lockfile remained unchanged. Every explicit WP-12A guard path remained
   absent, and the independent review found no remaining database-open ordering
   or security blocker after the cwd fallback was removed.
-- No Next build was run; WP-01D remains the prerequisite for build evidence.
+- WP-01D added an ownership-marked outer lease, authenticated Vitest root
+  handoff, fresh marked worker directories, implicit-handle close support,
+  bounded POSIX process-group supervision, and real dev/start smoke helpers.
+  Missing/changed markers, forged handles, symlink replacement, setup/logging
+  failures, early server exit, pre-spawn signals, ignored descendants, and
+  cleanup failures all have focused negative coverage.
+- Current WP-01D default and shuffled orders: 20 files / 191 tests passed for
+  the default order and seeds `17`, `2718`, and `20260714`. Repository-wide
+  ESLint, `tsc --noEmit`, and `git diff --check` passed. Every reported outer
+  lease root was checked directly and was absent afterward.
+- A direct `vitest run` used a controlled `TMPDIR`, passed the implicit-DB
+  sentinel, and left that root empty. A forged wrapper token was rejected before
+  any database artifact was created.
+- The sanitized copied-workspace gate allowlisted Git source, rejected private
+  env/runtime-data paths and source symlinks, copied dependencies locally, and
+  used clean HOME/TMPDIR state. Tests (20 files / 190 tests), lint, real Next
+  dev health smoke, the wrapped optimized build, and real `next start` health
+  smoke passed. Five reported leases were absent afterward. The fake default
+  sentinel retained SHA-256
+  `45957bc25a2f747c9368c922d5b8f7389b59e9db35cf7fd9a4c698799c3100e6`,
+  size, mtime, and mode, and gained no WAL/SHM/journal sidecar. The fixture was
+  removed after verification.
+- The sanitized build emitted Next's whole-project NFT warning. That expected
+  PG-06 evidence preserves the pre-WP-04 copied-workspace restriction; WP-01D
+  does not claim output-trace or standalone privacy.
+- Native Windows validation wrappers fail before lease creation because this
+  dependency-free implementation cannot prove orphan-descendant termination
+  after a leader exits. Linux, macOS, and WSL own a POSIX process group. Normal
+  Windows dev/start support remains, while wrapped test/lint/build/smoke needs
+  WSL until a separately reviewed Windows job-object supervisor exists.
 
 Exact guarded command forms used for WP-12A:
 
@@ -2178,29 +2207,30 @@ For each of its 45 `{ file, name }` results, the command runner invoked
 invocations passed, and a post-run `/tmp/moneybags-exact-*` search plus direct
 checks of the default/shuffle/focused guard directories found no artifacts.
 
-### Prepared handoff: WP-01D
+### Prepared handoff: WP-12B
 
-The next session should select **WP-01D — Make the no-real-data test/build rule
-executable**. WP-00, WP-01A/B/C, and WP-12A are complete. Build the safe harness
-before the first Next build; do not skip ahead to packaging, financial behavior,
-or a deferred RFC.
+The next session should select **WP-12B — Path policy, Git boundary, and
+audit**. WP-00, WP-01A/B/C/D, and WP-12A are complete. Keep every validation
+command behind WP-01D's temporary-target harness, and keep builds in sanitized
+copied workspaces until WP-04; do not skip ahead to packaging, financial
+behavior, or a deferred RFC.
 
 ```text
-Selected package/slice: WP-01D
-Finding IDs addressed: MB-015, PG-06
-Decision gates resolved: use the dependency-free temporary-target wrapper, per-worker Vitest target, and sanitized copied-workspace build policy in Section 9
+Selected package/slice: WP-12B
+Finding IDs addressed: MB-010
+Decision gates resolved: enforce the full data/ Git boundary, preserve only reviewed fake samples, and keep the audit command read-only as specified in Section 9
 Repository root: the checkout root; confirm it before running any command
 Branch / starting state: main at the commit containing this handoff; reconfirm a clean worktree
 Applicable instructions: repository-root AGENTS.md plus any active session working agreement
 Installed versions to preserve: Next 16.2.10, Drizzle ORM 0.45.2, better-sqlite3 12.11.1, Node >=20.12
-Fake fixture/temp DB plan: wrapper-owned unique OS-temp roots; a separate per-worker target; sentinels only in a sanitized copied workspace; deterministic success/failure/signal cleanup
-Expected files changed: a dependency-free bounded-command wrapper, package scripts, Vitest global/setup/teardown wiring, focused wrapper/sentinel tests, and narrow documentation updates
+Fake fixture/temp DB plan: wrapper-owned unique OS-temp roots only; fake external and in-repository path fixtures; never enumerate or open the real data tree or configured ledger
+Expected files changed: .gitignore, a side-effect-free read-only data-path audit command and tests, narrow path/backup/restore documentation, and package-script wiring
 Expected migration/lockfile impact: none; do not edit schema, migrations 0000-0004, dependency versions, or package-lock.json
-Failing reproduction/test: an uninjected getDb/build can currently select the configured/default ledger; prove the wrapper and worker setup select only new absolute external temporary targets
-Rollback plan: revert wrapper and test-runner wiring together; never restore a bare build or shared implicit test database
-Focused validation: wrapper target/refusal/status/signal-cleanup tests, per-worker isolation, uninjected-service sentinel, and explicit zero-artifact checks
-Repository validation: guarded tests/lint/typecheck first; only after the harness exists, run the first Next build through it in a sanitized copied workspace and inspect cleanup
-Uncertainty requiring user input: none currently; stop if installed Next/Vitest behavior conflicts with the Section 9 harness contract
+Failing reproduction/test: common SQLite extensions/custom nested data paths can escape current ignore rules; prove full data/** ignore plus data/samples/** re-inclusion without inspecting runtime files
+Rollback plan: retain the strict resolver and broad data-boundary ignore; if audit presentation is wrong, remove only its package entry while correcting it—never weaken path refusal or re-expose runtime data
+Focused validation: git check-ignore matrix, lexical/canonical path tests, read-only audit mode/classification tests, and explicit zero-DB-open/artifact checks
+Repository validation: wrapped tests/lint/typecheck and final Git status/diff; any later Next build remains sanitized-copy-only until WP-04
+Uncertainty requiring user input: stop if a currently tracked non-sample file under data/ appears, or an existing operator workflow depends on in-repository runtime data outside data/
 ```
 
 ## 17. Handoff template for every completed package

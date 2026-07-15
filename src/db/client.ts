@@ -61,12 +61,20 @@ const globalForDb = globalThis as unknown as {
   __financeDb?: { db: Db; sqlite: Database.Database; file: string };
 };
 
+// Test infrastructure uses this to release the worker-owned implicit handle
+// before deleting its temporary directory. Clear the cache first so a failed
+// close can never leave a closed-or-unknown handle available for reuse.
+export function closeImplicitDb(): void {
+  const current = globalForDb.__financeDb;
+  if (!current) return;
+  delete globalForDb.__financeDb;
+  current.sqlite.close();
+}
+
 export function getDb(): Db {
   const preflight = preflightDatabaseOpen();
-  if (
-    !globalForDb.__financeDb ||
-    globalForDb.__financeDb.file !== preflight.databasePath
-  ) {
+  if (globalForDb.__financeDb?.file !== preflight.databasePath) {
+    closeImplicitDb();
     globalForDb.__financeDb = {
       ...createDb(preflight, { installDefaults: true }),
       file: preflight.databasePath,
