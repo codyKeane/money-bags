@@ -1,11 +1,12 @@
 # Money Bags Implementation Guide
 
-> Status: active, decision-complete implementation north star for the audit-remediation program
+> Status: selected remediation implementation complete; manual release gates and decision-dependent RFCs remain
 > Code baseline: clean historical snapshot `main` at `3d967baf8d7451f8c8202f3f9489401771bcc3b7` (`3d967ba`)
-> Implementation checkpoint: WP-00 and WP-01A/B/C completed 2026-07-13; WP-12A completed 2026-07-14; WP-01D and WP-12B completed 2026-07-15; WP-02A is next
-> Checkpoint verification: the current default and seed-`12012` shuffled suites passed 21 files / 207 tests; ESLint, TypeScript, Git-ignore/re-inclusion checks, sanitized audit-CLI checks, and `git diff --check` passed; the earlier sanitized copied-workspace gate passed tests, lint, real dev/start health smokes, and the first wrapped production build
-> Additional gates: migration integrity, cross-cwd and bundled-launcher root resolution, direct-Vitest fallback, zero-artifact guards, hostile Git-environment refusal, terminal-safe audit output, and documentation checks passed; security and independent review cleared WP-12B, while the disclosed native-Windows validation-wrapper limitation remains
-> Safety gate: no Next build ran in the working repository; the only build used an allowlisted sanitized copy, a clean HOME/TMPDIR, and an unchanged fake default-ledger sentinel. Until WP-04, all validation/packaging builds retain this copied-workspace restriction
+> Implementation checkpoint: WP-00 and WP-01A/B/C completed 2026-07-13; WP-12A completed 2026-07-14; WP-01D, WP-12B, WP-02A/B, WP-03, WP-06, WP-07, WP-08, WP-09, WP-10, WP-11, WP-04, WP-05, WP-14A/B/C, WP-15, WP-16A, WP-13A, WP-16B, WP-17, and WP-18 completed 2026-07-15; WP-17's real-browser/screen-reader release gate, real-host operational gates, and deferred RFC decisions remain open
+> Product checkpoint: the decision-free dashboard uncategorized-review count was implemented 2026-07-15 using the canonical active split-category semantics and transaction filter
+> Checkpoint verification: the current default and seed-`181818` shuffled suites passed 62 files / 816 tests; the uncategorized-count active-category/transaction focus passed 2 files / 40 tests; WP-17's form/confirmation/navigation/action focus passed 8 files / 59 tests; WP-16B's direct-renderer/preflight/runtime/backup/trace focus passed 7 files / 81 tests with installed systemd 261 verification; WP-16A's renderer/unit/privacy-policy focus passed 2 files / 25 tests; WP-15's lint-boundary/health/import-race focus passed 5 files / 86 tests; WP-14C's action/import/split/revalidation focus passed 5 files / 128 tests; WP-14B's no-store/metadata/stream/multipart/filename/route/service/CLI focus passed 12 files / 142 tests; WP-14A's parser/config/runtime/action/import/header/launcher focus passed 7 files / 131 tests during final security re-review; WP-04/WP-05's path-policy/trace/standalone/wrapper focus passed 3 files / 65 tests; WP-10's serializer/service/route/active-category focus passed 4 files / 38 tests; WP-11's currency/account/action/API/summary/transaction/import/export focus passed 16 files / 163 tests; ESLint, TypeScript, the protected-layer DB-import search, staged/unstaged `git diff --check`, exact-money/split/service/seed/import focused tests, cross-CWD synthetic seed/import CLIs, injected rollback, wrapper-owned seed smoke, two-real-connection split serialization, Git-ignore/re-inclusion checks, sanitized audit-CLI checks, warning-sensitive rendered-unit verification, and the sanitized direct service preflight passed
+> Additional gates: the allowlisted sanitized-copy validator passed ordinary and standalone builds, every-NFT and complete copied-tree/symlink scans, exact no-store/global-header checks across every financial response class, a synthetic external-DB mutation/fresh-response check, clean-HOME telemetry-debug suppression, unchanged synthetic DB/sidecar/import/backup sentinels, and loopback health smokes against fresh external temporary databases; independent review reproduced four trace/standalone bypasses, verified their regression fixes, and returned READY; migration integrity, cross-cwd and bundled-launcher root resolution, direct-Vitest fallback, zero-artifact guards, hostile Git-environment refusal, terminal-safe audit output, and documentation checks passed; the disclosed native-Windows validation-wrapper limitation remains
+> Safety gate: no Next build ran in the working repository. WP-04's first ordinary and standalone output evidence came only from an allowlisted temporary copy with clean HOME/TMP/XDG roots and synthetic runtime sentinels. Ordinary builds are now guarded by the temporary-DB owner plus every-manifest privacy scan; standalone remains a validation-only copied-workspace mode and is not enabled in product configuration
 > Prepared: 2026-07-15
 > Scope: correctness, data integrity, privacy, operational safety, architecture, and accessibility
 > Dependency policy: use the existing Node.js 20+, Next.js, Drizzle, better-sqlite3, Zod, and Vitest stack; do not add a package unless a later decision record explicitly justifies it
@@ -166,6 +167,7 @@ Version-local framework evidence for the selected work is the installed Next 16.
 - Output tracing and Turbopack roots: `node_modules/next/dist/docs/01-app/03-api-reference/05-config/01-next-config-js/output.md`, `turbopack.md`, the [official output reference](https://nextjs.org/docs/app/api-reference/config/next-config-js/output), and the [official Turbopack reference](https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack).
 - Route-handler and backend-for-frontend boundaries: `node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/route.md`, `node_modules/next/dist/docs/01-app/02-guides/backend-for-frontend.md`, the [official Route Handler reference](https://nextjs.org/docs/app/api-reference/file-conventions/route), and the [official backend-for-frontend guide](https://nextjs.org/docs/app/guides/backend-for-frontend).
 - Global headers and framework disclosure: the installed `headers.md` / `poweredByHeader.md`, the [official headers reference](https://nextjs.org/docs/app/api-reference/config/next-config-js/headers), and the [official `poweredByHeader` reference](https://nextjs.org/docs/app/api-reference/config/next-config-js/poweredByHeader).
+- Server-only build constants: `node_modules/next/dist/docs/03-architecture/nextjs-compiler.md`, whose installed `compiler.defineServer` contract limits the replacement to server and edge bundles.
 
 The security conclusion uses maintainer primary sources: the [Next.js advisory index](https://github.com/vercel/next.js/security/advisories), the applicable [Next.js 16.2.x advisory](https://github.com/vercel/next.js/security/advisories/GHSA-26hh-7cqf-hhc6), and the React team's [19.2.x security backport notice](https://react.dev/blog/2025/12/11/denial-of-service-and-source-code-exposure-in-react-server-components). “Meet or exceed” is deliberate: React 19.2.4 is the published safe 19.2.x backport, while Next 16.2.10 is newer than the applicable 16.2.6 threshold.
 
@@ -258,7 +260,7 @@ Create these only when their work package needs them:
 | `src/server/security/origin-policy.ts` | Exact URL parsing/matching for same-origin and explicitly configured HTTPS deployment origins; no suffix wildcard. |
 | `src/lib/csv/spreadsheet-safe.ts` | Pure export-time text-cell protection, if a separate module improves focused tests. |
 | `scripts/check-build-privacy.mjs` | Dependency-free read of `.nft.json` metadata; never opens traced files. |
-| `scripts/next-telemetry-disabled.cjs` | Preload that sets `NEXT_TELEMETRY_DISABLED=1` before the Next CLI loads. |
+| `scripts/next-telemetry-disabled.cjs` | Preload that sets `NEXT_TELEMETRY_DISABLED=1` and removes Next's debug override before the CLI loads. |
 | `scripts/run-with-temp-db.mjs` | Cross-platform safe-command harness that supplies and cleans a unique absolute temporary DB. |
 | `scripts/audit-data-path.ts` | Read-only DB path, Git-ignore, and POSIX-mode diagnostics. |
 | `scripts/verify-backup.ts` | Read-only validation for a standalone backup used by the manual restore runbook. Automated restore remains RFC-06. |
@@ -801,7 +803,7 @@ Expected validation failures should not depend on parsing SQLite error strings. 
 
 **Recommended implementation**
 
-1. Add a tiny CommonJS preload, for example `scripts/next-telemetry-disabled.cjs`, containing only the environment assignment before Next loads.
+1. Add a tiny CommonJS preload, for example `scripts/next-telemetry-disabled.cjs`, that assigns `NEXT_TELEMETRY_DISABLED=1` before Next loads. Installed Next 16.2.10 checks `NEXT_TELEMETRY_DEBUG` before its disabled flag and otherwise prints structured event payloads locally, so the privacy preload also removes that diagnostic override before framework initialization.
 2. Invoke the local Next CLI in the same Node process for `dev`, `build`, `start`, `dev:lan`, and `start:lan`, conceptually:
 
    ```text
@@ -2232,32 +2234,584 @@ For each of its 45 `{ file, name }` results, the command runner invoked
 invocations passed, and a post-run `/tmp/moneybags-exact-*` search plus direct
 checks of the default/shuffle/focused guard directories found no artifacts.
 
-### Prepared handoff: WP-02A
+### Completed checkpoint: WP-02A
 
-The next session should select **WP-02A — Service-owned domain write contracts
-and exact money**. WP-00, WP-01A/B/C/D, and WP-12A/B are complete. Keep every
-database-bearing validation command behind WP-01D's temporary-target harness,
-and keep builds in sanitized copied workspaces until WP-04. Do not begin
-WP-02B split-integrity changes or decision-gated RFC behavior before the WP-02A
-contracts are stable.
+WP-02A now owns exact editable decimal parsing/serialization and the account,
+category, transaction, split-reference, import, recategorization, budget, and
+seed write contracts described in Section 9. Expected invalid input, missing
+rows/references, and duplicate names return stable discriminated outcomes;
+unexpected database/programmer faults still throw. Editable forms and CSV
+serialization no longer divide cents or round binary floating-point values.
+No schema, migration, dependency, or lockfile changed. At this checkpoint,
+WP-02B's split-sum, historical-mismatch, and concurrency policy remained
+deliberately unimplemented; the following checkpoint completes it.
 
-```text
-Selected package/slice: WP-02A
-Finding IDs addressed: PG-01, PG-02
-Decision gates resolved: service-owned write invariants and the exact editable-money grammar/serialization contract in Section 9; no generic repository abstraction and no schema migration
-Repository root: the checkout root; confirm it before running any command
-Branch / starting state: main at the commit containing this handoff; reconfirm a clean worktree
-Applicable instructions: repository-root AGENTS.md plus any active session working agreement
-Installed versions to preserve: Next 16.2.10, Drizzle ORM 0.45.2, better-sqlite3 12.11.1, Node >=20.12
-Fake fixture/temp DB plan: wrapper-owned unique OS-temp DBs and synthetic services/forms only; never open, migrate, seed, import, or inspect the configured ledger
-Expected files changed: narrow pure money helpers/tests; existing account/category/transaction/import service contracts and focused callers/tests; exact form/default/export adapters identified by repository exploration
-Expected migration/lockfile impact: none; do not edit schema, migrations 0000-0004, dependency versions, or package-lock.json
-Failing reproduction/test: prove 1.005 and unsafe-cent inputs are currently rounded/accepted where specified, and direct service calls can bypass caller-only date/currency/reference/budget validation, using fake data only
-Rollback plan: retain exact parsing/serialization and service-owned validation if an adapter mapping needs correction; roll back only the affected adapter, never return to Math.round, float serialization, or caller-only invariants
-Focused validation: pure boundary/round-trip money tests; direct-service invalid-input/reference/conflict tests; exact no-write assertions; caller mapping and existing hash/migration compatibility tests
-Repository validation: wrapped default/shuffled tests, lint, typecheck, final Git status/diff; any Next build remains sanitized-copy-only until WP-04
-Uncertainty requiring user input: stop only if repository evidence exposes a contract choice not already locked in WP-02A or requires a schema/dependency/public-API expansion beyond the package
-```
+Evidence used only synthetic wrapper-owned temporary databases: 8 focused
+files / 91 tests, the full and seed-`20202` shuffled suites at 21 files / 229
+tests, ESLint, TypeScript, `git diff --check`, exact source-path searches, and a
+wrapper-owned seed smoke all passed. No configured ledger, statement, backup,
+or private environment file was opened or inspected. Builds remain restricted
+to sanitized copied workspaces until WP-04.
+
+### Completed checkpoint: WP-02B
+
+WP-02B moves the full nonempty split invariant into `replaceSplits()` inside a
+write-reserving SQLite transaction: at least two safe nonzero parts, safe sum,
+exact live-parent equality, and valid category references all precede delete and
+insert. Empty parts remains the explicit clear operation. Ordinary parent edits,
+direct recategorization, and matching rule-based recategorization refuse a
+historical mismatch; valid splits permit metadata edits but refuse parent amount
+changes. Imported provenance and saved parts are preserved. A read-only audit
+reports transaction IDs and exact totals (or an explicit unsafe-total marker),
+while the edit page blocks ordinary fields and offers explicit repair or clear.
+No automatic rescale, clear, or repair was added.
+
+Evidence used only wrapper/test-owned temporary SQLite files: the focused
+transaction/category/summary suites passed 3 files / 36 tests; the current full
+default and seed-`20202` shuffled suites passed 21 files / 236 tests. The rollback
+test injects a synthetic post-delete insert failure, and the deterministic
+two-connection schedules exercise both parent-update and split-replacement
+winners plus `SQLITE_BUSY` losers. ESLint, TypeScript, and `git diff --check`
+passed. Independent review found no blocker. No configured ledger, private
+environment file, real statement, backup, dependency, migration, lockfile, or
+live-workspace build was touched.
+
+### Completed checkpoint: WP-03
+
+WP-03 replaces the synchronizing/upsert seed with a one-time fail-closed demo
+initializer. The CLI resolves and prints the normalized target without importing
+the auto-opening client, requires an existing canonical database with the exact
+reviewed migration history, and never creates or migrates a missing/old target.
+Inside one immediate transaction it rechecks migration history and proves that
+accounts, transactions, import batches, and splits are empty. Categories must be
+absent or match every untouched built-in definition; absent defaults are inserted
+atomically, while exact existing defaults retain their IDs and timestamps. It
+then inserts validated USD demo accounts and 132 validated, date-only synthetic
+transactions without any update/upsert/force path. A second run and every
+customized or populated state refuse without mutation.
+
+Evidence used only wrapper-owned or explicitly created synthetic temporary
+SQLite files and copied reviewed migration assets. Seed/preflight focused tests
+passed 4 files / 46 tests; the current default and seed-`30303` shuffled suites
+passed 24 files / 267 tests. The CLI tests run from an unrelated working
+directory and cover missing/historical targets, a non-file synthetic `.env`, an
+unsafe relative target, and rejected arguments. Service tests cover both eligible
+category states, every ineligible sentinel, exact category reuse, a month/year
+boundary, schema recheck, repeat refusal, and trigger-injected rollback after
+earlier writes. ESLint, TypeScript, and staged/unstaged `git diff --check` passed.
+No configured ledger, private environment file, real statement, backup,
+dependency, migration, lockfile, or live-workspace build was touched.
+
+### Completed checkpoint: WP-06
+
+WP-06 makes statement import a whole-file, fail-closed operation. CSV structure,
+every row, the complete raw column map, and ambiguous dates are validated before
+the database opens. Canonical Amount remains authoritative when populated;
+split Debit/Credit files use the locked zero/sign matrix and reject two active
+sides or any malformed nonblank amount. Auto mode now returns a typed
+date-format requirement instead of importing an ambiguous date, while explicit
+MDY/DMY remains deterministic across time zones. The frozen import hash bytes
+and occurrence indexing are unchanged.
+
+The service resolves an existing account or a normalized CLI by-name target
+inside one immediate transaction. A compatible account is reused, an
+incompatible type/currency returns a typed conflict, and account/default-category/
+batch/transaction writes share one rollback boundary. The API, UI, and CLI map
+the typed date, map, file, account, and conflict outcomes without exposing raw
+input or unexpected exception text. The UI keeps the date refusal at the
+selector and focuses it for correction.
+
+Evidence used only synthetic CSV text, wrapper-owned temporary SQLite files,
+and copied reviewed migration assets. Parser/import/API/CLI/hash focused tests
+passed 5 files / 96 tests; the date/hash focus passed 2 files / 64 tests under
+both UTC and America/Chicago; the current default and seed-`60606` shuffled
+suites passed 26 files / 321 tests. ESLint, TypeScript, staged/unstaged
+`git diff --check`, cross-working-directory CLI checks, full-ledger refusal
+snapshots, and trigger-injected account/default/category/import rollback passed.
+Independent verification found no blocker. No configured ledger, private
+environment file, real statement, backup, dependency, migration, lockfile, or
+live-workspace build was touched.
+
+### Completed checkpoint: WP-07
+
+WP-07 makes fresh default-category bootstrap atomic without changing its
+empty-table-only product policy. The standalone initializer now acquires an
+installed Drizzle `{ behavior: "immediate" }` transaction before the empty
+check and retains it through every insert. Import uses the same insert body
+inside its already-immediate account/batch/row transaction, preserving the
+larger rollback boundary without relying on nested-transaction configuration.
+
+Any pre-existing category still makes startup a byte/logical no-op, including
+a historically partial set; one deleted built-in is not resurrected and edits
+are not overwritten. A completely empty table still reinstalls every default
+on the next startup or ready statement import because no initialized marker
+exists. Documentation supplies a read-only comparison against the built-in list
+and requires a backed-up, separately reviewed manual repair rather than silent
+inference.
+
+Evidence used only wrapper-owned temporary SQLite files. The focused
+default/import tests passed 2 files / 25 tests and the current default and
+seed-`70707` shuffled suites passed 26 files / 325 tests. The focused contract
+pins the installed immediate API, aborts the fifth insert with a synthetic
+trigger and proves zero rows, then retries to the exact complete set; it also
+covers exact nonempty no-op, one-delete no-resurrection, and all-empty
+reinstall. No configured ledger,
+private environment file, real statement, backup, dependency, migration,
+lockfile, or live-workspace build was touched.
+
+### Completed checkpoint: WP-08
+
+WP-08 brings budget progress under the same exclusion contract as category
+spending, monthly summary, and trends. `getBudgetVsActual()` now filters the
+base category row by both a saved budget and `excludeFromSpending = false`,
+while keeping the line-item LEFT JOIN and negative-only aggregate intact. An
+included zero-spend budget therefore still appears; an excluded budget is
+absent rather than shown as zero. Exclusion does not clear the stored target,
+so re-inclusion restores the budget with its split-aware gross actual. Positive
+refund lines retain the decision-gated existing behavior and do not reduce
+gross spend.
+
+A per-test cross-aggregate fixture covers included and excluded unsplit inflows
+and outflows, included and excluded split parts, uncategorized activity, an
+excluded saved budget, an included zero-spend budget, and the exclude/re-include
+transition. The regression test failed before the query predicate was added and
+the focused summary/category/transaction suites now pass 3 files / 39 tests.
+The current default and seed-`80808` shuffled suites pass 26 files / 328 tests.
+Empty migrated tables retain finite zero/empty shapes. The category form and
+manual explain that exclusion hides budget progress without deleting its saved
+target. No schema, migration, dependency, lockfile, or refund-policy change was
+made, and validation used only wrapper-owned temporary SQLite files.
+
+### Completed checkpoint: WP-09
+
+WP-09 establishes one active-category matrix across transaction list and export
+selection, category statistics, rule application, and deletion disclosure. A
+shared service predicate uses bound correlated `EXISTS`/`NOT EXISTS`: unsplit
+rows use their parent category, while split rows use only their parts, including
+null parts as active Uncategorized allocations. Multiple matching parts never
+duplicate the parent. Category statistics union unsplit parents with split
+usage grouped by transaction/category, so the visible count is distinct active
+transactions rather than ignored parent references.
+
+Deletion confirmation separately discloses distinct active transactions, exact
+split parts, and ignored parent fallbacks, including the consequence that a
+cleared fallback cannot return if splits are later removed. FK deletion keeps
+every parent/split row and amount while nulling only matching references. Rules
+now scan only unsplit null parents; ignored split parents and null split parts
+remain deliberate manual allocation work.
+
+Pagination accepts only positive safe-integer URL text. The service counts
+parent rows first, validates the count, clamps to the fixed 50-row last page,
+and derives a checked offset only from the clamped value. Invalid and
+out-of-range URLs redirect through tested canonical helpers; page 1 omits the
+page parameter. Search wildcards remain literal and category values remain
+bound.
+
+The semantic-matrix/filter/export/stats/deletion/rules/pagination focus passed
+5 files / 64 tests; the current default and seed-`90909` shuffled suites passed
+27 files / 346 tests. A 20,000-parent/20,000-split-part synthetic plan measured
+the category count at 10.583 ms, the 50-row page at 0.493 ms, and grouped active
+usage at 10.322 ms in this environment. SQLite used the existing transaction
+date index and `transaction_splits_transaction_idx` for both correlated split
+lookups, so no index, migration, dependency, or lockfile change is justified.
+ESLint, TypeScript, both diff checks, independent verification, and independent
+review passed. No configured ledger, private environment, real statement,
+backup, or live-workspace build was touched.
+
+### Completed checkpoint: WP-11
+
+WP-11 now has one pure currency contract: trim, uppercase, require exactly
+three ASCII letters, and require `Intl.NumberFormat` construction to succeed.
+It deliberately proves runtime renderability rather than registry membership;
+the reserved renderable `XTS` case and a bounded mocked formatter rejection pin
+that distinction. Account create/update services, Server Actions, account forms,
+CLI targets, and lightweight read DTOs carry currency explicitly. Reads preserve
+the raw stored value and add a value-free normalized/invalid state without
+mutating storage. The Accounts page is the repair path: invalid values never
+reach a formatter, their balances are suppressed, and an explicit save is
+required to persist a normalized correction.
+
+`CurrencyState` now distinguishes empty, single, mixed, and invalid account
+sets. Net-worth and combined monthly/dashboard DTOs also expose
+ready/unavailable/unsafe aggregate state. Numeric combined values exist only
+for one normalized shared currency and exact safe-integer sums. JSON keeps its
+existing scalar names but returns null outside that ready branch. The dashboard
+hides net-worth, monthly summary, category spend, trends, and budget progress
+for mixed, invalid, or unsafe states and explains that Money Bags performs no
+conversion. A single EUR/JPY/other renderable ledger passes its currency into
+every card, chart, budget, account, transaction, split, and import formatter;
+formatting rejects unsafe cents and normalizes negative zero. Category budgets
+remain stored but are not presented as globally comparable outside single mode.
+The legacy five-column export remains unchanged for WP-10's compatibility work.
+
+Focused currency/account/action/API/summary/transaction/import/export coverage
+passed 16 files / 163 tests. The default and seed-`111111` shuffled suites each
+passed 33 files / 396 tests. TypeScript, ESLint, staged and unstaged diff checks,
+independent verification, and independent review passed. Validation used only
+wrapper-owned temporary databases; no configured ledger, private environment,
+real statement, backup, build, schema, migration, dependency, or lockfile was
+touched.
+
+### Completed checkpoint: WP-10
+
+WP-10 replaces the unbounded route-owned export materialization with a dedicated
+read-only `fileMustExist` service. One deferred transaction establishes a WAL
+snapshot before eligibility checks, then streams parent rows in 500-row keyset
+pages ordered by `(date, createdAt, id)`. Each nonempty page uses one bounded
+split query; normal completion commits and closes, while cancellation, query,
+validation, and encoding failures roll back and close. Currency eligibility is
+derived from only the selected accounts inside that same snapshot before a
+header is emitted.
+
+Omitted format and `legacy` retain the exact five-column header, mark split
+parents as `Split`, and refuse mixed or invalid selected currencies with safe,
+non-cacheable typed responses. `detailed` adds Currency and deterministic compact
+split JSON, permits mixed valid currencies, and is now the Transactions-page
+default. Both modes share active-category filtering and export a complete parent
+row when any allocation matches. Exact digit-based cents, ISO date validation,
+RFC 4180 quoting, binary category ordering with null last, and export-only
+formula protection are pure serializer contracts; stored/hash inputs never
+change.
+
+Focused serializer/service/route/active-category validation passed 4 files / 38
+tests. It covers exact headers and safe-cent boundaries, invalid/mixed currency
+preflight, full split/category semantics, deterministic output, query counts,
+binary tie ordering, 1,001 parents across three default-size pages, a competing
+WAL writer, stream cancellation, unsafe historical cents/keyset cursors, and
+encoding-failure cleanup. The current default and seed-`101010` shuffled suites
+each passed 35 files / 422 tests. Independent review reproduced an unsafe
+`createdAt` cursor loop, verified the pre-stream type/range refusal and regression
+fix, and returned READY. A LibreOffice Calc 26.2.4.2 synthetic smoke imported guarded
+`=`, `+`, `-`, and `@` text cells as shared strings with no worksheet formula
+nodes while retaining `-12.34` as numeric. No schema, migration, dependency,
+lockfile, exchange rate,
+allocation-level format, configured ledger, private environment, real statement,
+backup, server, or live-workspace build was used.
+
+### Completed checkpoint: WP-04 and WP-05
+
+WP-04 now derives the trace and Turbopack roots from `next.config.ts` itself,
+excludes runtime/private/operator-only paths, and narrowly retains migrations,
+the better-sqlite3 runtime, and the exact telemetry preload. A dependency-free
+checker classifies normalized POSIX/Windows manifest paths, reads every NFT
+manifest, requires the locked runtime assets, and independently scans an entire
+standalone tree plus symlink targets. The successful `npm run build` path invokes
+that manifest checker only after Next exits zero, preserving Next failures,
+signals, and temporary-database cleanup semantics.
+
+WP-05 loads the CommonJS opt-out before Next for `dev`, `build`, `start`, and the
+two LAN modes. Installed source inspection found that Next 16.2.10's debug path
+precedes its disabled check, so the preload also removes
+`NEXT_TELEMETRY_DEBUG`; a clean-HOME build with that variable injected emitted
+no structured telemetry event. The source `.env.example` value remains defense
+in depth rather than the launcher guarantee.
+
+Focused path-policy/trace/standalone/wrapper tests passed 3 files / 65 tests;
+the default and seed-`101010` shuffled suites each passed 37 files / 465 tests.
+The allowlisted sanitized-copy validator passed an ordinary build and health
+smoke, then a validation-only standalone build, complete tree/symlink scan, and
+standalone health smoke. Synthetic DB/sidecar/import/backup sentinels remained
+unchanged, fresh external temporary databases and process trees were cleaned,
+and no validation-copy root survived. Independent review reproduced symlinked
+manifest-directory, non-file required-asset, case-variant preload-exception, and
+contained-alias resolution bypasses; all received regression fixes, and the
+reviewer returned READY. No live-workspace build, real runtime
+artifact, private environment file, dependency, lockfile, schema, or migration
+change was used.
+
+### Completed checkpoint: WP-14A
+
+WP-14A replaces wildcard tailnet trust with one config-safe exact-origin
+contract. `EXTRA_ALLOWED_ORIGINS` accepts only complete HTTPS origins with a
+literal absent/root path and no credentials, wildcard, trailing-dot hostname,
+query, fragment, or empty comma entry. It canonicalizes host case and default
+ports, retains nondefault ports, removes duplicates, and fails configuration
+evaluation without echoing the rejected value. Next receives only exact
+host/port values for its coarse framework check; the canonical full origins are
+frozen into server bundles with installed Next 16.2.10's
+`compiler.defineServer`, so an old production build never adopts a new runtime
+list.
+
+`POST /api/import` now returns a generic no-store 403 before content metadata,
+body decoding, file access, service work, or database initialization. Every one
+of the 14 exported Server Actions awaits the shared guard as its first
+application-controlled operation before inspecting Next-decoded arguments.
+Direct requests require exact HTTP Origin/Host including port. A distinct
+forwarded HTTPS target is accepted only for an exact configured origin when the
+repository launcher is still in its unoverridden loopback mode; LAN and
+hostname-overridden modes refuse that proxy expansion. This remains a browser
+CSRF boundary, not authentication or a claim that application code precedes
+Next's own action decoding.
+
+Global configuration now applies `frame-ancestors 'none'`, `DENY`, `nosniff`,
+and `no-referrer` to every path and disables `x-powered-by`, without adding
+CORS or an improvised script/style CSP. The sanitized production validator
+proved the exact headers across root, health JSON, 404, static, accepted-origin,
+and rejected-origin responses in ordinary and standalone output; it also proved
+that a build created with origin A rejects runtime-only origin B. Focused final
+security re-review passed 7 files / 131 tests and returned READY. The default and
+seed-`141414` shuffled suites each passed 42 files / 586 tests. No dependency,
+lockfile, schema, migration, configured ledger, private environment, real
+statement, backup, deployment, or live-workspace build was used.
+
+### Completed checkpoint: WP-14B
+
+WP-14B makes every accounts, transactions, spending summary, net-worth, import,
+health, and export JSON response explicitly `Cache-Control: no-store`; streamed
+CSV exports retain the same policy. The named financial GET routes remain
+dynamic, response bodies and status codes are unchanged, and no permissive CORS
+header was introduced.
+
+`POST /api/import` retains WP-14A's literal Origin-first operation. It then
+strictly parses optional ASCII-decimal `Content-Length`, rejects declared totals
+over 5,308,416 bytes before body access, requires usable multipart metadata, and
+measures the actual request stream. The reader retains at most the explicit
+5 MiB file plus 64 KiB framing allowance, best-effort cancels on overflow or
+read failure, releases its lock, and discards chunk references. Only a new
+minimal request containing the canonical content type and measured length is
+parsed once; the original network request never reaches `formData()`.
+
+Exactly one expected file is required, the independent 5 MiB `File.size` cap
+remains authoritative, and other fields consume the total allowance. UI and CLI
+filenames now share one service validator that keeps the final slash/backslash
+basename, normalizes NFC, counts Unicode code points, and rejects dot names,
+C0/C1 controls, invalid surrogates, and values outside 1–255 code points before
+CSV parsing or database acquisition. Focused no-store/metadata/stream/multipart/
+filename/route/service/CLI coverage passed 12 files / 142 tests. The sanitized
+validator passed ordinary and standalone production builds, exact no-store and
+global-header checks across every financial response class, and a synthetic
+external DB mutation followed by a fresh accounts response. No dependency,
+lockfile, schema, migration, configured ledger, private environment, real
+statement, backup, deployment, or live-workspace build was used.
+
+### Completed checkpoint: WP-14C
+
+WP-14C replaces the five-page action allowlist and the import route's local
+invalidation with one server helper that calls the installed Next 16.2.10
+contract `revalidatePath("/", "layout")`. All 14 exported actions now reach that
+helper exactly once only after a committed mutation; the import route uses the
+same helper only when it inserted rows. The repository has no remaining
+route/action-local revalidation path list.
+
+Explicit no-ops no longer claim invalidation: a rules pass with zero updates, an
+all-duplicate import, and clearing a transaction that already has no split all
+return their normal success state without a server or client refresh. An account
+delete race that removes nothing now returns not-found instead of claiming a
+successful mutation. Client `router.refresh()` remains on real route-handler
+imports only; Server Actions rely on their root-layout response rather than a
+redundant client refresh. Focused action/import/split/revalidation coverage
+passed 5 files / 128 tests. No dependency, lockfile, schema, migration,
+configured ledger, private environment, real statement, backup, deployment, or
+build was used for this slice.
+
+### Completed checkpoint: WP-15
+
+WP-15 restores the documented services-only database boundary. The health route
+now delegates its minimal `select 1` probe to an injectable health service while
+preserving its dynamic, generic, no-store 200/500 response contract. The import
+service continues to resolve existing accounts inside the same immediate
+transaction as batch and row creation; a synthetic deletion immediately before
+transaction entry now proves a typed `unknown-account` result with no batch or
+transaction write and no raw foreign-key error.
+
+A scoped ESLint 9 `no-restricted-imports` rule now rejects static alias,
+relative, type-only, and re-export access to DB modules, Drizzle, and
+better-sqlite3 from app code, components, and Server Actions. Its documented
+tests, services, DB-infrastructure, and operational-script exemptions do not
+remove their general lint coverage. The real flat config is exercised through
+the installed ESLint Node API, and the protected-layer repository search has no
+matches. Focused coverage passed 5 files / 86 tests; default and seed-`151515`
+shuffled suites each passed 49 files / 721 tests. ESLint and TypeScript passed.
+No dependency, lockfile, schema, migration, configured ledger, private
+environment, real statement, backup, deployment, or build was used for this
+slice.
+
+### Completed checkpoint: WP-16A
+
+WP-16A replaces the broken `/usr/bin/npm` assumption with intentionally
+unresolved service templates and a dependency-free staging renderer. Both app
+and backup services execute one validated absolute `npm-cli.js` through the same
+validated absolute Node, log that Node's version before start, and put its stable
+bin directory first in their base PATH so npm lifecycle children do not silently
+switch runtimes. Direct Next/tsx launch, private umask, telemetry environment,
+startup preflight, and sandboxing remain deferred to their prerequisite-bound
+WP-16B package.
+
+The renderer requires the exact Node/npm pair, enforces the package Node engine,
+rejects unsafe paths, an npm lifecycle `node` shadow, unknown/unresolved tokens,
+raw-template assumptions, existing output, and direct deploy/system-unit output.
+It preserves the operator's stable symlink path and writes only a new staging
+directory. README installation now uses that pair for install/build/render,
+verifies staged edits with warning-sensitive installed systemd options, checks
+the service-user runtime, and installs only rendered files. Focused renderer,
+unit, and build-privacy-policy coverage passed 2 files / 25 tests. Default and
+seed-`161616` shuffled suites each passed 50 files / 730 tests; ESLint,
+TypeScript, staged/unstaged diff checks, independent installed-doc review, and
+independent implementation review passed. Validation used only temporary
+rendered units and synthetic runtime files; no service, timer, backup,
+deployment, database, private environment, or live application process was
+touched.
+
+### Completed checkpoint: WP-13A
+
+WP-13A makes private storage and validated recovery artifacts executable rather
+than advisory. Every in-scope POSIX SQLite entrypoint retains process-global
+`umask 0077`; both service units reinforce it with `UMask=0077`. Backup
+publication now uses an exclusive UUID partial, SQLite's online backup API,
+standalone-journal normalization, integrity/FK/reviewed-migration/schema
+validation, exact modes, file and directory sync barriers, hard-link
+no-clobber publication, truthful crash outcomes, and validity-aware retention.
+Each normalized ledger path has an isolated target-hash namespace so retention
+cannot cross ledgers. Legacy unscoped artifacts are preserved.
+
+The metadata-only audit covers the target parent/main/WAL/SHM, backup root,
+target namespace, and recognized artifacts with exact non-recursive
+remediation. The read-only verifier refuses live aliases, links, sidecars,
+working/quarantine images, divergent migrations, and mismatched schemas. The
+manual restore runbook requires a verified rescue, confirmed stopped service,
+same-directory restore-ready inode, sidecar quarantine, and rollback. Native
+Windows output explicitly limits durability to platform best effort and reports
+ACL privacy as unverified; automated restore remains deferred RFC-06.
+
+Focused backup/audit/verifier/systemd coverage passed 8 files / 85 tests.
+Default and seed-`131313` shuffled suites passed 56 files / 790 tests before the
+final trace-exclusion regression addition; full ESLint and TypeScript passed.
+The sanitized ordinary/standalone production validator found and then verified
+the narrow exclusion of operational-only renderer/verifier scripts from all
+server traces, including both production smokes. Independent implementation and
+security reviews returned READY. Validation used only synthetic temporary
+SQLite databases and copied workspaces; no configured ledger, private
+environment, real backup, restore, service, permission repair, or deployment was
+touched.
+
+### Completed checkpoint: WP-16B
+
+WP-16B removes npm from both service process trees. The app unit now runs the
+selected absolute Node directly into the installed Next CLI with the synchronous
+telemetry/private-umask preload and explicit `127.0.0.1:3100` arguments. The
+timer runs the same Node directly into the verified local tsx CLI with
+`--no-cache` and the backup entrypoint. The renderer resolves both package bins
+from installed metadata, executes their version checks under the selected Node,
+requires the exact Next dependency, renders one conservative non-root account
+and canonical checkout, and leaves only a new verified staging directory.
+
+Both services set production/telemetry/root environment, `UMask=0077`, and
+`NoNewPrivileges=true`. The app records Next's drained SIGTERM status 143 as a
+clean stop. The metadata-only service preflight first fail-closes on UID 0 or an
+unverifiable effective identity, then runs the complete strict
+environment/path/reviewed-migration policy and verifies the rendered cwd/root,
+Node engine, inherited umask and Linux `NoNewPrivs`, a matching bounded Next
+server-files manifest and every referenced canonical file, writable `.next`
+cache, private DB parent/main/WAL/SHM access, and any existing backup root/target
+namespace. App mode permits a missing DB only below an existing private writable
+parent; backup mode requires the source. It never opens SQLite, creates a path,
+or repairs a mode.
+
+Cold-cache direct execution found and fixed the backup CLI's top-level-await
+module-format dependency. The Next preload now sets umask only on the main
+thread because workers inherit the mask but Node forbids worker calls to
+`process.umask()`. It also loads the supported root `.env` with Node assignment
+semantics and pins `DB_FILE_NAME` (including the default) before Next's
+higher-precedence production environment variants can redirect the app; the
+preload pins Next's graceful signal switch falsey as well. Focused coverage
+passed 7 files / 81 tests, including actual Linux no-new-privileges inheritance
+through `setpriv`, root-identity and environment-precedence refusal, altered
+reviewed-migration refusal, cold direct backup publication, installed systemd
+parsing, and preload worker safety. Default and seed-`161616` shuffled suites each passed 58 files /
+807 tests; full ESLint and TypeScript passed. The allowlisted copied-workspace
+validator passed ordinary and standalone builds, direct ordinary service
+preflight against the real generated manifest, trace/tree privacy, and both
+production smokes. No live-workspace Next build, configured ledger, private
+environment, real backup, service install/start, permission repair, or deployment
+was used.
+
+### Completed implementation checkpoint: WP-17
+
+WP-17 adds stable alert summaries to shared server forms, retains the first known
+validation field through action results, links only that field with
+`aria-invalid`/`aria-describedby`, and focuses the summary once on a
+pending-to-failure transition. The import route's manual-fetch error follows the
+same transition rule while the existing ambiguous-date field focus remains
+singular.
+
+`ConfirmButton` now requires a visible consequence and a stable surviving focus
+destination. Confirm receives focus when armed; Cancel/Escape restores the
+trigger; a returned or thrown refusal stays armed and is announced; success
+focuses Add transaction, New category, or the Recent imports heading. The custom
+account flow has a labeled typed-name field, discloses transaction/split/import
+cascades and what remains, and focuses New account after success. Active desktop
+and mobile links expose `aria-current="page"`; the mobile toggle controls a
+stable mounted menu and restores focus on Escape. Split add/remove/clear controls
+meet the 44×44 target, use stable row keys, and expose one-based part/current
+category names without making the live remainder chatty.
+
+No dependency, schema, migration, API, import-hash, money, or date contract
+changed. Pure Node tests cover form focus transitions/field relationships,
+confirmation refusal state, surviving focus lookup, action field retention, and
+active-route semantics, including the typed account-name mismatch field. The
+focused matrix passed 8 files / 59 tests; the default and seed-`171717` shuffled
+suites passed 62 files / 816 tests, and full ESLint and TypeScript passed. An
+independent review returned READY with no remaining code-level blocker. Full
+browser and assistive-technology behavior remains a manual gate as required by
+WP-17.
+
+#### Manual accessibility gate record
+
+| Field | Recorded value |
+| --- | --- |
+| Date | 2026-07-15 |
+| Host OS | Linux 7.1.3-arch1-2 x86_64 |
+| Browser and version | Not run — the `agent-browser` executable was unavailable; no browser package was installed |
+| Screen reader and version | Not run — no screen-reader runtime was available |
+| Result | **PENDING** — run every WP-17 manual acceptance-matrix row in a real browser/screen-reader pair before release |
+
+The attempted browser session used the repository's wrapper-owned synthetic
+temporary database and was stopped before interaction when the executable was
+found missing; cleanup was verified. An earlier ordinary dev launch was stopped
+before page access as soon as Next reported root environment detection. No
+configured ledger was opened and no environment contents were printed.
+
+### Completed implementation checkpoint: WP-18
+
+WP-18 reconciles the shipped setup, privacy, import, currency, export,
+accessibility, service, backup, restore, update, and rollback behavior across the
+maintainer and user documentation. The release runbook now pairs a recorded
+code/runtime/rendered-unit set with a validated backup and explicitly forbids
+starting older code against a newer migrated schema. The historical product
+backlog no longer controls remediation order, and transfer/refund/cross-file
+duplicate policy, automated restore, and other deferred work remain visible as
+decision-dependent RFCs rather than implied implementation work.
+
+The final release matrix passed the default and fixed-seed shuffled suites (62
+files / 816 tests), the WP-17 focus (8 files / 59 tests), full ESLint, TypeScript,
+and the allowlisted copied-workspace privacy validator's ordinary and standalone
+build/preflight/smoke paths. No live-workspace Next build, configured ledger,
+private environment, real backup, service operation, deployment, schema change,
+migration, dependency, or lockfile change was used for this closeout.
+
+This is an implementation closeout, not a production-release claim. A release
+still requires the recorded real-browser/screen-reader matrix, operator-owned
+real-host socket/reboot/SIGTERM/restart/timer checks, and an authorized review of
+the sensitive environment template. No decision-gated RFC was selected by
+WP-18.
+
+### Completed product checkpoint: dashboard uncategorized review
+
+The dashboard now shows a **Needs categorization** reminder whenever the ledger
+has active uncategorized work. Its whole-ledger count uses the same correlated
+active-category predicate as the Transactions filter: an unsplit null parent
+counts once, a split transaction counts once when any split part is null, and a
+split parent's ignored fallback category does not count. The reminder links
+through the canonical transaction query builder and remains visible when
+currency state suppresses combined financial aggregates.
+
+The service performs a validated `count(*)` rather than loading a page of joined
+transaction rows. The focused active-category/transaction matrix passed 2 files
+/ 40 tests; the default and seed-`181818` shuffled suites each passed 62 files /
+816 tests; full ESLint, TypeScript, and the allowlisted copied-workspace ordinary
+and standalone build/preflight/smoke validator passed. No configured ledger,
+live-workspace build, dependency, lockfile, schema, migration, API, action,
+import-hash, money, date, or financial-policy contract changed.
 
 ## 17. Handoff template for every completed package
 

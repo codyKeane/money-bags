@@ -1,13 +1,26 @@
 import { desc, eq } from "drizzle-orm";
-import { getDb, type Db } from "@/db/client";
-import { accounts, categories, importBatches, transactions } from "@/db/schema";
-import { categorize, parseKeywords } from "@/lib/categorize";
-import { computeImportHashes } from "@/lib/import-hash";
+import { getDb, type Db } from "../../db/client";
+import { ensureDefaultCategoriesInTransaction } from "../../db/default-categories";
+import { accounts, categories, importBatches, transactions } from "../../db/schema";
+import { categorize, parseKeywords } from "../../lib/categorize";
+import { computeImportHashes } from "../../lib/import-hash";
 import {
   parseStatementCsv,
-  type ParseStatementOptions,
+  type ColumnMapIssue,
+  type DateFormat,
+  type ParsedStatementRow,
   type StatementRowError,
-} from "@/lib/csv/parse-statement";
+} from "../../lib/csv/parse-statement";
+import type { AccountType } from "../../lib/account-types";
+import { normalizeCurrencyCode } from "../../lib/currency";
+import { normalizeCreateAccountInput } from "./accounts";
+import {
+  invalidWriteInput,
+  normalizeFilename,
+  normalizeId,
+  normalizeTransactionInput,
+  type InvalidWriteInput,
+} from "./write-validation";
 
 export interface SkippedRow {
   rowNumber: number;
@@ -16,7 +29,7 @@ export interface SkippedRow {
   amountCents: number;
 }
 
-export interface ImportResult {
+interface ImportResultData {
   imported: number;
   // Skipped rows are reported in detail: a "duplicate" here can also be a
   // legitimately identical transaction arriving in a second file (see
@@ -27,32 +40,247 @@ export interface ImportResult {
   // The batch this import recorded, or null when it inserted nothing (all
   // duplicates / empty file) — nothing to undo, so no batch is created.
   batchId: string | null;
+  account: ImportedAccountTarget | null;
 }
 
-export interface ImportStatementInput extends ParseStatementOptions {
-  accountId: string;
+export interface ImportedAccountTarget {
+  id: string;
+  name: string;
+  type: string;
+  currency: string;
+  created: boolean;
+}
+
+export type ImportResult =
+  | ({ status: "completed" } & ImportResultData)
+  | ({ status: "unknown-account"; message: string } & ImportResultData)
+  | ({ status: "account-conflict"; message: string } & ImportResultData)
+  | ({ status: "date-format-required"; ambiguousRowNumbers: number[] } & ImportResultData)
+  | ({ status: "invalid-column-map"; issues: ColumnMapIssue[] } & ImportResultData)
+  | ({ status: "invalid-file" } & ImportResultData)
+  | ({ status: "invalid-input"; field: string; message: string } & ImportResultData);
+
+export type ImportAccountTarget =
+  | { kind: "existing"; accountId: string }
+  | { kind: "by-name"; name: string; type: AccountType; currency: string };
+
+export interface ImportStatementInput {
+  account: ImportAccountTarget;
   csvText: string;
+  dateFormat?: DateFormat;
+  columnMap?: unknown;
   filename?: string; // recorded on the batch for the import-history UI
+}
+
+type NormalizedImportAccountTarget =
+  | { kind: "existing"; accountId: string }
+  | {
+      kind: "by-name";
+      name: string;
+      type: AccountType;
+      institution: string | null;
+      currency: string;
+      openingBalanceCents: number;
+    };
+
+function emptyImportData(): ImportResultData {
+  return {
+    imported: 0,
+    skipped: [],
+    errors: [],
+    warnings: [],
+    batchId: null,
+    account: null,
+  };
+}
+
+function invalidFileResult(errors: StatementRowError[]): ImportResult {
+  return { status: "invalid-file", ...emptyImportData(), errors };
+}
+
+function normalizeImportTarget(
+  target: ImportAccountTarget,
+): { ok: true; value: NormalizedImportAccountTarget } | { ok: false; result: InvalidWriteInput } {
+  if (!target || typeof target !== "object") {
+    return {
+      ok: false,
+      result: invalidWriteInput("account", "Invalid import account target"),
+    };
+  }
+  if (target.kind === "existing") {
+    const accountId = normalizeId(target.accountId);
+    return accountId
+      ? { ok: true, value: { kind: "existing", accountId } }
+      : { ok: false, result: invalidWriteInput("accountId", "Invalid account id") };
+  }
+  if (target.kind === "by-name") {
+    const normalized = normalizeCreateAccountInput({
+      name: target.name,
+      type: target.type,
+      currency: target.currency,
+    });
+    return normalized.ok
+      ? { ok: true, value: { kind: "by-name", ...normalized.value } }
+      : normalized;
+  }
+  return {
+    ok: false,
+    result: invalidWriteInput("account", "Invalid import account target"),
+  };
+}
+
+function normalizeParsedRows(
+  rows: readonly ParsedStatementRow[],
+): { rows: ParsedStatementRow[]; errors: StatementRowError[] } {
+  const normalizedRows: ParsedStatementRow[] = [];
+  const errors: StatementRowError[] = [];
+  for (const row of rows) {
+    const normalized = normalizeTransactionInput({
+      accountId: "pending-import-account",
+      categoryId: null,
+      date: row.date,
+      description: row.description,
+      amountCents: row.amountCents,
+    });
+    if (!normalized.ok) {
+      errors.push({ rowNumber: row.rowNumber, message: normalized.result.message });
+    } else {
+      normalizedRows.push({
+        rowNumber: row.rowNumber,
+        date: normalized.value.date,
+        description: normalized.value.description,
+        amountCents: normalized.value.amountCents,
+      });
+    }
+  }
+  return { rows: normalizedRows, errors };
+}
+
+type AccountResolution =
+  | { ok: true; account: ImportedAccountTarget | null }
+  | { ok: false; result: ImportResult };
+
+function resolveImportAccount(
+  target: NormalizedImportAccountTarget,
+  allowCreate: boolean,
+  db: Db,
+): AccountResolution {
+  if (target.kind === "existing") {
+    const account = db
+      .select({
+        id: accounts.id,
+        name: accounts.name,
+        type: accounts.type,
+        currency: accounts.currency,
+      })
+      .from(accounts)
+      .where(eq(accounts.id, target.accountId))
+      .limit(1)
+      .get();
+    return account
+      ? { ok: true, account: { ...account, created: false } }
+      : {
+          ok: false,
+          result: {
+            status: "unknown-account",
+            ...emptyImportData(),
+            message: "Unknown account",
+          },
+        };
+  }
+
+  const existing = db
+    .select({
+      id: accounts.id,
+      name: accounts.name,
+      type: accounts.type,
+      currency: accounts.currency,
+    })
+    .from(accounts)
+    .where(eq(accounts.name, target.name))
+    .limit(1)
+    .get();
+  if (existing) {
+    if (
+      existing.type !== target.type ||
+      normalizeCurrencyCode(existing.currency) !== target.currency
+    ) {
+      return {
+        ok: false,
+        result: {
+          status: "account-conflict",
+          ...emptyImportData(),
+          message: "Existing account type or currency does not match the import target.",
+        },
+      };
+    }
+    return { ok: true, account: { ...existing, created: false } };
+  }
+  if (!allowCreate) return { ok: true, account: null };
+
+  const account = db
+    .insert(accounts)
+    .values({
+      name: target.name,
+      type: target.type,
+      institution: target.institution,
+      currency: target.currency,
+      openingBalanceCents: target.openingBalanceCents,
+    })
+    .returning({
+      id: accounts.id,
+      name: accounts.name,
+      type: accounts.type,
+      currency: accounts.currency,
+    })
+    .get();
+  if (!account) throw new Error("Failed to create the import account.");
+  return { ok: true, account: { ...account, created: true } };
 }
 
 export async function importStatement(
   input: ImportStatementInput,
-  db: Db = getDb(),
+  db?: Db,
 ): Promise<ImportResult> {
-  const { rows, errors, warnings } = parseStatementCsv(input.csvText, {
+  if (typeof input.csvText !== "string") {
+    return invalidImportResult(invalidWriteInput("csvText", "Invalid CSV text"));
+  }
+  if (
+    input.dateFormat !== undefined &&
+    input.dateFormat !== "auto" &&
+    input.dateFormat !== "MDY" &&
+    input.dateFormat !== "DMY"
+  ) {
+    return invalidImportResult(invalidWriteInput("dateFormat", "Invalid date format"));
+  }
+  const filename = input.filename === undefined ? null : normalizeFilename(input.filename);
+  if (input.filename !== undefined && !filename) {
+    return invalidImportResult(invalidWriteInput("filename", "Invalid import filename"));
+  }
+
+  const parsed = parseStatementCsv(input.csvText, {
     dateFormat: input.dateFormat,
     columnMap: input.columnMap,
   });
-  if (rows.length === 0)
-    return { imported: 0, skipped: [], errors, warnings, batchId: null };
+  if (parsed.status === "date-format-required") {
+    return {
+      status: parsed.status,
+      ...emptyImportData(),
+      ambiguousRowNumbers: parsed.ambiguousRowNumbers,
+    };
+  }
+  if (parsed.status === "invalid-column-map") {
+    return { status: parsed.status, ...emptyImportData(), issues: parsed.issues };
+  }
+  if (parsed.status === "invalid-file") return invalidFileResult(parsed.errors);
 
-  const categoryRows = await db.select().from(categories);
-  const matchers = categoryRows.map((c) => ({
-    id: c.id,
-    name: c.name,
-    keywords: parseKeywords(c.keywords),
-  }));
-  const hashes = computeImportHashes(input.accountId, rows);
+  const target = normalizeImportTarget(input.account);
+  if (!target.ok) return invalidImportResult(target.result);
+
+  const normalizedRows = normalizeParsedRows(parsed.rows);
+  if (normalizedRows.errors.length > 0) return invalidFileResult(normalizedRows.errors);
+  const rows = normalizedRows.rows;
+  const database = db ?? getDb({ installDefaults: false });
 
   // All hashes within one file are unique (occurrence indexing), so the set of
   // hashes RETURNING reports as inserted cleanly partitions imported vs.
@@ -61,30 +289,54 @@ export async function importStatement(
   // Every inserted row is stamped with this batch so the whole import can be
   // undone later. The batch row is written first (inside the txn) to satisfy
   // the transactions.batch_id foreign key, then finalized once counts are known.
-  const batchId = crypto.randomUUID();
-  const prepared = rows.map((row, i) => ({
-    row,
-    hash: hashes[i] ?? "",
-    values: {
-      date: row.date,
-      description: row.description,
-      amountCents: row.amountCents,
-      accountId: input.accountId,
-      categoryId: categorize(row.description, matchers),
-      importHash: hashes[i] ?? "",
-      batchId,
-    },
-  }));
+  return database.transaction((tx) => {
+    const resolution = resolveImportAccount(target.value, rows.length > 0, tx);
+    if (!resolution.ok) return resolution.result;
+    if (rows.length === 0) {
+      return { status: "completed", ...emptyImportData(), account: resolution.account };
+    }
+    if (!resolution.account) throw new Error("Ready import did not resolve an account.");
+    const accountId = resolution.account.id;
 
-  // 7 columns/row keeps each chunk under SQLite's 999 bound-variable limit.
-  const CHUNK = 128;
-  const insertedHashes = new Set<string>();
-  db.transaction((tx) => {
+    // On a connection acquired without startup bootstrap, defaults join the
+    // same rollback boundary as account creation, batch creation, and rows.
+    ensureDefaultCategoriesInTransaction(tx);
+    const categoryRows = tx.select().from(categories).all();
+    const matchers = categoryRows.map((category) => ({
+      id: category.id,
+      name: category.name,
+      keywords: parseKeywords(category.keywords),
+    }));
+    const batchId = crypto.randomUUID();
+    const hashes = computeImportHashes(accountId, rows);
+    const prepared = rows.map((row, index) => {
+      const normalized = normalizeTransactionInput({
+        accountId,
+        categoryId: categorize(row.description, matchers),
+        date: row.date,
+        description: row.description,
+        amountCents: row.amountCents,
+      });
+      if (!normalized.ok) {
+        throw new Error("Pure import validation diverged from transaction validation.");
+      }
+      const hash = hashes[index];
+      if (!hash) throw new Error("Missing import hash for a validated row.");
+      return {
+        row,
+        hash,
+        values: { ...normalized.value, importHash: hash, batchId },
+      };
+    });
+
+    // 7 columns/row keeps each chunk under SQLite's 999 bound-variable limit.
+    const CHUNK = 128;
+    const insertedHashes = new Set<string>();
     tx.insert(importBatches)
       .values({
         id: batchId,
-        accountId: input.accountId,
-        filename: input.filename ?? null,
+        accountId,
+        filename,
         importedCount: 0,
         skippedCount: 0,
       })
@@ -111,24 +363,45 @@ export async function importStatement(
         .where(eq(importBatches.id, batchId))
         .run();
     }
-  });
 
-  const skipped: SkippedRow[] = [];
-  let imported = 0;
-  for (const { row, hash } of prepared) {
-    if (insertedHashes.has(hash)) {
-      imported++;
-    } else {
-      skipped.push({
-        rowNumber: row.rowNumber,
-        date: row.date,
-        description: row.description,
-        amountCents: row.amountCents,
-      });
+    const skipped: SkippedRow[] = [];
+    let imported = 0;
+    for (const { row, hash } of prepared) {
+      if (insertedHashes.has(hash)) {
+        imported++;
+      } else {
+        skipped.push({
+          rowNumber: row.rowNumber,
+          date: row.date,
+          description: row.description,
+          amountCents: row.amountCents,
+        });
+      }
     }
-  }
+    return {
+      status: "completed",
+      imported,
+      skipped,
+      errors: [],
+      warnings: [],
+      batchId: imported > 0 ? batchId : null,
+      account: resolution.account,
+    };
+  }, { behavior: "immediate" });
+}
 
-  return { imported, skipped, errors, warnings, batchId: imported > 0 ? batchId : null };
+function invalidImportResult(invalid: InvalidWriteInput): ImportResult {
+  return {
+    status: invalid.status,
+    imported: 0,
+    skipped: [],
+    errors: [],
+    warnings: [],
+    batchId: null,
+    account: null,
+    field: invalid.field,
+    message: invalid.message,
+  };
 }
 
 // ---------- import history + undo ----------

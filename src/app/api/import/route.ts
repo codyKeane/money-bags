@@ -1,103 +1,157 @@
-import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { getDb } from "@/db/client";
-import { accounts } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { noStoreJson } from "@/lib/http-response";
+import { revalidateAfterMutation } from "@/server/revalidation";
+import {
+  MAX_FILE_BYTES,
+  parseBoundedMultipartFormData,
+  parseDeclaredContentLength,
+  parseMultipartContentType,
+} from "@/server/http/import-upload";
+import { hasTrustedRouteOrigin } from "@/server/security/trusted-origin";
 import { importStatement } from "@/server/services/import";
-
-const MAX_BYTES = 5 * 1024 * 1024;
 
 const FieldsSchema = z.object({
   accountId: z.string().min(1),
   dateFormat: z.enum(["auto", "MDY", "DMY"]).default("auto"),
 });
 
-const CANONICAL_COLUMNS = ["date", "description", "amount", "debit", "credit"] as const;
-type CanonicalColumn = (typeof CANONICAL_COLUMNS)[number];
-
-// The optional column-mapping override arrives as a JSON string (canonical
-// field -> header name). Silently ignore anything malformed or off-list — a bad
-// map just falls back to automatic header detection (F3).
-function parseColumnMap(raw: FormDataEntryValue | null): Partial<Record<CanonicalColumn, string>> | undefined {
-  if (typeof raw !== "string" || !raw.trim()) return undefined;
-  let obj: unknown;
-  try {
-    obj = JSON.parse(raw);
-  } catch {
-    return undefined;
-  }
-  if (!obj || typeof obj !== "object") return undefined;
-  const map: Partial<Record<CanonicalColumn, string>> = {};
-  for (const key of CANONICAL_COLUMNS) {
-    const value = (obj as Record<string, unknown>)[key];
-    if (typeof value === "string" && value.trim()) map[key] = value.trim();
-  }
-  return Object.keys(map).length > 0 ? map : undefined;
+function json(body: unknown, status = 200): Response {
+  return noStoreJson(body, { status });
 }
 
-// The import upload goes through this route handler (not a Server Action) —
-// Server Actions cap request bodies at 1 MB by default; here we enforce our
-// own 5 MB / CSV-only policy. Every failure returns JSON `{ error }` so the
-// client can always surface a message (F4).
-export async function POST(request: Request) {
+function invalidRequestResponse(): Response {
+  return json({ error: "invalid-request" }, 400);
+}
+
+function requestTooLargeResponse(): Response {
+  return json({ error: "request-too-large" }, 413);
+}
+
+function parseColumnMapJson(
+  raw: FormDataEntryValue | null,
+): { ok: true; value: unknown } | { ok: false } {
+  if (raw === null) return { ok: true, value: undefined };
+  if (typeof raw !== "string" || raw.trim().length === 0) return { ok: false };
   try {
-    // Reject oversized uploads before buffering the whole body when the client
-    // declares its length (F4). file.size below is the authoritative check for
-    // clients that omit or understate Content-Length.
-    const declared = Number(request.headers.get("content-length"));
-    if (Number.isFinite(declared) && declared > MAX_BYTES) {
-      return Response.json({ error: "File exceeds the 5 MB cap" }, { status: 413 });
-    }
+    return { ok: true, value: JSON.parse(raw) as unknown };
+  } catch {
+    return { ok: false };
+  }
+}
 
-    const formData = await request.formData();
-    const parsed = FieldsSchema.safeParse({
-      accountId: formData.get("accountId") ?? undefined,
-      dateFormat: formData.get("dateFormat") ?? undefined,
-    });
-    if (!parsed.success) {
-      return Response.json({ error: "accountId is required" }, { status: 400 });
-    }
+function invalidColumnMapJsonResponse(): Response {
+  return json(
+    {
+      error: "invalid-column-map",
+      issues: [
+        {
+          code: "invalid-shape",
+          field: "columnMap",
+          message: "Column map must be valid JSON containing a plain object.",
+        },
+      ],
+    },
+    400,
+  );
+}
 
-    const file = formData.get("file");
-    if (!(file instanceof File)) {
-      return Response.json({ error: "file is required" }, { status: 400 });
+// Route handler instead of a Server Action so the upload has an explicit 5 MiB
+// boundary. Every response is JSON and non-cacheable.
+export async function POST(request: Request) {
+  if (!hasTrustedRouteOrigin(request)) {
+    return json({ error: "forbidden" }, 403);
+  }
+  try {
+    const declaredLength = parseDeclaredContentLength(
+      request.headers.get("content-length"),
+    );
+    if (declaredLength.status === "invalid") return invalidRequestResponse();
+    if (declaredLength.status === "too-large") return requestTooLargeResponse();
+
+    const contentType = parseMultipartContentType(request.headers.get("content-type"));
+    if (contentType.status === "unsupported") {
+      return json({ error: "unsupported-media-type" }, 415);
     }
-    if (file.size > MAX_BYTES) {
-      return Response.json({ error: "File exceeds the 5 MB cap" }, { status: 413 });
+    if (contentType.status === "malformed") return invalidRequestResponse();
+
+    const bounded = await parseBoundedMultipartFormData(request, contentType.value);
+    if (bounded.status === "too-large") return requestTooLargeResponse();
+    if (bounded.status === "invalid") return invalidRequestResponse();
+
+    const formData = bounded.formData;
+    const fileEntries = formData.getAll("file");
+    const file = fileEntries[0];
+    const hasUnexpectedFile = [...formData.entries()].some(
+      ([name, value]) => name !== "file" && value instanceof File,
+    );
+    if (fileEntries.length !== 1 || !(file instanceof File) || hasUnexpectedFile) {
+      return json({ error: "invalid-input", message: "A CSV file is required." }, 400);
+    }
+    if (file.size > MAX_FILE_BYTES) {
+      return json({ error: "file-too-large", message: "File exceeds the 5 MB cap" }, 413);
     }
     const isCsv =
       file.name.toLowerCase().endsWith(".csv") ||
       file.type === "text/csv" ||
       file.type === "text/plain";
     if (!isCsv) {
-      return Response.json({ error: "Only CSV files are accepted" }, { status: 415 });
+      return json({ error: "unsupported-file", message: "Only CSV files are accepted." }, 415);
     }
 
-    const db = getDb();
-    const [account] = await db
-      .select({ id: accounts.id })
-      .from(accounts)
-      .where(eq(accounts.id, parsed.data.accountId))
-      .limit(1);
-    if (!account) {
-      return Response.json({ error: "Unknown account" }, { status: 404 });
+    const parsed = FieldsSchema.safeParse({
+      accountId: formData.get("accountId") ?? undefined,
+      dateFormat: formData.get("dateFormat") ?? undefined,
+    });
+    if (!parsed.success) {
+      return json(
+        { error: "invalid-input", message: "Account and date format are required." },
+        400,
+      );
     }
+
+    const columnMap = parseColumnMapJson(formData.get("columnMap"));
+    if (!columnMap.ok) return invalidColumnMapJsonResponse();
 
     const result = await importStatement({
-      accountId: account.id,
+      account: { kind: "existing", accountId: parsed.data.accountId },
       csvText: await file.text(),
       dateFormat: parsed.data.dateFormat,
-      columnMap: parseColumnMap(formData.get("columnMap")),
-      filename: file.name || undefined,
+      columnMap: columnMap.value,
+      filename: file.name,
     });
+    if (result.status === "invalid-column-map") {
+      return json({ error: result.status, issues: result.issues }, 400);
+    }
+    if (result.status === "invalid-input") {
+      return json(
+        { error: result.status, field: result.field, message: result.message },
+        400,
+      );
+    }
+    if (result.status === "unknown-account") {
+      return json({ error: result.status, message: result.message }, 404);
+    }
+    if (result.status === "account-conflict") {
+      return json({ error: result.status, message: result.message }, 409);
+    }
+    if (result.status === "invalid-file") {
+      return json({ error: result.status, errors: result.errors }, 422);
+    }
+    if (result.status === "date-format-required") {
+      return json(
+        {
+          error: result.status,
+          ambiguousRowNumbers: result.ambiguousRowNumbers,
+          message: "Choose MM/DD/YYYY or DD/MM/YYYY and import again.",
+        },
+        422,
+      );
+    }
 
-    revalidatePath("/");
-    revalidatePath("/transactions");
-    return Response.json(result);
-  } catch (err) {
-    // Malformed multipart, encoding failures, unexpected DB errors — never leak
-    // an HTML stack to the JSON-expecting client.
-    console.error("import route failed:", err);
-    return Response.json({ error: "Import failed unexpectedly." }, { status: 500 });
+    if (result.imported > 0) revalidateAfterMutation();
+    return json(result);
+  } catch {
+    console.error("import-route-unexpected");
+    return json({ error: "internal-error", message: "Import failed unexpectedly." }, 500);
   }
 }

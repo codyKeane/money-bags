@@ -1,13 +1,17 @@
 import { ApplyRulesButton } from "@/components/ApplyRulesButton";
 import { CategoryManager } from "@/components/CategoryManager";
 import { getCategoriesWithStats } from "@/server/services/categories";
+import { getNetWorthOverview } from "@/server/services/accounts";
 
 export const dynamic = "force-dynamic";
 
 export const metadata = { title: "Categories" };
 
 export default async function CategoriesPage() {
-  const categories = await getCategoriesWithStats();
+  const [categories, overview] = await Promise.all([
+    getCategoriesWithStats(),
+    getNetWorthOverview(),
+  ]);
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -21,7 +25,7 @@ export default async function CategoriesPage() {
         </div>
         <ApplyRulesButton />
       </div>
-      <CategoryManager categories={categories} />
+      <CategoryManager categories={categories} currencyState={overview.currencyState} />
     </div>
   );
 }

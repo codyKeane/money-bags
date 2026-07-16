@@ -284,10 +284,19 @@ describe("database adapter contract", () => {
     }
     expect(adapters[0]).toContain("preflightDatabaseOpen()");
     expect(adapters[1]).toContain("preflightDatabaseOpen()");
-    expect(adapters[2]).toContain("preflightDatabaseOpen().databasePath");
+    expect(adapters[2]).toContain("dependencies.preflight ?? preflightDatabaseOpen");
+    expect(adapters[2]).toContain("createValidatedBackup");
     expect(adapters[3]).toContain("../src/server/services/import");
-    expect(adapters[4]).toContain('getDb } from "./client"');
+    expect(adapters[4]).toContain("preflightDatabaseOpen()");
+    expect(adapters[4]).toContain("openExistingDemoSeedTarget");
+    expect(adapters[4]).not.toContain('from "./client"');
     expect(adapters[5]).toContain("preflightDatabaseOpen");
     expect(adapters[5]).not.toContain("better-sqlite3");
+
+    const servicePreflight = source("scripts/service-preflight.ts");
+    expect(servicePreflight).toContain("preflightDatabaseOpen()");
+    expect(servicePreflight).toContain("dependencies.workingDirectory ?? process.cwd()");
+    expect(servicePreflight).not.toContain("moduleDirectory:");
+    expect(servicePreflight).not.toContain("better-sqlite3");
   });
 });

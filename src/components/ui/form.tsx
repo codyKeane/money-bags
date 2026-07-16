@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 
 // Shared form primitives — extracted from the 5 hand-rolled forms
 // (Category/Accounts managers, Transaction form, Import form, filters).
@@ -37,9 +37,28 @@ export function Field({
   );
 }
 
-export function FormError({ error }: { error?: string | null }) {
+export function FormError({
+  id,
+  error,
+  summaryRef,
+}: {
+  id: string;
+  error?: string | null;
+  summaryRef?: RefObject<HTMLParagraphElement | null>;
+}) {
   if (!error) return null;
   // Danger color (UX11), always paired with the ⚠ glyph + text — never color
   // alone (CVD-safe palette rule).
-  return <span className="text-sm text-delta-bad">⚠ {error}</span>;
+  return (
+    <p
+      ref={summaryRef}
+      id={id}
+      role="alert"
+      aria-atomic="true"
+      tabIndex={-1}
+      className="text-sm text-delta-bad"
+    >
+      ⚠ {error}
+    </p>
+  );
 }

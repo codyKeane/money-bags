@@ -1,6 +1,7 @@
-# One-shot WAL-safe backup, invoked by finance-backup.timer.
-# Install alongside finance-backup.timer in /etc/systemd/system/, edit User +
-# WorkingDirectory to match finance.service, then:
+# One-shot WAL-safe backup service template, invoked by finance-backup.timer.
+# Render this file with the selected stable Node/npm runtime; never install the
+# unresolved template. Render the same service account as finance.service,
+# verify all staged units together, install them, then:
 #   sudo systemctl daemon-reload && sudo systemctl enable --now finance-backup.timer
 
 [Unit]
@@ -8,7 +9,17 @@ Description=Finance Engine database backup
 
 [Service]
 Type=oneshot
-User=finance
-WorkingDirectory=/home/finance/personal-finance
-# --keep 14 retains the 14 newest backups in data/backups/ and prunes the rest.
-ExecStart=/usr/bin/npm run db:backup -- --keep 14
+User=@@SERVICE_USER@@
+# Private staging, quarantine, and final backup artifacts.
+UMask=0077
+WorkingDirectory=@@PROJECT_ROOT@@
+Environment="PATH=@@NODE_BIN_DIRECTORY@@:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+Environment=NODE_ENV=production
+Environment=NEXT_TELEMETRY_DISABLED=1
+Environment="MONEYBAGS_REPOSITORY_ROOT=@@PROJECT_ROOT@@"
+NoNewPrivileges=true
+# --keep 14 retains the 14 newest validated exact-name finals only in the
+# configured ledger's target-scoped namespace; working, quarantined, unscoped,
+# unrelated, and invalid images are never pruned as valid backups.
+ExecStartPre="@@NODE_EXECUTABLE@@" "@@TSX_CLI_MJS@@" --no-cache "@@SERVICE_PREFLIGHT_TS@@" backup
+ExecStart="@@NODE_EXECUTABLE@@" "@@TSX_CLI_MJS@@" --no-cache "@@BACKUP_SCRIPT_TS@@" --keep 14

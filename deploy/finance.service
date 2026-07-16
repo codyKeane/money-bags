@@ -1,10 +1,13 @@
-# Finance Engine — systemd service for a home server.
-# Install: copy to /etc/systemd/system/, edit User + WorkingDirectory, then
+# Finance Engine — systemd service template for a home server.
+# Do not install this unresolved template. Render it with the selected stable
+# Node/npm install-build pair and non-root service account documented in
+# README.md, verify the staged units, then install those rendered files.
+# After installation:
 #   sudo systemctl daemon-reload && sudo systemctl enable --now finance
 # Logs: journalctl -u finance -f   (journald handles rotation)
 #
-# Run `npm ci && npm run build` once in the working directory first. The app
-# binds 127.0.0.1:3100; expose it with `tailscale serve --bg 3100` (see README).
+# Run install/build through the same selected Node/npm pair first. The app binds
+# 127.0.0.1:3100; expose it with `tailscale serve --bg 3100` (see README).
 
 [Unit]
 Description=Finance Engine (local personal finance)
@@ -12,12 +15,28 @@ After=network.target
 
 [Service]
 Type=simple
-User=finance
-WorkingDirectory=/home/finance/personal-finance
-ExecStart=/usr/bin/npm start
+User=@@SERVICE_USER@@
+# Defense in depth with the application's retained process umask: new database,
+# WAL, SHM, and other runtime files remain private.
+UMask=0077
+WorkingDirectory=@@PROJECT_ROOT@@
+Environment="PATH=@@NODE_BIN_DIRECTORY@@:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+Environment=NODE_ENV=production
+Environment=NEXT_TELEMETRY_DISABLED=1
+Environment="MONEYBAGS_REPOSITORY_ROOT=@@PROJECT_ROOT@@"
+# The loopback-bound service may trust its local reverse proxy's forwarded host;
+# LAN launchers deliberately do not receive this setting.
+Environment=MONEYBAGS_TRUST_LOOPBACK_PROXY=1
+NoNewPrivileges=true
+ExecStartPre="@@NODE_EXECUTABLE@@" "@@TSX_CLI_MJS@@" --no-cache "@@SERVICE_PREFLIGHT_TS@@" app
+ExecStart="@@NODE_EXECUTABLE@@" --require "@@TELEMETRY_PRELOAD_CJS@@" "@@NEXT_CLI_JS@@" start -p 3100 -H 127.0.0.1
 Restart=on-failure
 RestartSec=5
-Environment=NODE_ENV=production
+# Installed Next 16 handles SIGTERM and exits 128+15 after draining.
+SuccessExitStatus=143
+
+# Manual restore requires this service to be stopped and confirmed inactive;
+# follow the validated-rescue and sidecar-quarantine runbook in USER_MANUAL.md.
 
 [Install]
 WantedBy=multi-user.target

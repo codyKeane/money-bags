@@ -93,9 +93,9 @@ export const transactions = sqliteTable(
 // A transaction can be split across categories (e.g. one store run = groceries
 // + household + a gift). When a transaction has ≥1 split rows, the splits define
 // its categorization for all spending aggregates and its own categoryId is
-// ignored; the splits' signed amounts must sum to the transaction amountCents
-// (enforced in the split action, not the DB). Remove all splits to revert to the
-// single categoryId.
+// ignored; the splits' signed amounts must sum to the transaction amountCents.
+// Transaction services enforce that invariant inside write-reserving SQLite
+// transactions. Remove all splits to revert to the single categoryId.
 export const transactionSplits = sqliteTable(
   "transaction_splits",
   {

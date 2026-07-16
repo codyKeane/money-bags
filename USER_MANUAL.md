@@ -69,17 +69,20 @@ That's the whole app. The rest of this manual is just detail.
 ### The fastest way to try it
 
 If the app is set up (see [Section 3](#3-getting-the-app-running)), you can load
-six months of **fake demo data** into a new disposable demo ledger:
+six months of **fake demo data** into a separate disposable demo ledger. Create
+and migrate that target first, then seed the same explicit target:
 
 ```bash
-npm run db:seed
+DB_FILE_NAME=data/demo.sqlite npm run db:migrate
+DB_FILE_NAME=data/demo.sqlite npm run db:seed
 ```
 
-> **Important:** the current seed command is not guarded against an existing
-> ledger. It can update accounts and categories whose names match the demo. Do
-> not run it against a ledger that contains, or may contain, personal data. If
-> there is any uncertainty, stop and make a validated backup first. A
-> code-level safety guard is planned in WP-03 of `IMPLEMENTATION_GUIDE.md`.
+> **Important:** seeding is a one-time initializer, not a reset command. It
+> accepts only an existing current schema with no accounts, transactions,
+> imports, or splits and either no categories or the exact untouched built-ins.
+> It refuses every other target without changing it, including a target already
+> seeded once. There is no force flag. Keep the demo target separate from real
+> money.
 
 Then open the disposable demo ledger and explore. Start a separate fresh
 database before loading real money.
@@ -118,6 +121,15 @@ negative. This is the most important idea in the whole app:
 So a $82.45 grocery run is stored as **`-82.45`**, and a $2,600 paycheck is
 stored as **`+2600.00`**. When you type an amount into a form, you include the
 minus sign yourself for money going out. This is called a **signed amount**.
+
+Amounts you type into app forms are exact decimal text: use plain digits with
+an optional leading `+` or `-` and no more than two digits after the decimal
+point. For example, `12`, `-12.50`, `+.5`, and `-.05` are accepted. Currency
+symbols, commas, spaces inside the number, exponent notation, and extra decimal
+places such as `1.005` or `1.230` are refused instead of rounded. Saved values
+always reopen with exactly two decimal places. Bank-statement imports remain
+different: the CSV parser also understands documented bank formats such as
+`$1,234.56`, parentheses, a trailing minus, and an unambiguous decimal comma.
 
 > **Why it works this way:** using one signed number (instead of separate "money
 > in" and "money out" columns) means the app can add up a whole month with plain
@@ -161,8 +173,9 @@ cards have negative balances, debts subtract automatically. If your checking is
 `+$3,000` and your credit card is `-$700`, your net worth is `+$2,300`.
 
 Net worth only makes sense when all your accounts use the **same currency**
-(the app assumes US dollars). If it ever detects accounts in different
-currencies, the dashboard shows a warning instead of a misleading total — see
+(for example, all USD or all EUR). If accounts use different currencies, the
+dashboard hides net worth and every other combined financial value instead of
+adding incompatible amounts. Money Bags never guesses an exchange rate. See
 the [Troubleshooting & FAQ](#11-troubleshooting--faq) note on currencies.
 
 ### Income vs. spending
@@ -258,21 +271,23 @@ That's it — the app is running.
 - The first time it starts, the app also installs the 12 built-in categories
   automatically, so auto-sorting works right away.
 
-### Try it with demo data (new disposable ledger only)
+### Try it with demo data (separate disposable ledger only)
 
-Only in a newly created disposable demo ledger, load fake data with:
+Create and migrate a separate disposable target, then load fake data into that
+same target:
 
 ```bash
-npm run db:seed
+DB_FILE_NAME=data/demo.sqlite npm run db:migrate
+DB_FILE_NAME=data/demo.sqlite npm run db:seed
 ```
 
 This creates **two demo accounts** (an *Everyday Checking* and a *Rewards Credit
 Card*) and about **six months of realistic transactions** — paychecks, rent,
-groceries, gas, Netflix, a credit-card payment, and more. The command is
-currently unguarded and may update same-named accounts or categories in an
-existing ledger. Do not run it if the target might contain personal data; make
-and validate a backup before any uncertainty. The planned WP-03 guard has not
-landed yet.
+groceries, gas, Netflix, a credit-card payment, and more. Before writing, the
+command requires the reviewed current schema and atomically verifies that the
+ledger is empty and its categories are absent or exactly untouched defaults. A
+missing, old, customized, populated, or previously seeded target refuses. The
+command never creates, migrates, refreshes, merges, or force-resets a target.
 
 ### Running it "for real" (production mode)
 
@@ -288,14 +303,29 @@ The build command runs with a new database in the operating system's temporary
 directory; it does not open the configured ledger. The wrapper removes that
 database and its SQLite sidecars when the build finishes or receives Ctrl+C or
 a catchable termination signal. `npm start` then opens the configured ledger at
-runtime, as normal. Until the separate WP-04 packaging-privacy work is complete,
-maintainer validation builds still use a sanitized copied workspace containing
-no real ledger, sidecars, imports, backups, or private `.env*` files. A forced
-kill or power loss can leave the uniquely marked temporary folder behind. The
-safe build/test wrappers currently require macOS, Linux, or WSL. They stop
-before creating a temporary folder on native Windows because that platform
-needs a stronger child-process supervisor; ordinary development mode still
-works on Windows.
+runtime, as normal. The build also checks every generated server trace and
+refuses paths that could
+package a ledger, SQLite sidecar, import, backup, private environment file, or
+operator-only script. The separate `npm run validate:build-privacy` release
+check proves ordinary and standalone output in a temporary copied workspace;
+standalone packaging is not enabled for normal builds. A forced kill or power
+loss can leave the uniquely marked temporary folder behind. The safe build/test
+wrappers currently require macOS, Linux, or WSL. They stop before creating a
+temporary folder on native Windows because that platform needs a stronger
+child-process supervisor; ordinary development mode still works on Windows.
+
+For an unattended Linux home server, use only the rendered systemd units and
+installation procedure in `README.md`; the files in `deploy/` are unresolved
+templates, not installable units. The rendered app stays on
+`127.0.0.1:3100`, runs as the selected non-root account without npm in the
+service process, and refuses startup if the checked-out root, private process
+settings, non-root effective identity, reviewed migrations, production
+build/cache, or database storage do not match. Before Next loads, the app pins
+the database selected by the supported root `.env` (or its documented default),
+so a production-specific environment file cannot redirect the running service
+away from the database that preflight checked. The daily backup service also
+refuses a missing source or unsafe existing backup destination. These checks
+report the problem in the journal but do not create or repair files for you.
 
 ### Stopping the app
 
@@ -327,9 +357,18 @@ actually has data**, so it's never blank. You can't go past the current month.
 
 | Card | What it shows |
 |---|---|
-| **Net worth** | Every account's balance added together. Click it to jump to the Accounts page. (If your accounts span more than one currency, a warning appears below the cards instead of a meaningless total.) |
+| **Net worth** | Every account's balance added together when all accounts share one valid currency. Click it to jump to the Accounts page. |
 | **Income · [month]** | Money that came in during the selected month. |
 | **Spending · [month]** | Money that went out during the selected month. |
+
+**Needs categorization** — appears when one or more transactions still need a
+category. It counts the whole ledger across all months, not only the dashboard's
+selected month. The count covers an unsplit transaction with no category and
+counts a split transaction once when at least one split part is uncategorized. A
+blank parent category is ignored when all of that transaction's split parts are
+categorized. Follow the link to open the Transactions page with the
+**Uncategorized** filter already selected. This data-quality reminder remains
+available even when mixed or invalid currencies hide combined financial totals.
 
 **Spending by category** — a chart breaking that month's spending into
 categories, biggest first. If nothing was spent that month, it says so.
@@ -346,6 +385,13 @@ answering "am I saving or overspending lately?"
 
 **Recent transactions** — your 10 most recent transactions, so you can eyeball
 the latest activity without leaving the page.
+
+If account currencies are mixed or need repair, the three summary cards,
+spending chart, trend chart, and budget progress are replaced by an explanation;
+Money Bags does not perform currency conversion. The categorization reminder,
+recent transactions, and individual valid account balances remain available. If
+an exact combined total would exceed the supported integer range, the same area
+reports that totals are unavailable instead of showing a rounded number.
 
 ### 4.2 Accounts
 
@@ -366,11 +412,20 @@ The table shows one row per account with these columns:
 **Buttons:**
 
 - **New account** — opens a form with: **Name**, **Type**, **Institution
-  (optional)**, and **Opening balance** (signed dollars, e.g. `-250.00`).
+  (optional)**, **Currency** (a three-letter code, default `USD`), and **Opening
+  balance** (signed currency units, e.g. `-250.00`).
 - **Edit** (on each row) — change any of those fields.
-- **Delete** (on each row) — permanently removes the account **and all its
-  transactions**. Because that can't be undone, you must **type the account's
-  exact name** to confirm before the Delete button will work.
+- **Delete** (on each row) — permanently removes the account, **all its
+  transactions and split allocations**, and its import history. Data in other
+  accounts and all categories remain. The confirmation has a real label and
+  requires the account's **exact name** before the Delete button will work.
+  **Cancel** or **Escape** returns focus to that row's Delete button.
+
+The Accounts page is also the currency repair path. A legacy invalid value is
+shown in the edit field without being logged, silently changed, or formatted as
+USD. Its amounts say **Unavailable** until you enter a valid three-letter code
+and save. Lowercase or space-padded valid codes are presented normalized in
+memory and are written back only when you explicitly save.
 
 ### 4.3 Categories
 
@@ -387,27 +442,36 @@ Each category has:
   `WHOLE HARVEST MARKET` is auto-labeled Groceries.
 - A **Color** — pick **None** or one of eight named colors (Blue, Aqua, Yellow,
   Green, Violet, Red, Magenta, Orange). Color is just for the charts and badges.
-- A **Monthly budget (optional)** — a dollar target (e.g. `500`). Leave it blank
-  for no budget. When set, it powers the dashboard's [Budget vs
+- A **Monthly budget (optional)** — a target in the ledger's one shared
+  currency (e.g. `500`). Leave it blank for no budget. Budget values are not
+  shown or editable while account currencies are mixed or need repair, because
+  categories do not have their own currency. When set, it powers the dashboard's [Budget vs
   actual](#41-dashboard-the-home-page) bars. See [Budget](#budget-optional).
 - An **"Exclude from income/spending"** checkbox — turn this on for
   transfer-type categories so they don't distort your totals (see
-  [Transfers](#transfer-and-why-it-isnt-spending)).
+  [Transfers](#transfer-and-why-it-isnt-spending)). Excluded categories also
+  disappear from budget progress. Their saved budget is preserved and returns
+  if you include the category again.
 
 The table columns are **Category**, **Keywords**, **Budget** (the monthly target
-or a dash), **Excluded** (Yes/blank), and **Transactions** (how many
-transactions currently use it).
+or a dash), **Excluded** (Yes/blank), and **Active transactions** (how many
+transactions currently use the category, including split transactions once
+even when several parts use it).
 
 **Buttons:**
 
 - **New category** — create your own.
 - **Edit** — change a category's name, keywords, color, or exclude setting.
-- **Delete** — removes the category. Its transactions aren't deleted; they simply
-  become **Uncategorized**. The app asks you to confirm first.
+- **Delete** — removes the category without deleting transactions or split
+  allocations. The armed confirmation discloses how many active transactions
+  and split parts become **Uncategorized**, plus any inactive parent fallback
+  that cannot return if its splits are later removed.
 - **Apply rules to uncategorized** (top right) — re-runs the keyword matching
-  over every currently-uncategorized transaction. It **never** changes a
-  category you set by hand. After it runs, it tells you how many it labeled,
-  e.g. *"Categorized 8 of 20 uncategorized."*
+  over unsplit transactions whose single category is currently blank. It
+  **never** changes a category you set by hand or the ignored parent of a split
+  transaction. A blank split part needs deliberate manual allocation. After it
+  runs, it tells you how many it labeled, e.g. *"Categorized 8 of 20
+  uncategorized."*
 
 ### 4.4 Transactions
 
@@ -444,6 +508,13 @@ on a filter for an account or category that no longer exists (e.g. an old
 bookmark after you deleted it), the app simply ignores that filter and shows
 everything, rather than a confusing empty page.
 
+Category filters follow the active allocation. An unsplit transaction matches
+its one category. A split transaction matches every category used by at least
+one part, never its inactive parent category, and still appears only once in
+the table or export. **Uncategorized** includes an unsplit blank category and a
+split with at least one blank part, so a split transaction can appear in both a
+named-category view and the Uncategorized view.
+
 **The table** shows Date, Description, Account, Category, and Amount. Dates read
 as **"Jul 7, 2026"** (hover to see the exact `YYYY-MM-DD`), and money coming
 **in** (a paycheck, a refund) is tinted **green** so it stands out; money going
@@ -457,8 +528,11 @@ true:
   transaction you've **split** across categories shows a **Split** link here
   instead of the dropdown — see below.)
 - Each row has an **Edit** link (change any field) and a **Delete** button. Click
-  **Delete** and a **Confirm** button appears right there in the row (no browser
-  pop-up); click it to remove the transaction, or **Cancel** to back out.
+  **Delete** and the full permanent consequence plus a **Confirm** button appear
+  right there in the row (no browser pop-up). Keyboard focus moves to Confirm;
+  **Cancel** or **Escape** returns to Delete. A successful deletion moves focus
+  to the surviving **Add transaction** control. Deleting a transaction also
+  deletes its split allocations, while other transactions remain.
 
 The **Account** name in each row is a link that filters the table down to that
 account.
@@ -474,12 +548,34 @@ spending, budgets, and charts — and if one part is a category you've marked "n
 spending" (like a reimbursed item), only that part is left out, not the whole
 charge. The transaction keeps its single line in the ledger; only the category
 breakdown changes. Click **Remove split** to turn it back into a normal
-single-category transaction.
+single-category transaction. While a split exists, changing the transaction's
+amount is blocked; review and remove the split first if the ledger amount really
+must change. If older stored allocations do not add up to their transaction, the
+edit page shows a red warning and blocks ordinary transaction edits. Correct the
+parts so they add up to the unchanged transaction amount, or deliberately remove
+the split after reviewing it—the app never rescales, clears, or repairs parts on
+its own.
+
+Every add, remove, and clear split control is at least 44×44 CSS pixels. Screen
+readers distinguish repeated controls by the one-based part number and current
+category (for example, “Remove split part 2, Groceries”).
 
 **Export CSV** — next to the "Showing …" count sits an **Export CSV** link. It
 downloads exactly the rows your current filters produce (not just the page
 you're looking at) as a spreadsheet file — handy for taxes, sharing with an
 accountant, or your own analysis. Clear the filters first to export everything.
+The downloaded columns are **Date, Description, Amount, Currency, Account,
+Category, and Split Details**. A split transaction stays one row with its full
+ledger amount, says **Split** in Category, and includes all allocations in Split
+Details. When a category filter matches one allocation, the complete parent row
+and every allocation are exported; the ignored parent category never matches.
+
+The download can safely contain accounts in different currencies because every
+row names its currency. If a stored account currency needs repair, export is
+refused with instructions to fix it on **Accounts**. Text that could be mistaken
+for a spreadsheet formula receives a leading apostrophe in the downloaded CSV;
+that apostrophe may be visible in a strict text/CSV reader. The saved transaction
+and its categorization are unchanged, and signed Amount cells remain numbers.
 
 **Pagination** — the table shows 50 transactions at a time. At the bottom you'll
 see *"Showing 1–50 of 320"* with **← Prev** and **Next →** links. Your filters
@@ -489,8 +585,9 @@ carry across pages.
 
 Where you load a bank statement file. Covered in full in
 [Section 7](#7-importing-bank-statements). In short: pick the account, choose the
-`.csv` file your bank gave you, and click **Import statement**. The app tells you
-how many transactions it added, skipped, or couldn't read.
+`.csv` file your bank gave you, and click **Import statement**. A valid file is
+imported as one unit; if any row, date choice, or explicit column mapping is
+invalid, nothing from the file is saved.
 
 ---
 
@@ -505,9 +602,10 @@ Concrete, numbered walkthroughs for the things you'll actually do.
 3. Enter a **Name** (e.g. *Everyday Checking*).
 4. Choose the **Type** (e.g. CHECKING).
 5. Optionally add the **Institution** (your bank's name).
-6. Set the **Opening balance** to whatever was in the account before your first
+6. Set the three-letter **Currency** code (for example `USD`, `EUR`, or `JPY`).
+7. Set the **Opening balance** to whatever was in the account before your first
    statement. If you're starting from scratch, `0.00` is fine.
-7. Click **Create account**.
+8. Click **Create account**.
 
 Repeat for each real account you have (checking, credit card, cash, etc.).
 
@@ -520,12 +618,14 @@ Repeat for each real account you have (checking, credit card, cash, etc.).
 2. In the app, go to **Import**.
 3. Pick the **Account** this statement belongs to. (If you haven't made it yet,
    click **New account…** right there to create one without leaving the page.)
-4. Click **Choose file** and select the CSV you downloaded (max size 5 MB).
-5. Leave **Date format** on **Auto-detect** unless the import gets dates wrong
-   (see [Section 7](#7-importing-bank-statements)).
+4. Click **Choose file** and select the CSV you downloaded (max size 5 MiB).
+5. Leave **Date format** on **Auto-detect**. If the file contains a date such as
+   `03/04/2026`, the app saves nothing and asks you to choose **MM/DD/YYYY** or
+   **DD/MM/YYYY** (see [Section 7](#7-importing-bank-statements)).
 6. Click **Import statement**.
-7. Read the result: how many were **imported**, **skipped as duplicates**, and
-   how many **rows had errors**. You're done.
+7. Read the result: how many were **imported** and **skipped as duplicates**.
+   If the file is refused, correct the listed rows or setting and submit the
+   whole file again; no partial rows were saved.
 
 > **Tip:** It is completely safe to import the same file twice. The app
 > recognizes transactions it already has and skips them, so you'll never get
@@ -604,11 +704,14 @@ npm run db:backup
 
 The audit reads configuration, migration files, Git rules, and path metadata;
 it does not open the database or read any ledger table. It prints the exact
-active target and the `backups/` directory beside it. The backup command writes
-a timestamped copy there (`data/backups/` for the default target) and is safe to
-run even while the app is open. Do it regularly (or on a schedule). If the
-target is an external absolute path, its sibling backup directory is external
-too and must be included explicitly in your backup plan.
+active target, the `backups/` root beside it, and that target's isolated
+`backups/target-<24-hex-path-hash>/` directory. The backup command writes,
+validates, and publishes a private timestamp-and-UUID image in that scoped
+directory and is safe while the app is open. On POSIX, the command reports
+confirmed durability; on native Windows it reports platform-best-effort
+durability and unverified ACL privacy. Do it regularly (or on a schedule). If
+the target is an external absolute path, its sibling backup root is external too
+and must be included explicitly in your backup plan.
 
 ### Recipe I — Set a monthly budget for a category
 
@@ -628,8 +731,10 @@ too and must be included explicitly in your backup plan.
    or a search — to narrow down what you export. To export everything, click
    **Clear filters** first.
 3. Click **Export CSV** (next to the "Showing …" count).
-4. Your browser downloads a `.csv` file containing exactly those rows. Open it in
-   any spreadsheet program, or hand it to your accountant.
+4. Your browser downloads a `.csv` file containing every matching parent row in
+   deterministic oldest-first order, including a Currency column and truthful
+   split details. Open it in your spreadsheet program, or hand it to your
+   accountant.
 
 ---
 
@@ -654,7 +759,9 @@ a keyword appears anywhere in the description, that category is a match.
 
 Auto-categorization runs at **import time**. To re-run it later over
 uncategorized rows, use **Apply rules to uncategorized** on the Transactions or
-Categories page. It never overwrites a category you chose by hand.
+Categories page. It never overwrites a category you chose by hand. Split
+transactions are skipped because a whole-description keyword cannot decide how
+to allocate one blank split part safely.
 
 ### How duplicate detection works (and its one limit)
 
@@ -708,6 +815,17 @@ The import feature reads **CSV files** — the plain, spreadsheet-style export
 almost every bank offers. This section is the complete reference for what it
 accepts.
 
+The web upload accepts a CSV up to exactly 5 MiB. It also reserves 64 KiB for
+the browser's multipart framing and the small Account, Date format, and optional
+column-mapping fields. The server measures the body as it arrives, so missing or
+incorrect size metadata cannot bypass the limit. A request that exceeds either
+the CSV limit or the total upload limit is refused before any ledger change.
+
+The filename shown in **Recent imports** is metadata, never a save destination.
+Money Bags keeps only the final name after either `/` or `\\`, normalizes Unicode
+for consistent display, and rejects empty, dot-only, overlong, or control-
+containing names. The same rule applies to browser and command-line imports.
+
 ### The columns it looks for
 
 At minimum, your file needs a **date**, a **description**, and an **amount**. The
@@ -721,7 +839,9 @@ file has more than one option:
 - **Amount** — either a single `Amount` column, **or** separate `Debit` and
   `Credit` columns (money-out and money-in). If your bank uses split columns, a
   **negative value in the Debit column** is treated as a refund — i.e. money
-  coming back **in**.
+  coming back **in**. A zero-filled side is inactive, so Debit=`0.00` with
+  Credit=`100.00` is a $100 inflow. Two nonzero sides are an error; two zero
+  sides produce an exact zero-cent row.
 
 A typical accepted file looks like this:
 
@@ -734,7 +854,7 @@ Date,Description,Amount
 ```
 
 If a required column is missing entirely, the app stops and gives you **one
-clear message** ("Could not find a date … column. Headers seen: …") instead of
+clear missing-column message** instead of
 flagging every single row — so you know immediately it's a header problem, not
 bad data.
 
@@ -746,6 +866,11 @@ field — **Date, Description, Amount, Debit, Credit** — where you type the *e
 header text from your file. Fill in only the ones that need it; leave the rest
 blank to keep auto-detection. For example, if your file's date column is headed
 `Txn Day`, put `Txn Day` in the Date box and import as normal.
+
+An explicit map is strict: each supplied value must be a unique, 1–120 character
+header that appears exactly once in the file. Unknown fields, missing/duplicate
+headers, empty values, and two fields claiming the same header refuse the file;
+the app never silently falls back to auto-detection.
 
 ### Amount formats it understands
 
@@ -773,28 +898,26 @@ The **Date format in file** dropdown offers:
 - **MM/DD/YYYY** — force US order.
 - **DD/MM/YYYY** — force European order.
 
-Auto-detect works for almost everything. Force a specific order only if you check
-your imported dates and they look swapped (e.g. a June 3rd showing up as March
-6th). When auto-detect meets a genuinely ambiguous date (like `03/04`, which
-could be March 4th or April 3rd), it reads it as **MM/DD** and adds a
-**warning** to the import result so you can re-import with the right order if
-your bank uses DD/MM.
+Auto-detect accepts ISO dates, equal dates such as `05/05`, and dates where a
+component over 12 makes the order certain. When it meets a genuinely ambiguous
+date such as `03/04`, it imports **nothing**, focuses the date-format control,
+and asks you to choose **MM/DD/YYYY** or **DD/MM/YYYY** before submitting again.
+The choice happens before duplicate hashes or database writes.
 
 ### The import result
 
 After you click **Import statement**, you get a summary like:
 
-> *"48 imported · 2 skipped as duplicates · 1 rows with errors"*
+> *"48 imported · 2 skipped as duplicates"*
 
 - **Imported** — new transactions added.
 - **Skipped as duplicates** — already in your data; each is listed with its line
   number, date, amount, and description so you can check them (see the
   [duplicate limitation](#how-duplicate-detection-works-and-its-one-limit)).
-- **Rows with errors** — lines the app couldn't read, each with its line number
-  and the reason. Fix those lines in the file and re-import; the good rows are
-  already saved and won't double up.
-- **Warnings** — non-fatal notes (like the ambiguous-date warning above). The
-  rows still imported; a warning is just a heads-up worth a glance.
+- **A refused file** — if any row, CSV structure, or explicit column map is
+  invalid, the app identifies safe line/field details and saves zero rows. Fix
+  the source and import the full file again. Ambiguous dates are a separate
+  refusal that asks for an explicit order.
 
 ### Undoing an import
 
@@ -808,9 +931,11 @@ else. Rows you typed in by hand, and rows from other imports, are left alone.
 
 A few things worth knowing:
 
-- Undo asks you to confirm first: clicking **Undo** turns into an **Undo import**
-  Confirm button (with the exact count and file in its tooltip) right in the row —
-  no browser pop-up. Click it to go ahead, or **Cancel**.
+- Undo asks you to confirm first: clicking **Undo** shows the exact count, file,
+  later-edit/split consequence, and what remains as visible text beside an
+  **Undo import** Confirm button — no hover or browser pop-up is required. Focus
+  moves to Confirm. **Cancel** or **Escape** returns to Undo; success moves focus
+  to the surviving **Recent imports** heading.
 - Even if you later re-categorized or edited one of those imported rows, Undo
   still removes it — it belongs to that import.
 - An import that added **nothing** (every row was a duplicate) doesn't appear in
@@ -836,13 +961,17 @@ responsible for its permissions and backup lifecycle.
 If you prefer the terminal, you can import without the web page:
 
 ```bash
-npm run import -- --file statement.csv --account "Everyday Checking" --type CHECKING --date-format MDY
+npm run import -- --file statement.csv --account "Everyday Checking" --type CHECKING --currency USD --date-format MDY
 ```
 
-`--type` and `--date-format` are optional. For unusual headers, the same column
+`--type`, `--currency`, and `--date-format` are optional (defaults: CHECKING,
+USD, and auto). For unusual headers, the same strict column
 mapping the web UI offers is available as flags — `--col-date "Txn Day"`,
 `--col-amount "Value"`, and likewise `--col-description`, `--col-debit`,
-`--col-credit`. Any warnings are printed alongside the imported/skipped counts.
+`--col-credit`. An ambiguous auto date exits with MDY/DMY instructions. A new
+named account is created only after the whole file is ready, inside the same
+transaction as the import; a same-name account is reused only when its type and
+currency match, and is never updated by the command.
 
 A command-line import is recorded the same way a web import is, so if it went in
 wrong you can undo the whole thing from the **Recent imports** list on the Import
@@ -866,12 +995,23 @@ tunnel between your own devices only.
    ```bash
    tailscale serve --bg 3100
    ```
-3. On your phone, open the address Tailscale gives you — it looks like
-   `https://your-computer.your-tailnet.ts.net`. Tailscale handles the secure
+3. Note the complete secure address Tailscale gives you. It looks like
+   `https://your-computer.your-tailnet.ts.net`. In the app's root environment
+   configuration, set `EXTRA_ALLOWED_ORIGINS` to that exact address. If you
+   deliberately use more than one proxy address, separate the complete HTTPS
+   addresses with commas; wildcards and partial domain names are not accepted.
+4. If you use production mode, rebuild with `npm run build` and restart with
+   the same setting available to `npm start`. Changing the setting and only
+   restarting an old build is not enough. For development mode, stop and
+   restart `npm run dev`.
+5. On your phone, open that configured address. Tailscale handles the secure
    `https` connection automatically.
 
 Now only your own signed-in devices can reach the app. Your financial data still
-never touches anyone else's server.
+never touches anyone else's server. Money Bags checks the exact browser origin
+before uploads or other changes and prevents the interface from being embedded
+in another site's frame. It still has no login: tailnet membership and ACLs are
+the access boundary.
 
 ### Install it as an app on your phone (PWA)
 
@@ -891,6 +1031,13 @@ bar are sized to comfortable **touch targets**, number fields pop the numeric
 keypad, confirmations happen **inline** (a Confirm button appears right where you
 tapped, instead of a browser pop-up), and wide tables show a soft shadow at the
 edge when there's more to scroll sideways to.
+
+With a keyboard, the current page is exposed to assistive technology, the mobile
+menu toggle names the menu it controls, and **Escape** closes that menu and
+returns focus to the toggle. Submitted form errors are announced and receive
+focus once; when the server identifies a specific field, that control is marked
+invalid and linked to the error summary. Destructive confirmations always show
+their full consequence without relying on a tooltip.
 
 > **Advanced / not recommended:** there are `npm run dev:lan` and
 > `npm run start:lan` commands that expose the app to your whole local network
@@ -921,10 +1068,20 @@ npm run audit:data-path
 ```
 
 The audit reports the normalized target, whether it is protected by the
-repository's `data/` Git boundary, the exact sibling backup directory, and
-direct parent/file POSIX modes when available. It reads metadata only and never
-queries ledger tables. For an external absolute target, Git protection is not
-applicable; protect that target and its reported backup directory yourself.
+repository's `data/` Git boundary, the exact sibling backup root, the isolated
+target-scoped backup directory, and existing direct parent/main/WAL/SHM/backup
+artifact POSIX modes when available. Existing POSIX directories/files must be
+exactly `0700`/`0600`; the audit fails with exact non-recursive `chmod`
+remediation but never changes permissions. On Windows it says explicitly that
+ACL privacy is unverified. It reads metadata only and never queries ledger
+tables. For an external absolute target, Git protection is not applicable;
+protect that target and its reported backup root yourself.
+
+On POSIX, each Money Bags application or operational Node process that may open
+SQLite sets `umask 0077` before the first open and intentionally keeps that
+process-global setting. Later files created by that process therefore inherit a
+private default. The service's `UMask=0077` adds defense in depth; neither
+mechanism sets or verifies Windows ACLs.
 
 If an older setup uses a database elsewhere inside the project, stop before
 upgrading. With the old version, stop all writers and make and verify a backup.
@@ -940,23 +1097,83 @@ npm run audit:data-path
 npm run db:backup
 ```
 
-First confirm the exact active target and sibling backup directory reported by
-the audit. The backup command safely copies the database to
-`backups/finance-<timestamp>.db` beside that target, even while the app is
-running. With the default target that is
-`data/backups/finance-<timestamp>.db`. Run it often. (A good habit: back up
-before and after importing a big statement.)
+First confirm the exact active target and target-scoped backup directory reported
+by the audit. The command uses SQLite's live backup API, normalizes the completed
+image as standalone, validates integrity, foreign keys, reviewed migration
+history, and schema, then fsyncs and publishes it without overwriting anything:
 
-### Restore from a backup
+`backups/target-<24-hex-path-hash>/moneybags-<UTC-millisecond-stamp>-<UUID>.sqlite3`
 
-1. **Stop the app** (Ctrl + C in its terminal).
-2. Run `npm run audit:data-path` and use the exact normalized active target it
-   reports (`data/finance.db` only when the default is in use). Never guess that
-   a custom-path ledger belongs at the default path.
-3. Copy your chosen backup file over that exact target.
-4. Delete the matching `<target>-wal` and `<target>-shm` helper files if they
-   exist.
-5. **Start the app** again.
+With the default target, the backup root is `data/backups/`; use the exact
+target-scoped child printed by the audit instead of guessing its hash. Each
+normalized database path has a separate namespace, so retention for one ledger
+cannot delete another ledger's finals. Changing `DB_FILE_NAME` selects a new
+namespace. Legacy `finance-*.db` and other unscoped files directly under the
+backup root are reported by the audit but preserved and never selected by
+automatic retention. New backup directories/files are private (`0700`/`0600`
+on POSIX). A failed incomplete copy never becomes final. A complete image that
+is logically invalid is retained as `.invalid` for diagnosis, but it is not a
+restore or retention candidate. Run backups often—especially before and after a
+large import.
+
+The successful command prints its durability and filesystem-privacy scope. On
+POSIX, directory fsync and private modes are enforced and durability is
+confirmed. On native Windows, directory fsync is unavailable and numeric POSIX
+modes do not establish ACL privacy, so the command reports
+`platform-best-effort` durability and `ACLs not enforced`; restrict and inspect
+the target and backup ACLs separately before relying on them.
+
+To check a published or offline-copied image without changing it, supply its
+absolute path:
+
+```bash
+npm run db:verify-backup -- /absolute/path/to/moneybags-...sqlite3
+```
+
+Only `VALID` plus the current or supported historical schema revision is
+printed. The verifier refuses the configured live target, filesystem aliases,
+SQLite sidecars, `.partial`/`.invalid` files, corrupt or foreign-key-invalid
+images, forged/divergent migration history, mismatched schemas, and unknown or
+newer revisions. It does not migrate the image or print ledger rows.
+
+### Restore from a backup (manual offline procedure)
+
+There is deliberately no automated restore command. Restore changes the ledger
+and must preserve a rollback path through every step.
+
+1. Run `npm run audit:data-path`; record the exact normalized target, backup
+   root, and target-scoped backup directory. Never substitute the default path
+   or another target's namespace for a custom target.
+2. Make a fresh WAL-safe rescue with `npm run db:backup`, record the exact final
+   path printed by the command, and validate that rescue with
+   `npm run db:verify-backup -- <absolute-rescue-path>`.
+3. Validate the separately selected restore source with the same command. Use a
+   standalone regular file only—never a live SQLite main file, `.partial`,
+   `.invalid`, or a file accompanied by WAL/SHM sidecars.
+4. Stop the app or service and confirm it is stopped. From this point until the
+   final health check, do not allow any process to open the configured target.
+5. In the target's own directory, make a new uniquely named copy of the selected
+   source without overwriting any existing name. Set that restore-ready copy to
+   `0600` on POSIX and validate the copy by its absolute path. Keep it on the
+   same filesystem as the target so the later rename preserves the verified
+   inode.
+6. Immediately before replacement, move—not delete—the exact current main file
+   and its matching `<target>-wal`/`<target>-shm` files, if present, to unique
+   private quarantine names in that directory. Do not touch another ledger's
+   sidecars.
+7. Rename the verified restore-ready file to the exact configured target. Do not
+   copy or edit it after verification. If any operation from step 6 onward
+   fails, keep the service stopped and restore the quarantined original or the
+   validated rescue before doing anything else.
+8. Start the same intended application revision and check its health plus the
+   expected ledger. A supported historical image may be migrated by this newer
+   application; a downgrade instead requires the backup paired with the older
+   code revision.
+9. Keep the rescue and quarantine until startup and validation are successful.
+   Only then remove the quarantined files through a deliberate operator action.
+
+Never delete the current database or its sidecars before a validated rescue
+exists and service inactivity is confirmed.
 
 ### Privacy reminders
 
@@ -977,12 +1194,14 @@ Run these from the project folder in a terminal.
 |---|---|
 | `npm install` | One-time: download the app's building blocks. |
 | `npm run dev` | Start the app (development mode) at `http://127.0.0.1:3100`. |
-| `npm run build` then `npm start` | Build without opening the configured ledger, then start the faster production version on that ledger; see the pre-WP-04 packaging caveat above. |
+| `npm run build` then `npm start` | Build on a temporary ledger, enforce the server-trace privacy gate, then start the faster production version on the configured runtime ledger. |
+| `npm run validate:build-privacy` | In an allowlisted temporary copy, build and health-check ordinary and standalone output and scan the complete packaged tree. |
 | `npm run smoke:dev` / `npm run smoke:start` | Run a bounded loopback health check with a temporary ledger; the start smoke needs an existing build. |
 | `npm run audit:data-path` | Read-only check of the configured target, Git boundary, backup location, and path modes. |
 | `npm run db:migrate` | Create/upgrade the database file. |
-| `npm run db:seed` | Unguarded demo seed; new disposable ledgers only. |
-| `npm run db:backup` | Make a timestamped backup beside the active database. |
+| `npm run db:seed` | One-time fail-closed initializer for an existing, migrated, empty/default-only disposable ledger. |
+| `npm run db:backup [-- --keep N]` | Make a private validated WAL-safe backup in the target's isolated namespace, report platform-qualified durability, and optionally retain its newest N validated finals. |
+| `npm run db:verify-backup -- /absolute/path` | Read-only integrity, foreign-key, migration, and schema check for a standalone backup. |
 | `npm run import -- --file <f> --account "<name>"` | Import a statement from the terminal. |
 | `npm run db:studio` | Open a database browser to inspect the raw data. |
 | `npm test` | Run the app's automated self-checks with fresh temporary DB targets. |
@@ -997,8 +1216,8 @@ Run these from the project folder in a terminal.
 
 **The dashboard is blank / says "Welcome."**
 You have no transactions yet. Go to **Import** and load a statement. Use
-`npm run db:seed` only in a separate new disposable demo ledger; its WP-03
-safety guard has not landed yet.
+`npm run db:seed` only with the separate, explicitly migrated disposable demo
+target described above; it safely refuses a populated or customized ledger.
 
 **My credit card shows a negative balance — is that a bug?**
 No, that's correct. A credit-card balance is money you **owe**, so it's stored as
@@ -1014,8 +1233,11 @@ The app isn't running, or you closed its terminal. Start it again with
 `npm run dev` and retry the import.
 
 **My imported dates look wrong (e.g. day and month swapped).**
-Re-import and set the **Date format in file** dropdown to your bank's real order
-(`MM/DD/YYYY` or `DD/MM/YYYY`) instead of Auto-detect.
+Current auto-detect blocks ambiguous dates before saving. If rows were imported
+under an older version's warning behavior, first **Undo** that import from the
+Recent imports list. Then select your bank's real order (`MM/DD/YYYY` or
+`DD/MM/YYYY`) and import the corrected file. The app does not guess which old
+rows need repair.
 
 **A transaction I know is real got "skipped as duplicate."**
 It's identical (same account, date, amount, description) to one already in your
@@ -1041,19 +1263,26 @@ app's code — not your data.
 Yes — create as many accounts as you like, of any types, from any institutions.
 
 **Does it handle multiple currencies?**
-Amounts are shown in US dollars, and mixing currencies in one database isn't
-supported yet, so stick to one currency. As a safeguard, if the app ever sees
-accounts in more than one currency it shows a warning on the dashboard instead
-of adding them into a meaningless net-worth total.
+Each account has its own required currency code, and a database containing one
+currency is formatted in that currency—not automatically as USD. You may keep
+accounts with different currencies, but Money Bags does not convert them. In
+mixed mode it hides every combined net-worth, income, spending, trend, and
+budget value while continuing to show valid per-account values. If an old
+account code is invalid, use **Accounts → Edit** to repair it; combined values
+stay unavailable until the repair is saved.
 
 **How do I set a budget?**
 On the **Categories** page, edit a category and fill in **Monthly budget**. The
 dashboard then shows a Budget vs actual bar for it. See
-[Recipe I](#recipe-i--set-a-monthly-budget-for-a-category).
+[Recipe I](#recipe-i--set-a-monthly-budget-for-a-category). If the category is
+excluded from income/spending, its budget bar is hidden without deleting the
+saved target; the bar returns when you include the category again.
 
 **How do I get my transactions out of the app?**
 Use the **Export CSV** link on the Transactions page — it downloads whatever
-your current filters show. See [Recipe J](#recipe-j--export-transactions-to-a-spreadsheet).
+your current filters show, including all matches beyond the current 50-row page.
+Split matches remain one full parent row with all allocation details. See
+[Recipe J](#recipe-j--export-transactions-to-a-spreadsheet).
 
 ---
 
@@ -1100,6 +1329,21 @@ your current filters show. See [Recipe J](#recipe-j--export-transactions-to-a-sp
 Your database starts with these 12 categories. The **keywords** are what the app
 looks for in a transaction's description to auto-sort it. You can edit, delete,
 or add to any of them on the **Categories** page.
+
+The first installation is all-or-nothing. After that, startup respects your
+category table exactly: it does not overwrite edits or restore an individually
+deleted category. The one unavoidable edge case is a completely empty category
+table—without a separate initialization marker, that looks like a fresh
+database, so the next startup or valid statement import reinstalls all 12
+defaults.
+
+If you suspect an older version left only some defaults, use the **Categories**
+page and the table below as a read-only comparison. Do not delete the remaining
+categories as a repair: deleting a category makes its linked transactions
+Uncategorized, and deleting the final one also triggers full reinstallation on
+the next startup or valid statement import. First make and verify a backup, then
+review a manual repair separately; recreating a missing category gives it a new
+identity, so affected transactions may need deliberate recategorization.
 
 | Category | Catches things like… | Keywords |
 |---|---|---|

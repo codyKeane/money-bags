@@ -1,15 +1,25 @@
-import { getAccountsWithBalances, sumNetWorth } from "@/server/services/accounts";
+import { noStoreJson } from "@/lib/http-response";
+import { buildNetWorthOverview, getAccountsWithBalances } from "@/server/services/accounts";
+
+export const dynamic = "force-dynamic";
 
 export async function GET() {
-  // one aggregate, summed in JS (P4) — was two identical queries
   const accounts = await getAccountsWithBalances();
-  return Response.json({
-    netWorthCents: sumNetWorth(accounts),
+  const overview = buildNetWorthOverview(accounts);
+  return noStoreJson({
+    netWorthCents: overview.netWorthCents,
+    currencyState: overview.currencyState,
+    aggregateState: overview.aggregateState,
     accounts: accounts.map((a) => ({
       id: a.id,
       name: a.name,
       type: a.type,
       balanceCents: a.balanceCents,
+      balanceState: a.balanceState,
+      rawCurrency: a.rawCurrency,
+      currency: a.currency,
+      normalizedCurrency: a.normalizedCurrency,
+      currencyState: a.currencyState,
     })),
   });
 }

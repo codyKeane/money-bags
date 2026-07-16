@@ -1,27 +1,47 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useId, useRef, useState } from "react";
 import { createAccountAction, type CreateAccountState } from "@/server/actions";
 import { ACCOUNT_TYPES } from "@/lib/account-types";
+import { inspectCurrencyCode, type AccountCurrencyState } from "@/lib/currency";
 import { formatCents } from "@/lib/money";
 import { formatIsoDate } from "@/lib/month";
 import { FlashMessage, useFlash } from "@/components/ui/flash";
-import { Field, inputClass } from "@/components/ui/form";
-import { useServerForm } from "@/components/ui/use-server-form";
+import { Field, FormError, inputClass } from "@/components/ui/form";
+import {
+  useServerForm,
+  useSubmittedErrorFocus,
+} from "@/components/ui/use-server-form";
+import { fieldErrorAttributes } from "@/components/ui/form-accessibility";
 import type { SkippedRow } from "@/server/services/import";
 
 export interface AccountOption {
   id: string;
   name: string;
   type: string;
+  rawCurrency: string;
+  currencyState: AccountCurrencyState;
 }
 
 interface ImportResponse {
   imported: number;
   skipped: SkippedRow[];
-  errors: { rowNumber: number; message: string }[];
-  warnings: string[];
+  account: { currency: string } | null;
+}
+
+interface ImportErrorResponse {
+  error?: string;
+  message?: string;
+  errors?: { rowNumber: number; message: string }[];
+  issues?: { message: string }[];
+  field?: string;
+}
+
+function importFormField(field: string | undefined): string | undefined {
+  if (field === "account" || field === "accountId") return "accountId";
+  if (field === "csvText" || field === "filename") return "file";
+  return field;
 }
 
 // Canonical field -> the label shown in the Advanced column-mapping section.
@@ -35,19 +55,29 @@ const COLUMN_FIELDS: { key: string; label: string }[] = [
 
 export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
   const router = useRouter();
-  const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
+  const dateFormatRef = useRef<HTMLSelectElement>(null);
+  const [accountId, setAccountId] = useState(
+    accounts.find((account) => account.currencyState.kind === "valid")?.id ?? "",
+  );
   const [showCreate, setShowCreate] = useState(accounts.length === 0);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState<ImportResponse | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadErrorField, setUploadErrorField] = useState<string | undefined>();
+  const [dateFormatError, setDateFormatError] = useState<string | null>(null);
+  const uploadErrorId = `${useId()}-upload-error`;
+  const createErrorId = `${useId()}-create-error`;
+  const uploadErrorSummaryRef = useSubmittedErrorFocus(
+    uploading,
+    Boolean(uploadError),
+  );
 
   const [message, flash] = useFlash();
   // createAccountAction revalidates /import, so the new account flows into the
   // RSC-provided `accounts` list on the re-render — no router.refresh (P2).
-  const [createState, createFormAction, createPending] = useServerForm<CreateAccountState>(
-    createAccountAction,
-    {
+  const [createState, createFormAction, createPending, createErrorSummaryRef] =
+    useServerForm<CreateAccountState>(createAccountAction, {
       onSuccess: (state) => {
         if (state.accountId) {
           setAccountId(state.accountId);
@@ -55,12 +85,19 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
           flash("Account created");
         }
       },
-    },
+    });
+  const resultCurrencyState = inspectCurrencyCode(result?.account?.currency);
+  const uploadDateFieldError = fieldErrorAttributes(
+    uploadErrorId,
+    uploadErrorField,
+    "dateFormat",
   );
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setUploadError(null);
+    setUploadErrorField(undefined);
+    setDateFormatError(null);
     setResult(null);
     const formData = new FormData(event.currentTarget);
     formData.set("accountId", accountId);
@@ -80,16 +117,47 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
       const res = await fetch("/api/import", { method: "POST", body: formData });
       const body: unknown = await res.json();
       if (!res.ok) {
-        setUploadError(
-          (body as { error?: string }).error ?? `Import failed (${res.status})`,
-        );
+        const error = body as ImportErrorResponse;
+        setUploadErrorField(importFormField(error.field));
+        if (error.error === "date-format-required") {
+          setDateFormatError(
+            "This file has dates that could mean MM/DD or DD/MM. Choose the file's format and import again; nothing was saved.",
+          );
+          dateFormatRef.current?.focus();
+        } else if (error.error === "invalid-file") {
+          setUploadErrorField("file");
+          const rows = [
+            ...new Set(
+              (error.errors ?? [])
+                .map((issue) => issue.rowNumber)
+                .filter((rowNumber) => rowNumber > 0),
+            ),
+          ];
+          const shownRows = rows.slice(0, 5);
+          const location =
+            shownRows.length > 0
+              ? ` on line${rows.length === 1 ? "" : "s"} ${shownRows.join(", ")}${rows.length > shownRows.length ? " and more" : ""}`
+              : "";
+          setUploadError(`The CSV contains invalid data or structure${location}. Nothing was saved.`);
+        } else if (error.error === "invalid-column-map") {
+          setUploadError(error.issues?.[0]?.message ?? "The column mapping is invalid.");
+        } else {
+          if (error.error === "file-too-large" || error.error === "unsupported-file") {
+            setUploadErrorField("file");
+          } else if (error.error === "unknown-account") {
+            setUploadErrorField("accountId");
+          }
+          setUploadError(error.message ?? `Import failed (${res.status})`);
+        }
         return;
       }
-      setResult(body as ImportResponse);
-      // The upload posts to a route handler (not a Server Action), so its
-      // revalidatePath doesn't refresh the client — this refresh is required.
-      router.refresh();
+      const completed = body as ImportResponse;
+      setResult(completed);
+      // The upload posts to a route handler (not a Server Action), so a real
+      // import still needs a client refresh; all-duplicate no-ops do not.
+      if (completed.imported > 0) router.refresh();
     } catch {
+      setUploadErrorField(undefined);
       setUploadError("Import failed: could not reach the local server.");
     } finally {
       setUploading(false);
@@ -106,10 +174,16 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
               onChange={(e) => setAccountId(e.target.value)}
               className={inputClass}
               required
+              {...fieldErrorAttributes(
+                uploadErrorId,
+                uploadErrorField,
+                "accountId",
+              )}
             >
               {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
+                <option key={a.id} value={a.id} disabled={a.currencyState.kind === "invalid"}>
                   {a.name} ({a.type})
+                  {a.currencyState.kind === "invalid" ? " — currency needs repair" : ""}
                 </option>
               ))}
             </select>
@@ -122,18 +196,48 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
             </button>
             <FlashMessage message={message} />
           </div>
+          {accounts.length > 0 && !accounts.some((a) => a.currencyState.kind === "valid") ? (
+            <p role="alert" className="text-sm text-delta-bad">
+              Repair an account currency on the Accounts page before importing.
+            </p>
+          ) : null}
         </Field>
 
         <Field label="Statement CSV (max 5 MB)">
-          <input type="file" name="file" accept=".csv,text/csv" required className="text-sm" />
+          <input
+            type="file"
+            name="file"
+            accept=".csv,text/csv"
+            required
+            className="min-h-11 text-sm"
+            {...fieldErrorAttributes(uploadErrorId, uploadErrorField, "file")}
+          />
         </Field>
 
         <Field label="Date format in file">
-          <select name="dateFormat" defaultValue="auto" className={inputClass}>
+          <select
+            ref={dateFormatRef}
+            name="dateFormat"
+            defaultValue="auto"
+            className={inputClass}
+            aria-invalid={
+              dateFormatError ? true : uploadDateFieldError["aria-invalid"]
+            }
+            aria-describedby={
+              dateFormatError
+                ? "import-date-format-error"
+                : uploadDateFieldError["aria-describedby"]
+            }
+          >
             <option value="auto">Auto-detect</option>
             <option value="MDY">MM/DD/YYYY</option>
             <option value="DMY">DD/MM/YYYY</option>
           </select>
+          {dateFormatError ? (
+            <p id="import-date-format-error" role="alert" className="mt-1 text-sm text-delta-bad">
+              ⚠ {dateFormatError}
+            </p>
+          ) : null}
         </Field>
 
         <div className="flex flex-col gap-3">
@@ -153,7 +257,11 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
               </p>
               {COLUMN_FIELDS.map(({ key, label }) => (
                 <Field key={key} label={label}>
-                  <input name={`col-${key}`} className={inputClass} autoComplete="off" />
+                  <input
+                    name={`col-${key}`}
+                    className={inputClass}
+                    autoComplete="off"
+                  />
                 </Field>
               ))}
             </div>
@@ -167,7 +275,11 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
         >
           {uploading ? "Importing…" : "Import statement"}
         </button>
-        {uploadError ? <p className="text-sm text-delta-bad">⚠ {uploadError}</p> : null}
+        <FormError
+          id={uploadErrorId}
+          error={uploadError}
+          summaryRef={uploadErrorSummaryRef}
+        />
       </form>
 
       {showCreate ? (
@@ -177,16 +289,54 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
         >
           <p className="text-sm font-medium">New account</p>
           <Field label="Name">
-            <input name="name" required maxLength={120} className={inputClass} autoFocus />
+            <input
+              name="name"
+              required
+              maxLength={120}
+              className={inputClass}
+              autoFocus
+              {...fieldErrorAttributes(
+                createErrorId,
+                createState.ok ? undefined : createState.field,
+                "name",
+              )}
+            />
           </Field>
           <Field label="Type">
-            <select name="type" defaultValue="CHECKING" className={inputClass}>
+            <select
+              name="type"
+              defaultValue="CHECKING"
+              className={inputClass}
+              {...fieldErrorAttributes(
+                createErrorId,
+                createState.ok ? undefined : createState.field,
+                "type",
+              )}
+            >
               {ACCOUNT_TYPES.map((t) => (
                 <option key={t} value={t}>
                   {t}
                 </option>
               ))}
             </select>
+          </Field>
+          <Field label="Currency (three-letter code)">
+            <input
+              name="currency"
+              required
+              minLength={3}
+              maxLength={3}
+              pattern="[A-Za-z]{3}"
+              defaultValue="USD"
+              autoCapitalize="characters"
+              spellCheck={false}
+              className={inputClass}
+              {...fieldErrorAttributes(
+                createErrorId,
+                createState.ok ? undefined : createState.field,
+                "currency",
+              )}
+            />
           </Field>
           <button
             type="submit"
@@ -195,26 +345,22 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
           >
             {createPending ? "Creating…" : "Create account"}
           </button>
-          {!createState.ok && createState.error ? (
-            <p className="text-sm text-delta-bad">⚠ {createState.error}</p>
-          ) : null}
+          <FormError
+            id={createErrorId}
+            error={createState.ok ? null : createState.error}
+            summaryRef={createErrorSummaryRef}
+          />
         </form>
       ) : null}
 
       {result ? (
         <div className="rounded-lg border border-hairline bg-surface px-4 py-3 text-sm">
-          <p className="font-medium">Import result</p>
-          <p className="mt-1 text-ink-2">
-            {result.imported} imported · {result.skipped.length} skipped as duplicates ·{" "}
-            {result.errors.length} rows with errors
-          </p>
-          {result.warnings.length > 0 ? (
-            <ul className="mt-2 list-disc pl-5 text-xs text-ink-2">
-              {result.warnings.map((warning) => (
-                <li key={warning}>⚠ {warning}</li>
-              ))}
-            </ul>
-          ) : null}
+          <div role="status" aria-live="polite">
+            <p className="font-medium">Import result</p>
+            <p className="mt-1 text-ink-2">
+              {result.imported} imported · {result.skipped.length} skipped as duplicates
+            </p>
+          </div>
           {result.skipped.length > 0 ? (
             <div className="mt-3">
               <p className="text-xs text-ink-muted">
@@ -230,22 +376,19 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
                       <td className="pr-3 whitespace-nowrap tabular-nums" title={row.date}>
                         {formatIsoDate(row.date)}
                       </td>
-                      <td className="pr-3 tabular-nums">{formatCents(row.amountCents)}</td>
+                      <td className="pr-3 tabular-nums">
+                        {resultCurrencyState.kind === "valid" ? (
+                          formatCents(row.amountCents, resultCurrencyState.currency)
+                        ) : (
+                          <span className="text-delta-bad">Unavailable — repair currency</span>
+                        )}
+                      </td>
                       <td>{row.description}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          ) : null}
-          {result.errors.length > 0 ? (
-            <ul className="mt-3 list-disc pl-5 text-xs text-ink-2">
-              {result.errors.map((err) => (
-                <li key={`${err.rowNumber}-${err.message}`}>
-                  line {err.rowNumber}: {err.message}
-                </li>
-              ))}
-            </ul>
           ) : null}
         </div>
       ) : null}

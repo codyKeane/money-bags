@@ -1,4 +1,4 @@
-import { lstatSync, realpathSync, type Stats } from "node:fs";
+import { lstatSync, readdirSync, realpathSync, type Stats } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { devNull } from "node:os";
@@ -7,6 +7,10 @@ import {
   preflightDatabaseOpen,
   type DatabaseOpenPreflight,
 } from "../src/db/preflight";
+import {
+  backupDirectoryForDatabase,
+  backupRootForDatabase,
+} from "../src/db/backup-location";
 
 type Environment = Record<string, string | undefined>;
 
@@ -21,22 +25,41 @@ export type GitIgnoreState =
   | "not-applicable"
   | "error";
 
-export type ModeState = "mode" | "missing" | "unavailable" | "not-applicable";
+export type ModeState =
+  | "mode"
+  | "missing"
+  | "unavailable"
+  | "unsafe-type"
+  | "not-applicable";
+
+export type FilesystemPrivacyState = "pass" | "fail" | "unverified";
 
 export interface ModeAudit {
   readonly state: ModeState;
   readonly display: string;
 }
 
+export interface BackupArtifactModeAudit {
+  readonly path: string;
+  readonly mode: ModeAudit;
+}
+
 export interface DataPathAuditReport {
   readonly status: "pass" | "fail";
   readonly repositoryRoot: string;
   readonly databasePath: string;
+  readonly backupRootDirectory: string;
   readonly backupDirectory: string;
   readonly classification: DataPathClassification;
   readonly gitIgnore: GitIgnoreState;
   readonly parentMode: ModeAudit;
   readonly fileMode: ModeAudit;
+  readonly walMode: ModeAudit;
+  readonly shmMode: ModeAudit;
+  readonly backupRootDirectoryMode: ModeAudit;
+  readonly backupDirectoryMode: ModeAudit;
+  readonly backupArtifactModes: readonly BackupArtifactModeAudit[];
+  readonly filesystemPrivacy: FilesystemPrivacyState;
   readonly remediation: readonly string[];
 }
 
@@ -65,11 +88,13 @@ export type SpawnGit = (
 ) => GitCheckResult;
 
 type LstatPath = (target: string) => Stats;
+type ReaddirPath = (target: string) => string[];
 
 export interface ResolvedAuditOptions {
   readonly platform?: NodeJS.Platform;
   readonly spawnGit?: SpawnGit;
   readonly lstatPath?: LstatPath;
+  readonly readdirPath?: ReaddirPath;
 }
 
 export interface ConfiguredAuditOptions extends ResolvedAuditOptions {
@@ -212,10 +237,36 @@ function isNodeError(error: unknown, code: string): boolean {
   );
 }
 
-function inspectMode(target: string, lstatPath: LstatPath): ModeAudit {
+const FILE_TYPE_MASK = 0o170000;
+const DIRECTORY_TYPE = 0o040000;
+const REGULAR_FILE_TYPE = 0o100000;
+const BACKUP_ARTIFACT_NAME_PATTERN = new RegExp(
+  "^(?:" +
+    "moneybags-\\d{8}T\\d{9}Z-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.(?:sqlite3|invalid)|" +
+    "moneybags-\\d{8}T\\d{9}Z\\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.partial|" +
+    "finance-.*\\.db" +
+    ")$",
+);
+
+function inspectArtifactMode(
+  target: string,
+  expectedType: "directory" | "file",
+  lstatPath: LstatPath,
+): ModeAudit {
   try {
-    const mode = (lstatPath(target).mode & 0o7777).toString(8).padStart(4, "0");
-    return Object.freeze({ state: "mode", display: mode });
+    const stats = lstatPath(target);
+    const actualType = stats.mode & FILE_TYPE_MASK;
+    const expected = expectedType === "directory" ? DIRECTORY_TYPE : REGULAR_FILE_TYPE;
+    if (actualType !== expected) {
+      return Object.freeze({
+        state: "unsafe-type",
+        display: `unsafe ${expectedType} type/link`,
+      });
+    }
+    return Object.freeze({
+      state: "mode",
+      display: (stats.mode & 0o7777).toString(8).padStart(4, "0"),
+    });
   } catch (error) {
     if (isNodeError(error, "ENOENT")) {
       return Object.freeze({ state: "missing", display: "missing" });
@@ -228,17 +279,81 @@ function inspectModes(
   databasePath: string,
   platform: NodeJS.Platform,
   lstatPath: LstatPath,
-): Readonly<{ parentMode: ModeAudit; fileMode: ModeAudit }> {
+  readdirPath: ReaddirPath,
+): Readonly<{
+  parentMode: ModeAudit;
+  fileMode: ModeAudit;
+  walMode: ModeAudit;
+  shmMode: ModeAudit;
+  backupRootDirectoryMode: ModeAudit;
+  backupDirectoryMode: ModeAudit;
+  backupArtifactModes: readonly BackupArtifactModeAudit[];
+}> {
   if (platform === "win32") {
     const notApplicable = Object.freeze({
       state: "not-applicable" as const,
-      display: "n/a (Windows)",
+      display: "n/a (Windows; ACL privacy unverified)",
     });
-    return Object.freeze({ parentMode: notApplicable, fileMode: notApplicable });
+    return Object.freeze({
+      parentMode: notApplicable,
+      fileMode: notApplicable,
+      walMode: notApplicable,
+      shmMode: notApplicable,
+      backupRootDirectoryMode: notApplicable,
+      backupDirectoryMode: notApplicable,
+      backupArtifactModes: Object.freeze([]),
+    });
   }
+  const backupRootDirectory = backupRootForDatabase(databasePath);
+  const backupDirectory = backupDirectoryForDatabase(databasePath);
+  const backupRootDirectoryMode = inspectArtifactMode(
+    backupRootDirectory,
+    "directory",
+    lstatPath,
+  );
+  const backupDirectoryMode = inspectArtifactMode(
+    backupDirectory,
+    "directory",
+    lstatPath,
+  );
+  const backupArtifactModes: BackupArtifactModeAudit[] = [];
+  const inspectBackupArtifacts = (directory: string, mode: ModeAudit): void => {
+    if (mode.state !== "mode") return;
+    let names: string[];
+    try {
+      names = readdirPath(directory);
+    } catch (error) {
+      if (isNodeError(error, "ENOENT")) {
+        names = [];
+      } else {
+        backupArtifactModes.push({
+          path: directory,
+          mode: Object.freeze({ state: "unavailable", display: "unavailable" }),
+        });
+        names = [];
+      }
+    }
+    for (const name of names.sort()) {
+      if (!BACKUP_ARTIFACT_NAME_PATTERN.test(name)) continue;
+      const artifactPath = path.join(directory, name);
+      backupArtifactModes.push(
+        Object.freeze({
+          path: artifactPath,
+          mode: inspectArtifactMode(artifactPath, "file", lstatPath),
+        }),
+      );
+    }
+  };
+  inspectBackupArtifacts(backupRootDirectory, backupRootDirectoryMode);
+  inspectBackupArtifacts(backupDirectory, backupDirectoryMode);
   return Object.freeze({
-    parentMode: inspectMode(path.dirname(databasePath), lstatPath),
-    fileMode: inspectMode(databasePath, lstatPath),
+    parentMode: inspectArtifactMode(path.dirname(databasePath), "directory", lstatPath),
+    fileMode: inspectArtifactMode(databasePath, "file", lstatPath),
+    walMode: inspectArtifactMode(`${databasePath}-wal`, "file", lstatPath),
+    shmMode: inspectArtifactMode(`${databasePath}-shm`, "file", lstatPath),
+    backupRootDirectoryMode,
+    backupDirectoryMode,
+    backupArtifactModes: Object.freeze(backupArtifactModes),
   });
 }
 
@@ -255,11 +370,61 @@ export function auditResolvedDataPath(
     classification === "repository-data"
       ? checkGitIgnore(preflight, options.spawnGit ?? defaultSpawnGit)
       : "not-applicable";
-  const { parentMode, fileMode } = inspectModes(
+  const {
+    parentMode,
+    fileMode,
+    walMode,
+    shmMode,
+    backupRootDirectoryMode,
+    backupDirectoryMode,
+    backupArtifactModes,
+  } = inspectModes(
     preflight.databasePath,
     options.platform ?? process.platform,
     options.lstatPath ?? lstatSync,
+    options.readdirPath ?? ((target) => readdirSync(target)),
   );
+  const platform = options.platform ?? process.platform;
+  const parentModeIsPrivate =
+    parentMode.state !== "mode" || parentMode.display === "0700";
+  const fileModeIsPrivate =
+    fileMode.state !== "mode" || fileMode.display === "0600";
+  const walModeIsPrivate = walMode.state !== "mode" || walMode.display === "0600";
+  const shmModeIsPrivate = shmMode.state !== "mode" || shmMode.display === "0600";
+  const backupDirectoryModeIsPrivate =
+    backupDirectoryMode.state !== "mode" || backupDirectoryMode.display === "0700";
+  const backupRootDirectoryModeIsPrivate =
+    backupRootDirectoryMode.state !== "mode" ||
+    backupRootDirectoryMode.display === "0700";
+  const backupArtifactsArePrivate = backupArtifactModes.every(
+    (artifact) => artifact.mode.state !== "mode" || artifact.mode.display === "0600",
+  );
+  const allModeAudits = [
+    parentMode,
+    fileMode,
+    walMode,
+    shmMode,
+    backupRootDirectoryMode,
+    backupDirectoryMode,
+    ...backupArtifactModes.map((artifact) => artifact.mode),
+  ];
+  const modeInspectionFailed =
+    allModeAudits.some(
+      (mode) => mode.state === "unavailable" || mode.state === "unsafe-type",
+    );
+  const filesystemPrivacy: FilesystemPrivacyState =
+    platform === "win32"
+      ? "unverified"
+      : modeInspectionFailed ||
+          !parentModeIsPrivate ||
+          !fileModeIsPrivate ||
+          !walModeIsPrivate ||
+          !shmModeIsPrivate ||
+          !backupRootDirectoryModeIsPrivate ||
+          !backupDirectoryModeIsPrivate ||
+          !backupArtifactsArePrivate
+        ? "fail"
+        : "pass";
 
   const remediation: string[] = [];
   if (classification === "repository-unsafe") {
@@ -285,28 +450,80 @@ export function auditResolvedDataPath(
     );
   }
 
-  if (parentMode.state === "unavailable" || fileMode.state === "unavailable") {
+  if (modeInspectionFailed) {
     remediation.push(
-      "Fix filesystem access so parent and target metadata can be inspected, then rerun the audit.",
+      "Fix filesystem access and replace ambiguous links/types so private storage metadata can be inspected safely, then rerun the audit.",
     );
+  }
+
+  if (platform === "win32") {
+    remediation.push(
+      "POSIX mode enforcement is not applicable on Windows; Windows ACL privacy remains unverified until the direct parent and database file are inspected and restricted with Windows ACL tools.",
+    );
+  } else {
+    if (!parentModeIsPrivate) {
+      remediation.push(
+        `Restrict the existing direct parent without recursion: chmod 0700 -- ${quotePosixShellArgument(path.dirname(preflight.databasePath))}`,
+      );
+    }
+    if (!fileModeIsPrivate) {
+      remediation.push(
+        `Restrict the existing database file without recursion: chmod 0600 -- ${quotePosixShellArgument(preflight.databasePath)}`,
+      );
+    }
+    for (const [mode, target, expected, label] of [
+      [walMode, `${preflight.databasePath}-wal`, "0600", "database WAL file"],
+      [shmMode, `${preflight.databasePath}-shm`, "0600", "database SHM file"],
+      [
+        backupRootDirectoryMode,
+        backupRootForDatabase(preflight.databasePath),
+        "0700",
+        "backup root directory",
+      ],
+      [
+        backupDirectoryMode,
+        backupDirectoryForDatabase(preflight.databasePath),
+        "0700",
+        "backup directory",
+      ],
+    ] as const) {
+      if (mode.state === "mode" && mode.display !== expected) {
+        remediation.push(
+          `Restrict the existing ${label} without recursion: chmod ${expected} -- ${quotePosixShellArgument(target)}`,
+        );
+      }
+    }
+    for (const artifact of backupArtifactModes) {
+      if (artifact.mode.state === "mode" && artifact.mode.display !== "0600") {
+        remediation.push(
+          `Restrict the existing backup artifact without recursion: chmod 0600 -- ${quotePosixShellArgument(artifact.path)}`,
+        );
+      }
+    }
   }
 
   const failed =
     classification === "repository-unsafe" ||
     gitIgnore === "exposed" ||
     gitIgnore === "error" ||
-    parentMode.state === "unavailable" ||
-    fileMode.state === "unavailable";
+    filesystemPrivacy === "fail";
 
   return Object.freeze({
     status: failed ? "fail" : "pass",
     repositoryRoot: preflight.repositoryRoot,
     databasePath: preflight.databasePath,
-    backupDirectory: path.join(path.dirname(preflight.databasePath), "backups"),
+    backupRootDirectory: backupRootForDatabase(preflight.databasePath),
+    backupDirectory: backupDirectoryForDatabase(preflight.databasePath),
     classification,
     gitIgnore,
     parentMode,
     fileMode,
+    walMode,
+    shmMode,
+    backupRootDirectoryMode,
+    backupDirectoryMode,
+    backupArtifactModes,
+    filesystemPrivacy,
     remediation: Object.freeze(remediation),
   });
 }
@@ -331,18 +548,42 @@ function quoteTerminalValue(value: string): string {
   );
 }
 
+function quotePosixShellArgument(value: string): string {
+  if (/^[\u0020-\u007e]*$/u.test(value)) {
+    return `'${value.replaceAll("'", `'"'"'`)}'`;
+  }
+  const encodedBytes = [...Buffer.from(value, "utf8")]
+    .map((byte) => `\\x${byte.toString(16).padStart(2, "0")}`)
+    .join("");
+  return `$'${encodedBytes}'`;
+}
+
 export function formatDataPathAudit(report: Readonly<DataPathAuditReport>): string {
   const gitIgnore =
     report.gitIgnore === "not-applicable" ? "n/a" : report.gitIgnore;
+  const overallStatus =
+    report.filesystemPrivacy === "unverified"
+      ? `${report.status.toUpperCase()} (filesystem privacy unverified)`
+      : report.status.toUpperCase();
   return [
-    `Data path audit: ${report.status.toUpperCase()}`,
+    `Data path audit: ${overallStatus}`,
     `Resolved target: ${quoteTerminalValue(report.databasePath)}`,
     `Repository root: ${quoteTerminalValue(report.repositoryRoot)}`,
     `Classification: ${report.classification}`,
     `Git ignored: ${gitIgnore}`,
     `Parent mode: ${report.parentMode.display}`,
     `File mode: ${report.fileMode.display}`,
-    `Backup directory: ${quoteTerminalValue(report.backupDirectory)}`,
+    `WAL mode: ${report.walMode.display}`,
+    `SHM mode: ${report.shmMode.display}`,
+    `Backup root mode: ${report.backupRootDirectoryMode.display}`,
+    `Backup directory mode: ${report.backupDirectoryMode.display}`,
+    ...report.backupArtifactModes.map(
+      (artifact) =>
+        `Backup artifact mode: ${quoteTerminalValue(artifact.path)} ${artifact.mode.display}`,
+    ),
+    `Filesystem privacy: ${report.filesystemPrivacy}`,
+    `Backup root directory: ${quoteTerminalValue(report.backupRootDirectory)}`,
+    `Target-scoped backup directory: ${quoteTerminalValue(report.backupDirectory)}`,
     ...report.remediation.map((item) => `Remediation: ${item}`),
   ].join("\n");
 }

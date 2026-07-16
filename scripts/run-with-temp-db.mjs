@@ -5,6 +5,10 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  formatPrivacyReport,
+  runPrivacyCheck,
+} from "./check-build-privacy.mjs";
+import {
   REPOSITORY_ROOT_ENV_NAME,
   TEMP_DB_ROOT_ENV_NAME,
   TEMP_DB_TOKEN_ENV_NAME,
@@ -17,7 +21,12 @@ const REPOSITORY_ROOT = path.resolve(import.meta.dirname, "..");
 const SIGNAL_GRACE_MS = 5_000;
 
 const MODES = Object.freeze({
-  build: { packageName: "next", binName: "next", arguments: ["build"] },
+  build: {
+    packageName: "next",
+    binName: "next",
+    arguments: ["build"],
+    preloadTelemetryOptOut: true,
+  },
   test: { packageName: "vitest", binName: "vitest", arguments: ["run"] },
   "test:watch": { packageName: "vitest", binName: "vitest", arguments: [] },
   lint: { packageName: "eslint", binName: "eslint", arguments: [] },
@@ -121,6 +130,7 @@ export async function runTemporaryDatabaseCommand({
   spawnImplementation = spawn,
   signalSource = process,
   signalGraceMs = SIGNAL_GRACE_MS,
+  postSuccess,
 }) {
   assertProcessTreeCleanupSupported();
   let lease;
@@ -132,6 +142,9 @@ export async function runTemporaryDatabaseCommand({
   let lintArtifact = false;
   let cleanupError = null;
   let primaryError = null;
+  let postSuccessError = null;
+  let postSuccessResult;
+  let ownedEnvironment;
   const forward = (signal) => {
     const firstSignal = requestedSignal === null;
     requestedSignal ??= signal;
@@ -163,17 +176,18 @@ export async function runTemporaryDatabaseCommand({
       inheritedDatabaseFileName: environment.DB_FILE_NAME,
     });
     onTarget(lease.databasePath);
+    ownedEnvironment = {
+      ...environment,
+      DB_FILE_NAME: lease.databasePath,
+      [REPOSITORY_ROOT_ENV_NAME]: lease.repositoryRoot,
+      [TEMP_DB_ROOT_ENV_NAME]: lease.rootPath,
+      [TEMP_DB_TOKEN_ENV_NAME]: lease.ownershipToken,
+    };
     if (requestedSignal === null) {
       try {
         child = spawnImplementation(executable, args, {
           cwd: repositoryRoot,
-          env: {
-            ...environment,
-            DB_FILE_NAME: lease.databasePath,
-            [REPOSITORY_ROOT_ENV_NAME]: lease.repositoryRoot,
-            [TEMP_DB_ROOT_ENV_NAME]: lease.rootPath,
-            [TEMP_DB_TOKEN_ENV_NAME]: lease.ownershipToken,
-          },
+          env: ownedEnvironment,
           shell: false,
           stdio: "inherit",
           detached: true,
@@ -189,6 +203,24 @@ export async function runTemporaryDatabaseCommand({
         } catch (error) {
           treeError ??= error;
         }
+      }
+    }
+    if (
+      postSuccess !== undefined &&
+      result.code === 0 &&
+      result.signal === null &&
+      result.spawnError === null &&
+      requestedSignal === null &&
+      treeError === null
+    ) {
+      try {
+        postSuccessResult = await postSuccess({
+          repositoryRoot: lease.repositoryRoot,
+          lease,
+          environment: ownedEnvironment,
+        });
+      } catch (error) {
+        postSuccessError = error;
       }
     }
     if (lintMode) lintArtifact = listTemporaryDatabaseArtifacts(lease).length > 0;
@@ -225,6 +257,8 @@ export async function runTemporaryDatabaseCommand({
     requestedSignal,
     lintArtifact,
     cleanupError,
+    postSuccessError,
+    postSuccessResult,
     rootPath: lease?.rootPath,
   };
 }
@@ -239,6 +273,7 @@ export async function runMode(
     spawnImplementation = spawn,
     signalSource = process,
     signalGraceMs = SIGNAL_GRACE_MS,
+    postSuccess,
   } = {},
 ) {
   const configuration = MODES[mode];
@@ -248,9 +283,34 @@ export async function runMode(
     configuration.binName,
     { repositoryRoot },
   );
+  const preloadArguments = configuration.preloadTelemetryOptOut
+    ? ["--require", path.join(repositoryRoot, "scripts", "next-telemetry-disabled.cjs")]
+    : [];
+  const effectivePostSuccess =
+    postSuccess ??
+    (mode === "build"
+      ? ({ environment: ownedEnvironment }) => {
+          const report = runPrivacyCheck({
+            projectRoot: repositoryRoot,
+            environment: ownedEnvironment,
+          });
+          if (!report.ok) {
+            const error = new Error("Build privacy inspection failed.");
+            error.code = "ERR_MONEYBAGS_BUILD_PRIVACY";
+            error.report = report;
+            throw error;
+          }
+          return report;
+        }
+      : undefined);
   return runTemporaryDatabaseCommand({
     executable: process.execPath,
-    args: [binPath, ...configuration.arguments, ...forwardedArguments],
+    args: [
+      ...preloadArguments,
+      binPath,
+      ...configuration.arguments,
+      ...forwardedArguments,
+    ],
     repositoryRoot,
     environment,
     lintMode: mode === "lint",
@@ -258,6 +318,7 @@ export async function runMode(
     spawnImplementation,
     signalSource,
     signalGraceMs,
+    postSuccess: effectivePostSuccess,
   });
 }
 
@@ -281,6 +342,14 @@ function exitForResult(result) {
     process.exitCode = 1;
     return;
   }
+  if (result.postSuccessError) {
+    if (result.postSuccessError.report) {
+      process.stderr.write(`${formatPrivacyReport(result.postSuccessError.report)}\n`);
+    }
+    writeStatus("post-success-check-failed");
+    process.exitCode = 1;
+    return;
+  }
 
   const signal = result.requestedSignal ?? result.signal;
   if (signal) {
@@ -289,6 +358,9 @@ function exitForResult(result) {
     return;
   }
 
+  if (result.postSuccessResult?.boundary) {
+    process.stderr.write(`${formatPrivacyReport(result.postSuccessResult)}\n`);
+  }
   writeStatus(`clean exit=${result.code}`);
   process.exitCode = result.code ?? 1;
 }

@@ -251,6 +251,11 @@ export async function runServerSmoke(mode, options = {}) {
         () => requestedSignal !== undefined,
       );
       if (readiness.healthy) {
+        await options.verifyHealthyServer?.({
+          baseUrl: `http://${LOOPBACK_HOST}:${port}`,
+          databasePath: lease.databasePath,
+          port,
+        });
         const stopped = await stopProcessTree(child, closePromise, shutdownTimeoutMs);
         childResult = stopped.childResult;
         code = stopped.terminationRequested ? 0 : 1;

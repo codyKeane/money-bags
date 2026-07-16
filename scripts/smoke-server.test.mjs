@@ -44,6 +44,7 @@ function fakeHealthServer(port, ignoreTermination = false) {
 describe("bounded loopback smoke helper", () => {
   it("accepts a healthy loopback server, stops it, and removes the lease", async () => {
     const port = await availablePort();
+    let verified;
     const result = await runServerSmoke("dev", {
       port,
       nodeArguments: fakeHealthServer(port),
@@ -51,10 +52,39 @@ describe("bounded loopback smoke helper", () => {
       stdio: "ignore",
       startupTimeoutMs: 2_000,
       shutdownTimeoutMs: 500,
+      verifyHealthyServer(context) {
+        verified = context;
+      },
       log() {},
     });
 
     expect(result.code).toBe(0);
+    expect(verified).toMatchObject({
+      baseUrl: `http://127.0.0.1:${port}`,
+      port,
+    });
+    expect(existsSync(result.rootPath)).toBe(false);
+  });
+
+  it("fails and cleans when post-readiness verification rejects", async () => {
+    const port = await availablePort();
+    const result = await runServerSmoke("start", {
+      port,
+      nodeArguments: fakeHealthServer(port),
+      temporaryDirectory: makeTemporaryParent(),
+      stdio: "ignore",
+      startupTimeoutMs: 2_000,
+      shutdownTimeoutMs: 500,
+      verifyHealthyServer() {
+        throw new Error("synthetic response-policy failure");
+      },
+      log() {},
+    });
+
+    expect(result.code).toBe(1);
+    expect(result.error).toMatchObject({
+      message: "synthetic response-policy failure",
+    });
     expect(existsSync(result.rootPath)).toBe(false);
   });
 

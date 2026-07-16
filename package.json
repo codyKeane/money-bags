@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "node scripts/run-next.mjs dev",
     "build": "node scripts/run-with-temp-db.mjs build",
+    "check:build-privacy": "node scripts/check-build-privacy.mjs",
+    "validate:build-privacy": "node scripts/validate-build-privacy.mjs",
     "start": "node scripts/run-next.mjs start",
     "lint": "node scripts/run-with-temp-db.mjs lint",
     "test": "node scripts/run-with-temp-db.mjs test",
@@ -23,6 +25,7 @@
     "dev:lan": "node scripts/run-next.mjs dev:lan",
     "start:lan": "node scripts/run-next.mjs start:lan",
     "db:backup": "tsx scripts/backup-db.ts",
+    "db:verify-backup": "tsx scripts/verify-backup.ts",
     "audit:data-path": "node --import ./scripts/disable-tsx-cache.mjs --import tsx scripts/audit-data-path.ts"
   },
   "dependencies": {

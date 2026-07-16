@@ -1,8 +1,9 @@
 import { CATEGORICAL_SLOTS } from "./palette";
 
 // The default category set: installed automatically on an empty database
-// (src/db/default-categories.ts) and refreshed by the demo seed. Pure data —
-// no DB access here.
+// (src/db/default-categories.ts). The one-time demo initializer may install or
+// exactly reuse this set, but never refreshes existing rows. Pure data — no DB
+// access here.
 export interface DefaultCategoryDef {
   name: string;
   color: string | null;

@@ -1,6 +1,28 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useRef } from "react";
+import { shouldFocusSubmittedFailure } from "./form-accessibility";
+
+export function useSubmittedErrorFocus<Element extends HTMLElement = HTMLParagraphElement>(
+  pending: boolean,
+  failed: boolean,
+) {
+  const summaryRef = useRef<Element>(null);
+  const wasPending = useRef(false);
+  useEffect(() => {
+    const shouldFocus = shouldFocusSubmittedFailure(
+      wasPending.current,
+      pending,
+      failed,
+    );
+    if (pending) wasPending.current = true;
+    else {
+      wasPending.current = false;
+      if (shouldFocus) summaryRef.current?.focus();
+    }
+  }, [failed, pending]);
+  return summaryRef;
+}
 
 // Wraps the useActionState pattern the 6 forms hand-rolled: run the action,
 // call onSuccess when it reports ok, return [state, formAction, pending].
@@ -13,12 +35,12 @@ import { useActionState } from "react";
 //
 // State types here are plain objects (never Promises), so `Awaited<S>` equals
 // `S` at runtime — the casts bridge that for useActionState's signature.
-export function useServerForm<S extends { ok: boolean }>(
+export function useServerForm<S extends { ok: boolean; error?: string }>(
   action: (prev: S, formData: FormData) => Promise<S>,
   options?: { initial?: S; onSuccess?: (state: S) => void },
 ) {
   const initial = (options?.initial ?? { ok: true }) as Awaited<S>;
-  return useActionState(
+  const [state, formAction, pending] = useActionState(
     async (prev: Awaited<S>, formData: FormData): Promise<Awaited<S>> => {
       const result = await action(prev as S, formData);
       if (result.ok) options?.onSuccess?.(result);
@@ -26,4 +48,6 @@ export function useServerForm<S extends { ok: boolean }>(
     },
     initial,
   );
+  const errorSummaryRef = useSubmittedErrorFocus(pending, !state.ok);
+  return [state, formAction, pending, errorSummaryRef] as const;
 }

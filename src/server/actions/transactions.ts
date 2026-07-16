@@ -1,26 +1,36 @@
 "use server";
 
 import { z } from "zod";
-import { parseAmountToCents } from "@/lib/csv/parse-statement";
-import { formatCents } from "@/lib/money";
+import { centsToDecimalText, decimalTextToCents } from "@/lib/money";
 import { isValidIsoDate } from "@/lib/month";
-import { getAccountById } from "@/server/services/accounts";
-import { getCategoryById } from "@/server/services/categories";
+import { revalidateAfterMutation } from "@/server/revalidation";
+import { assertTrustedActionOrigin } from "@/server/security/trusted-origin";
+import { MAX_SPLIT_PARTS } from "@/server/services/write-validation";
 import {
   createTransaction,
   deleteTransaction,
-  getTransactionById,
   replaceSplits,
   setTransactionCategory,
   updateTransaction,
 } from "@/server/services/transactions";
 import {
   firstError,
+  firstFormError,
   requiredId,
-  revalidateAll,
+  serviceFormError,
   type ActionResult,
   type TransactionFormState,
 } from "./shared";
+
+const TRANSACTION_FIELD_ALIASES = {
+  amountCents: "amount",
+} as const;
+
+const EXISTING_SPLIT_MISMATCH_MESSAGE =
+  "Saved split allocations do not match this transaction. Repair the split allocations or remove the split before editing it.";
+
+const SPLIT_AMOUNT_CONFLICT_MESSAGE =
+  "This transaction is split. Keep its amount unchanged, or remove the split after reviewing its allocations.";
 
 const RecategorizeSchema = z.object({
   transactionId: z.string().min(1),
@@ -31,19 +41,21 @@ export async function recategorizeAction(
   transactionId: string,
   categoryId: string | null,
 ): Promise<{ ok: boolean; error?: string }> {
+  const originFailure = await assertTrustedActionOrigin();
+  if (originFailure) return originFailure;
   const parsed = RecategorizeSchema.safeParse({ transactionId, categoryId });
   if (!parsed.success) return { ok: false, error: "Invalid input" };
-  // Verify the target category exists before the UPDATE — otherwise a stale id
-  // (e.g. a category deleted in another tab) hits a raw FK violation (F4).
-  if (parsed.data.categoryId && !(await getCategoryById(parsed.data.categoryId))) {
-    return { ok: false, error: "Unknown category" };
-  }
-  const updated = await setTransactionCategory(
+  const result = await setTransactionCategory(
     parsed.data.transactionId,
     parsed.data.categoryId,
   );
-  if (!updated) return { ok: false, error: "Transaction not found" };
-  revalidateAll();
+  if (result.status === "not-found") return { ok: false, error: "Transaction not found" };
+  if (result.status === "unknown-category") return { ok: false, error: "Unknown category" };
+  if (result.status === "existing-split-mismatch") {
+    return { ok: false, error: EXISTING_SPLIT_MISMATCH_MESSAGE };
+  }
+  if (result.status === "invalid-input") return { ok: false, error: result.message };
+  revalidateAfterMutation();
   return { ok: true };
 }
 
@@ -60,7 +72,7 @@ const TransactionSchema = z.object({
     .trim()
     .min(1, "Amount is required")
     .transform((v, ctx) => {
-      const cents = parseAmountToCents(v);
+      const cents = decimalTextToCents(v);
       if (cents === null) {
         ctx.addIssue({ code: "custom", message: "Invalid amount" });
         return z.NEVER;
@@ -69,7 +81,7 @@ const TransactionSchema = z.object({
     }),
 });
 
-async function parseTransactionForm(formData: FormData) {
+function parseTransactionForm(formData: FormData) {
   const parsed = TransactionSchema.safeParse({
     accountId: formData.get("accountId"),
     categoryId: formData.get("categoryId") ?? "",
@@ -77,14 +89,7 @@ async function parseTransactionForm(formData: FormData) {
     description: formData.get("description"),
     amount: formData.get("amount"),
   });
-  if (!parsed.success) return { error: firstError(parsed.error) } as const;
-  // Friendly errors instead of raw FK violations.
-  if (!(await getAccountById(parsed.data.accountId))) {
-    return { error: "Unknown account" } as const;
-  }
-  if (parsed.data.categoryId && !(await getCategoryById(parsed.data.categoryId))) {
-    return { error: "Unknown category" } as const;
-  }
+  if (!parsed.success) return { error: firstFormError(parsed.error) } as const;
   return {
     input: {
       accountId: parsed.data.accountId,
@@ -100,10 +105,21 @@ export async function createTransactionAction(
   _prev: TransactionFormState,
   formData: FormData,
 ): Promise<TransactionFormState> {
-  const result = await parseTransactionForm(formData);
-  if ("error" in result) return { ok: false, error: result.error };
-  await createTransaction(result.input);
-  revalidateAll();
+  const originFailure = await assertTrustedActionOrigin();
+  if (originFailure) return originFailure;
+  const parsed = parseTransactionForm(formData);
+  if ("error" in parsed) return { ok: false, ...parsed.error };
+  const result = await createTransaction(parsed.input);
+  if (result.status === "unknown-account") {
+    return { ok: false, error: "Unknown account", field: "accountId" };
+  }
+  if (result.status === "unknown-category") {
+    return { ok: false, error: "Unknown category", field: "categoryId" };
+  }
+  if (result.status === "invalid-input") {
+    return { ok: false, ...serviceFormError(result, TRANSACTION_FIELD_ALIASES) };
+  }
+  revalidateAfterMutation();
   return { ok: true };
 }
 
@@ -111,23 +127,42 @@ export async function updateTransactionAction(
   _prev: TransactionFormState,
   formData: FormData,
 ): Promise<TransactionFormState> {
+  const originFailure = await assertTrustedActionOrigin();
+  if (originFailure) return originFailure;
   const transactionId = requiredId(formData, "transactionId");
   if (!transactionId) return { ok: false, error: "Missing transaction id" };
-  const result = await parseTransactionForm(formData);
-  if ("error" in result) return { ok: false, error: result.error };
-  const updated = await updateTransaction(transactionId, result.input);
-  if (!updated) return { ok: false, error: "Transaction not found" };
-  revalidateAll();
+  const parsed = parseTransactionForm(formData);
+  if ("error" in parsed) return { ok: false, ...parsed.error };
+  const result = await updateTransaction(transactionId, parsed.input);
+  if (result.status === "not-found") return { ok: false, error: "Transaction not found" };
+  if (result.status === "unknown-account") {
+    return { ok: false, error: "Unknown account", field: "accountId" };
+  }
+  if (result.status === "unknown-category") {
+    return { ok: false, error: "Unknown category", field: "categoryId" };
+  }
+  if (result.status === "existing-split-mismatch") {
+    return { ok: false, error: EXISTING_SPLIT_MISMATCH_MESSAGE };
+  }
+  if (result.status === "split-amount-conflict") {
+    return { ok: false, error: SPLIT_AMOUNT_CONFLICT_MESSAGE };
+  }
+  if (result.status === "invalid-input") {
+    return { ok: false, ...serviceFormError(result, TRANSACTION_FIELD_ALIASES) };
+  }
+  revalidateAfterMutation();
   return { ok: true };
 }
 
 export async function deleteTransactionAction(
   transactionId: string,
 ): Promise<{ ok: boolean; error?: string }> {
+  const originFailure = await assertTrustedActionOrigin();
+  if (originFailure) return originFailure;
   if (!transactionId) return { ok: false, error: "Missing transaction id" };
   const deleted = await deleteTransaction(transactionId);
   if (!deleted) return { ok: false, error: "Transaction not found" };
-  revalidateAll();
+  revalidateAfterMutation();
   return { ok: true };
 }
 
@@ -137,52 +172,63 @@ const SplitPartSchema = z.object({
   categoryId: z.string().min(1).nullable(),
   amountCents: z
     .number()
+    .safe("Split amounts must be safe integer cents")
     .int("Split amounts must be whole cents")
     .refine((n) => n !== 0, "A split part cannot be zero"),
 });
 
 const SplitSchema = z.object({
   transactionId: z.string().min(1),
-  parts: z.array(SplitPartSchema).min(2, "A split needs at least two parts"),
+  parts: z
+    .array(SplitPartSchema)
+    .min(2, "A split needs at least two parts")
+    .max(MAX_SPLIT_PARTS, `A split cannot contain more than ${MAX_SPLIT_PARTS} parts`),
 });
 
-// Persist a split. The invariant enforced here (server-side, not just in the
-// client) is that the parts sum to the transaction's own amount — otherwise the
-// split-aware aggregates would silently disagree with the ledger total.
+// Transport validation and friendly formatting live here; the transaction
+// service owns the parent/split invariant and its write transaction.
 export async function splitTransactionAction(
   transactionId: string,
   parts: { categoryId: string | null; amountCents: number }[],
 ): Promise<ActionResult> {
+  const originFailure = await assertTrustedActionOrigin();
+  if (originFailure) return originFailure;
   const parsed = SplitSchema.safeParse({ transactionId, parts });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error) };
 
-  const txn = await getTransactionById(parsed.data.transactionId);
-  if (!txn) return { ok: false, error: "Transaction not found" };
-
-  const sum = parsed.data.parts.reduce((acc, p) => acc + p.amountCents, 0);
-  if (sum !== txn.amountCents) {
+  const result = await replaceSplits(parsed.data.transactionId, parsed.data.parts);
+  if (result.status === "not-found") return { ok: false, error: "Transaction not found" };
+  if (result.status === "unknown-category") {
+    return { ok: false, error: "A split part points at an unknown category" };
+  }
+  if (result.status === "split-total-mismatch") {
+    if (!Number.isSafeInteger(result.parentAmountCents)) {
+      return {
+        ok: false,
+        error:
+          "The stored transaction amount is outside the safe cents range. Remove the split only after reviewing the ledger data.",
+      };
+    }
     return {
       ok: false,
-      error: `Split parts must add up to ${formatCents(txn.amountCents)} — they currently total ${formatCents(sum)}.`,
+      error: `Split parts must add up to the transaction amount (${centsToDecimalText(result.parentAmountCents)}) — they currently total ${centsToDecimalText(result.splitTotalCents)} in the account currency.`,
     };
   }
-  // Friendly errors instead of raw FK violations for stale category ids.
-  for (const p of parsed.data.parts) {
-    if (p.categoryId && !(await getCategoryById(p.categoryId))) {
-      return { ok: false, error: "A split part points at an unknown category" };
-    }
-  }
-
-  await replaceSplits(parsed.data.transactionId, parsed.data.parts);
-  revalidateAll();
+  if (result.status === "invalid-input") return { ok: false, error: result.message };
+  revalidateAfterMutation();
   return { ok: true };
 }
 
 export async function clearSplitsAction(transactionId: string): Promise<ActionResult> {
+  const originFailure = await assertTrustedActionOrigin();
+  if (originFailure) return originFailure;
   if (!transactionId) return { ok: false, error: "Missing transaction id" };
-  const txn = await getTransactionById(transactionId);
-  if (!txn) return { ok: false, error: "Transaction not found" };
-  await replaceSplits(transactionId, []);
-  revalidateAll();
+  const result = await replaceSplits(transactionId, []);
+  if (result.status === "not-found") return { ok: false, error: "Transaction not found" };
+  if (result.status === "unknown-category") {
+    return { ok: false, error: "A split part points at an unknown category" };
+  }
+  if (result.status === "invalid-input") return { ok: false, error: result.message };
+  if (result.status === "updated") revalidateAfterMutation();
   return { ok: true };
 }

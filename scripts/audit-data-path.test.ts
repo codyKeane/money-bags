@@ -13,6 +13,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { REVIEWED_MIGRATIONS } from "../src/db/migration-manifest";
+import {
+  backupDirectoryForDatabase,
+  backupRootForDatabase,
+} from "../src/db/backup-location";
 import { findRepositoryRoot } from "../src/db/path";
 import {
   auditConfiguredDataPath,
@@ -96,6 +100,7 @@ describe("configured data-path audit", () => {
       databasePath: target,
       classification: "repository-data",
       gitIgnore: "ignored",
+      filesystemPrivacy: "pass",
     });
     expect(existsSync(path.dirname(target))).toBe(false);
   });
@@ -149,7 +154,9 @@ describe("configured data-path audit", () => {
       gitIgnore: "not-applicable",
       parentMode: { state: "missing", display: "missing" },
       fileMode: { state: "missing", display: "missing" },
-      backupDirectory: path.join(missingParent, "backups"),
+      filesystemPrivacy: "pass",
+      backupRootDirectory: backupRootForDatabase(target),
+      backupDirectory: backupDirectoryForDatabase(target),
     });
     expect(existsSync(missingParent)).toBe(false);
   });
@@ -331,13 +338,17 @@ describe("resolved data-path audit", () => {
     expect(nonRootIgnore).toMatchObject({ status: "fail", gitIgnore: "error" });
   });
 
-  it("reports only the direct parent and target POSIX modes", () => {
+  it("fails permissive direct-parent and target POSIX modes with exact non-recursive remediation", () => {
     const root = makeTemp("moneybags-audit-modes-");
     const target = path.join(root, "data", "ledger.db");
     const inspected: string[] = [];
     const lstatPath = (candidate: string): Stats => {
       inspected.push(candidate);
-      return { mode: candidate === target ? 0o100640 : 0o040750 } as Stats;
+      if (candidate === target) return { mode: 0o100640 } as Stats;
+      if (candidate === path.dirname(target)) return { mode: 0o040750 } as Stats;
+      const error = new Error("missing") as NodeJS.ErrnoException;
+      error.code = "ENOENT";
+      throw error;
     };
 
     const report = auditResolvedDataPath(fakePreflight(root, target), {
@@ -346,12 +357,97 @@ describe("resolved data-path audit", () => {
       lstatPath,
     });
 
-    expect(inspected).toEqual([path.dirname(target), target]);
+    expect(inspected).toEqual([
+      backupRootForDatabase(target),
+      backupDirectoryForDatabase(target),
+      path.dirname(target),
+      target,
+      `${target}-wal`,
+      `${target}-shm`,
+    ]);
     expect(report.parentMode).toEqual({ state: "mode", display: "0750" });
     expect(report.fileMode).toEqual({ state: "mode", display: "0640" });
+    expect(report.filesystemPrivacy).toBe("fail");
+    expect(report.status).toBe("fail");
+    expect(report.remediation).toContain(
+      `Restrict the existing direct parent without recursion: chmod 0700 -- '${path.dirname(target)}'`,
+    );
+    expect(report.remediation).toContain(
+      `Restrict the existing database file without recursion: chmod 0600 -- '${target}'`,
+    );
+    expect(report.remediation.join("\n")).not.toMatch(/chmod\s+-R\b/);
   });
 
-  it("reports explicit Windows mode n/a without touching either path", () => {
+  it("passes exact private POSIX modes and treats missing paths as non-violations", () => {
+    const root = makeTemp("moneybags-audit-private-modes-");
+    const target = path.join(root, "data", "ledger.db");
+    const exactModes = auditResolvedDataPath(fakePreflight(root, target), {
+      platform: "linux",
+      spawnGit: spawnWithStatus(0),
+      lstatPath: (candidate) => {
+        if (new Set([
+          path.dirname(target),
+          backupRootForDatabase(target),
+          backupDirectoryForDatabase(target),
+        ]).has(candidate)) {
+          return { mode: 0o040700 } as Stats;
+        }
+        return { mode: 0o100600 } as Stats;
+      },
+      readdirPath: () => [],
+    });
+    const missingModes = auditResolvedDataPath(fakePreflight(root, target), {
+      platform: "linux",
+      spawnGit: spawnWithStatus(0),
+      lstatPath: () => {
+        const error = new Error("missing") as NodeJS.ErrnoException;
+        error.code = "ENOENT";
+        throw error;
+      },
+    });
+
+    expect(exactModes).toMatchObject({
+      status: "pass",
+      parentMode: { state: "mode", display: "0700" },
+      fileMode: { state: "mode", display: "0600" },
+      filesystemPrivacy: "pass",
+    });
+    expect(missingModes).toMatchObject({
+      status: "pass",
+      parentMode: { state: "missing", display: "missing" },
+      fileMode: { state: "missing", display: "missing" },
+      filesystemPrivacy: "pass",
+    });
+  });
+
+  it("terminal-quotes exact chmod remediation without exposing shell syntax or controls", () => {
+    const root = makeTemp("moneybags-audit-mode-output-");
+    const target = path.join(
+      root,
+      "ledger'$(touch should-not-run)\n\u001b[31m.sqlite3",
+    );
+    const report = auditResolvedDataPath(fakePreflight(root, target), {
+      platform: "linux",
+      spawnGit: spawnWithStatus(0),
+      lstatPath: (candidate) => {
+        if (candidate === target) return { mode: 0o100644 } as Stats;
+        if (candidate === path.dirname(target)) return { mode: 0o040700 } as Stats;
+        const error = new Error("missing") as NodeJS.ErrnoException;
+        error.code = "ENOENT";
+        throw error;
+      },
+    });
+    const chmodRemediation = report.remediation.find((item) =>
+      item.includes("chmod 0600"),
+    );
+
+    expect(chmodRemediation).toMatch(/^.*chmod 0600 -- \$'(?:\\x[0-9a-f]{2})+'$/u);
+    expect(chmodRemediation).not.toContain("$(touch");
+    expect(chmodRemediation).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/u);
+    expect(existsSync(path.join(root, "should-not-run"))).toBe(false);
+  });
+
+  it("reports Windows POSIX modes as inapplicable and ACL privacy as unverified", () => {
     const root = makeTemp("moneybags-audit-windows-");
     const target = path.join(root, "data", "ledger.db");
     const report = auditResolvedDataPath(fakePreflight(root, target), {
@@ -364,10 +460,89 @@ describe("resolved data-path audit", () => {
 
     expect(report.parentMode).toEqual({
       state: "not-applicable",
-      display: "n/a (Windows)",
+      display: "n/a (Windows; ACL privacy unverified)",
     });
     expect(report.fileMode).toEqual(report.parentMode);
+    expect(report.walMode).toEqual(report.parentMode);
+    expect(report.shmMode).toEqual(report.parentMode);
+    expect(report.backupRootDirectoryMode).toEqual(report.parentMode);
+    expect(report.backupDirectoryMode).toEqual(report.parentMode);
+    expect(report.backupArtifactModes).toEqual([]);
+    expect(report.filesystemPrivacy).toBe("unverified");
     expect(report.status).toBe("pass");
+    expect(report.remediation.join(" ")).toMatch(
+      /POSIX mode enforcement.*not applicable.*Windows.*ACL.*unverified/i,
+    );
+    expect(formatDataPathAudit(report)).toContain(
+      "Data path audit: PASS (filesystem privacy unverified)",
+    );
+  });
+
+  it("audits existing sidecars, backup directories, and recognized artifacts without recursion", () => {
+    const root = makeTemp("moneybags-audit-private-artifacts-");
+    const target = path.join(root, "data", "ledger.db");
+    const backupRootDirectory = backupRootForDatabase(target);
+    const backupDirectory = backupDirectoryForDatabase(target);
+    const final =
+      "moneybags-20260715T120000000Z-10000000-0000-4000-8000-000000000001.sqlite3";
+    const invalid =
+      "moneybags-20260715T120000000Z-20000000-0000-4000-8000-000000000002.invalid";
+    const partial =
+      "moneybags-20260715T120000000Z.30000000-0000-4000-8000-000000000003.partial";
+    const legacy = "finance-2026-07-15T12-00-00.db";
+    const linked =
+      "moneybags-20260715T120000000Z-40000000-0000-4000-8000-000000000004.sqlite3";
+    const modes = new Map<string, number>([
+      [path.dirname(target), 0o040700],
+      [target, 0o100600],
+      [`${target}-wal`, 0o100644],
+      [`${target}-shm`, 0o100600],
+      [backupRootDirectory, 0o040700],
+      [backupDirectory, 0o040755],
+      [path.join(backupDirectory, final), 0o100644],
+      [path.join(backupDirectory, invalid), 0o100600],
+      [path.join(backupDirectory, partial), 0o100640],
+      [path.join(backupRootDirectory, legacy), 0o100644],
+      [path.join(backupDirectory, linked), 0o120777],
+    ]);
+    const report = auditResolvedDataPath(fakePreflight(root, target), {
+      platform: "linux",
+      spawnGit: spawnWithStatus(0),
+      lstatPath: (candidate) => {
+        const mode = modes.get(candidate);
+        if (mode === undefined) {
+          const error = new Error("missing") as NodeJS.ErrnoException;
+          error.code = "ENOENT";
+          throw error;
+        }
+        return { mode } as Stats;
+      },
+      readdirPath: (directory) =>
+        directory === backupRootDirectory
+          ? [legacy, "unrelated.txt"]
+          : [final, invalid, partial, linked, "unrelated.txt"],
+    });
+
+    expect(report.status).toBe("fail");
+    expect(report.filesystemPrivacy).toBe("fail");
+    expect(report.walMode).toEqual({ state: "mode", display: "0644" });
+    expect(report.shmMode).toEqual({ state: "mode", display: "0600" });
+    expect(report.backupDirectoryMode).toEqual({ state: "mode", display: "0755" });
+    expect(report.backupArtifactModes).toHaveLength(5);
+    expect(
+      report.backupArtifactModes.find((artifact) => artifact.path.endsWith(linked))?.mode
+        .state,
+    ).toBe("unsafe-type");
+    const remediation = report.remediation.join("\n");
+    expect(remediation).toContain("chmod 0600");
+    expect(remediation).toContain("chmod 0700");
+    expect(remediation).toContain(`${target}-wal`);
+    expect(remediation).toContain(backupDirectory);
+    expect(remediation).toContain(final);
+    expect(remediation).toContain(partial);
+    expect(remediation).toContain(legacy);
+    expect(remediation).not.toContain("unrelated.txt");
+    expect(remediation).not.toContain(`chmod 0600 -- '${path.join(backupDirectory, linked)}'`);
   });
 
   it("classifies only the preflight paths and fails repository-unsafe paths", () => {
@@ -403,7 +578,7 @@ describe("resolved data-path audit", () => {
     const output = formatDataPathAudit(report);
 
     expect(output).toContain("Resolved target: \"");
-    expect(output).toContain("Backup directory: \"");
+    expect(output).toContain("Target-scoped backup directory: \"");
     expect(output).toContain("\\n\\u001b[31m");
     for (const escaped of [
       "\\u0085",

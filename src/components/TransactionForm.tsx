@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useId } from "react";
 import {
   createTransactionAction,
   updateTransactionAction,
@@ -9,6 +10,9 @@ import {
 import type { CategoryOption } from "@/components/CategorySelect";
 import { Field, FormError, inputClass } from "@/components/ui/form";
 import { useServerForm } from "@/components/ui/use-server-form";
+import { fieldErrorAttributes } from "@/components/ui/form-accessibility";
+import { centsToDecimalText } from "@/lib/money";
+import type { AccountCurrencyState } from "@/lib/currency";
 
 export interface TransactionFormInitial {
   transactionId: string;
@@ -25,22 +29,28 @@ export function TransactionForm({
   initial,
   onDone,
 }: {
-  accounts: { id: string; name: string }[];
+  accounts: { id: string; name: string; currencyState: AccountCurrencyState }[];
   categories: CategoryOption[];
   initial?: TransactionFormInitial; // present = edit mode
   onDone?: () => void; // create mode: collapse the form
 }) {
   const router = useRouter();
+  const errorId = `${useId()}-error`;
   const mode = initial ? "edit" : "create";
-  const [state, formAction, pending] = useServerForm<TransactionFormState>(
-    (prev, formData) =>
-      initial ? updateTransactionAction(prev, formData) : createTransactionAction(prev, formData),
-    {
-      // create: the action revalidates /transactions so the new row appears on
-      // the re-render (no refresh); edit: navigating to the list re-renders it.
-      onSuccess: () => (mode === "edit" ? router.push("/transactions") : onDone?.()),
-    },
-  );
+  const [state, formAction, pending, errorSummaryRef] =
+    useServerForm<TransactionFormState>(
+      (prev, formData) =>
+        initial
+          ? updateTransactionAction(prev, formData)
+          : createTransactionAction(prev, formData),
+      {
+        // create: the action revalidates /transactions so the new row appears on
+        // the re-render (no refresh); edit: navigating to the list re-renders it.
+        onSuccess: () =>
+          mode === "edit" ? router.push("/transactions") : onDone?.(),
+      },
+    );
+  const errorField = state.ok ? undefined : state.field;
 
   return (
     <form
@@ -49,20 +59,41 @@ export function TransactionForm({
     >
       {initial ? <input type="hidden" name="transactionId" value={initial.transactionId} /> : null}
       <Field label="Account">
-        <select name="accountId" required defaultValue={initial?.accountId ?? ""} className={inputClass} autoFocus>
+        <select
+          name="accountId"
+          required
+          defaultValue={initial?.accountId ?? ""}
+          className={inputClass}
+          autoFocus
+          {...fieldErrorAttributes(errorId, errorField, "accountId")}
+        >
           {!initial ? <option value="">Select an account…</option> : null}
           {accounts.map((a) => (
             <option key={a.id} value={a.id}>
-              {a.name}
+              {a.name}{a.currencyState.kind === "invalid" ? " (currency needs repair)" : ""}
             </option>
           ))}
         </select>
       </Field>
       <Field label="Date">
-        <input type="date" name="date" required defaultValue={initial?.date} className={inputClass} />
+        <input
+          type="date"
+          name="date"
+          required
+          defaultValue={initial?.date}
+          className={inputClass}
+          {...fieldErrorAttributes(errorId, errorField, "date")}
+        />
       </Field>
       <Field label="Description">
-        <input name="description" required maxLength={500} defaultValue={initial?.description} className={inputClass} />
+        <input
+          name="description"
+          required
+          maxLength={500}
+          defaultValue={initial?.description}
+          className={inputClass}
+          {...fieldErrorAttributes(errorId, errorField, "description")}
+        />
       </Field>
       <Field label="Amount (signed dollars — negative = money out)">
         <input
@@ -70,12 +101,18 @@ export function TransactionForm({
           required
           inputMode="decimal"
           placeholder="-12.50"
-          defaultValue={initial ? (initial.amountCents / 100).toFixed(2) : ""}
+          defaultValue={initial ? centsToDecimalText(initial.amountCents) : ""}
           className={inputClass}
+          {...fieldErrorAttributes(errorId, errorField, "amount")}
         />
       </Field>
       <Field label="Category">
-        <select name="categoryId" defaultValue={initial?.categoryId ?? ""} className={inputClass}>
+        <select
+          name="categoryId"
+          defaultValue={initial?.categoryId ?? ""}
+          className={inputClass}
+          {...fieldErrorAttributes(errorId, errorField, "categoryId")}
+        >
           <option value="">Uncategorized</option>
           {categories.map((c) => (
             <option key={c.id} value={c.id}>
@@ -97,7 +134,11 @@ export function TransactionForm({
             Cancel
           </button>
         ) : null}
-        <FormError error={state.ok ? null : state.error} />
+        <FormError
+          id={errorId}
+          error={state.ok ? null : state.error}
+          summaryRef={errorSummaryRef}
+        />
       </div>
     </form>
   );

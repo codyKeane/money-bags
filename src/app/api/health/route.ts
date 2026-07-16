@@ -1,5 +1,5 @@
-import { sql } from "drizzle-orm";
-import { getDb } from "@/db/client";
+import { noStoreJson } from "@/lib/http-response";
+import { checkDatabaseHealth } from "@/server/services/health";
 
 export const dynamic = "force-dynamic";
 
@@ -8,9 +8,9 @@ export const dynamic = "force-dynamic";
 // /api/accounts). curl 127.0.0.1:3100/api/health
 export function GET() {
   try {
-    getDb().get(sql`select 1`);
-    return Response.json({ ok: true });
+    checkDatabaseHealth();
+    return noStoreJson({ ok: true });
   } catch {
-    return Response.json({ ok: false }, { status: 500 });
+    return noStoreJson({ ok: false }, { status: 500 });
   }
 }

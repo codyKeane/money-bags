@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isActiveNav } from "./nav-links";
+import { isActiveNav, navAriaCurrent } from "./nav-links";
 
 describe("isActiveNav", () => {
   it("matches Dashboard ('/') only exactly", () => {
@@ -17,5 +17,14 @@ describe("isActiveNav", () => {
     // "/transactions" must not light up for "/transactions-archive"
     expect(isActiveNav("/transactions-archive", "/transactions")).toBe(false);
     expect(isActiveNav("/accounts", "/transactions")).toBe(false);
+  });
+});
+
+describe("navAriaCurrent", () => {
+  it("marks only the active section as the current page", () => {
+    expect(navAriaCurrent("/transactions/abc/edit", "/transactions")).toBe(
+      "page",
+    );
+    expect(navAriaCurrent("/transactions/abc/edit", "/accounts")).toBeUndefined();
   });
 });

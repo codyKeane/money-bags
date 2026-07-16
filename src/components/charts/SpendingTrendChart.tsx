@@ -24,7 +24,7 @@ export interface TrendDatum {
 
 // Two series (income, spending) → categorical slots 1 and 2 with a legend.
 // Values ride the y-axis, tooltip, and table view — no label on every column.
-export function SpendingTrendChart({ data }: { data: TrendDatum[] }) {
+export function SpendingTrendChart({ data, currency }: { data: TrendDatum[]; currency: string }) {
   const dark = useDarkMode();
   const mode = dark ? "dark" : "light";
   const incomeColor = CATEGORICAL_SLOTS[0]![mode];
@@ -47,7 +47,7 @@ export function SpendingTrendChart({ data }: { data: TrendDatum[] }) {
             tickLine={false}
           />
           <YAxis
-            tickFormatter={(v: number) => formatCentsCompact(v)}
+            tickFormatter={(v: number) => formatCentsCompact(v, currency)}
             tick={{ fill: CHROME.inkMuted[mode], fontSize: 11 }}
             axisLine={false}
             tickLine={false}
@@ -65,13 +65,13 @@ export function SpendingTrendChart({ data }: { data: TrendDatum[] }) {
                     {
                       key: "income",
                       label: "income",
-                      value: formatCents(datum.incomeCents),
+                      value: formatCents(datum.incomeCents, currency),
                       color: incomeColor,
                     },
                     {
                       key: "spending",
                       label: "spending",
-                      value: formatCents(datum.spendingCents),
+                      value: formatCents(datum.spendingCents, currency),
                       color: spendingColor,
                     },
                   ]}
@@ -104,8 +104,8 @@ export function SpendingTrendChart({ data }: { data: TrendDatum[] }) {
             {data.map((d) => (
               <tr key={d.month}>
                 <td className="pr-6 text-ink-2">{formatMonth(d.month)}</td>
-                <td className="pr-6 tabular-nums">{formatCents(d.incomeCents)}</td>
-                <td className="tabular-nums">{formatCents(d.spendingCents)}</td>
+                <td className="pr-6 tabular-nums">{formatCents(d.incomeCents, currency)}</td>
+                <td className="tabular-nums">{formatCents(d.spendingCents, currency)}</td>
               </tr>
             ))}
           </tbody>

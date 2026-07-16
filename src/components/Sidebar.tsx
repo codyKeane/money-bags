@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { NAV_LINKS, isActiveNav } from "./nav-links";
+import { NAV_LINKS, navAriaCurrent } from "./nav-links";
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -14,13 +14,14 @@ export function Sidebar() {
       </div>
       <nav className="flex flex-col gap-1">
         {NAV_LINKS.map(({ href, label }) => {
-          const active = isActiveNav(pathname, href);
+          const ariaCurrent = navAriaCurrent(pathname, href);
           return (
             <Link
               key={href}
               href={href}
+              aria-current={ariaCurrent}
               className={`rounded-md px-3 py-1.5 text-sm ${
-                active
+                ariaCurrent
                   ? "bg-gridline/60 font-medium text-ink"
                   : "text-ink-2 hover:bg-gridline/40"
               }`}

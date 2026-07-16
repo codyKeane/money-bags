@@ -1,15 +1,118 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { type Db } from "@/db/client";
-import { setupTestDb } from "@/test/test-db";
-import { transactions, transactionSplits } from "@/db/schema";
-import { getOrCreateAccountByName } from "./accounts";
-import { createCategory } from "./categories";
+import { setupTestDb, setupTestDbPerTest } from "@/test/test-db";
+import { accounts, transactions, transactionSplits } from "@/db/schema";
+import { getNetWorthOverview, getOrCreateAccountByName } from "./accounts";
+import { createCategory, updateCategory, type CategoryInput } from "./categories";
 import {
   getBudgetVsActual,
+  getDashboardAggregateOverview,
   getMonthlySpendingByCategory,
+  getMonthlySpendingOverview,
   getMonthlySummary,
   getSpendingTrend,
 } from "./summary";
+
+describe("currency-aware combined spending DTOs", () => {
+  const ctx = setupTestDbPerTest("finance-currency-summary-");
+
+  it("suppresses every combined scalar and collection for mixed accounts even if only one has activity", async () => {
+    const [usd, eur] = await ctx.db
+      .insert(accounts)
+      .values([
+        { name: "Dollars", type: "CHECKING", currency: "USD" },
+        { name: "Euros", type: "SAVINGS", currency: "EUR" },
+      ])
+      .returning({ id: accounts.id });
+    if (!usd || !eur) throw new Error("account fixture failed");
+    await ctx.db.insert(transactions).values({
+      date: "2026-06-01",
+      description: "USD ONLY",
+      amountCents: -100,
+      accountId: usd.id,
+    });
+
+    const netWorth = await getNetWorthOverview(ctx.db);
+    await expect(getMonthlySpendingOverview("2026-06", netWorth, ctx.db)).resolves.toEqual({
+      currencyState: { kind: "mixed", currencies: ["EUR", "USD"] },
+      aggregateState: { kind: "unavailable" },
+      summary: { incomeCents: null, spendingCents: null },
+      byCategory: [],
+    });
+    await expect(
+      getDashboardAggregateOverview("2026-06", "2026-06", netWorth, ctx.db),
+    ).resolves.toMatchObject({
+      aggregateState: { kind: "unavailable" },
+      summary: { incomeCents: null, spendingCents: null },
+      byCategory: [],
+      budgets: [],
+      trend: [],
+    });
+  });
+
+  it("returns numeric combined values with the normalized single currency", async () => {
+    const [account] = await ctx.db
+      .insert(accounts)
+      .values({ name: "Euro", type: "CHECKING", currency: " eur " })
+      .returning({ id: accounts.id });
+    if (!account) throw new Error("account fixture failed");
+    await ctx.db.insert(transactions).values({
+      date: "2026-06-01",
+      description: "EURO SPEND",
+      amountCents: -250,
+      accountId: account.id,
+    });
+
+    const result = await getMonthlySpendingOverview(
+      "2026-06",
+      await getNetWorthOverview(ctx.db),
+      ctx.db,
+    );
+    expect(result).toMatchObject({
+      currencyState: { kind: "single", currency: "EUR" },
+      aggregateState: { kind: "ready" },
+      summary: { incomeCents: 0, spendingCents: 250 },
+    });
+  });
+
+  it("returns an explicit unsafe state when a persisted combined sum is not exact-safe", async () => {
+    const [account] = await ctx.db
+      .insert(accounts)
+      .values({ name: "Unsafe", type: "CHECKING", currency: "USD" })
+      .returning({ id: accounts.id });
+    if (!account) throw new Error("account fixture failed");
+    await ctx.db.insert(transactions).values({
+      date: "2026-06-01",
+      description: "UNSAFE STORED VALUE",
+      amountCents: Number.MIN_SAFE_INTEGER - 1,
+      accountId: account.id,
+    });
+
+    const netWorth = {
+      currencyState: { kind: "single", currency: "USD" },
+      aggregateState: { kind: "ready" },
+      netWorthCents: 0,
+    } as const;
+    await expect(getMonthlySpendingOverview("2026-06", netWorth, ctx.db)).resolves.toEqual({
+      currencyState: { kind: "single", currency: "USD" },
+      aggregateState: { kind: "unsafe" },
+      summary: { incomeCents: null, spendingCents: null },
+      byCategory: [],
+    });
+  });
+});
+
+async function mustGetOrCreateAccount(name: string, db: Db) {
+  const result = await getOrCreateAccountByName(name, "CHECKING", "USD", db);
+  if (result.status === "invalid-input") throw new Error("account fixture failed");
+  return result.account;
+}
+
+async function mustCreateCategory(input: CategoryInput, db: Db) {
+  const result = await createCategory(input, db);
+  if (result.status !== "created") throw new Error(`category fixture failed: ${result.status}`);
+  return result.category;
+}
 
 // These three suites intentionally share one temp DB each: setup completes in
 // beforeAll, and every test treats the resulting rows as an immutable fixture.
@@ -20,29 +123,29 @@ describe("getBudgetVsActual (integration, temp DB)", () => {
 
   beforeAll(async () => {
     db = ctx.db;
-    const { account } = await getOrCreateAccountByName("Budget Test", "CHECKING", db);
+    const account = await mustGetOrCreateAccount("Budget Test", db);
     const accountId = account.id;
 
     const groceriesId = (
-      await createCategory(
+      await mustCreateCategory(
         { name: "Groceries", color: null, keywords: [], excludeFromSpending: false, monthlyBudgetCents: 50000 },
         db,
       )
     ).id;
     const diningId = (
-      await createCategory(
+      await mustCreateCategory(
         { name: "Dining", color: null, keywords: [], excludeFromSpending: false, monthlyBudgetCents: 10000 },
         db,
       )
     ).id;
     // Budgeted but no spend this month — must still appear at 0 spent.
-    await createCategory(
+    await mustCreateCategory(
       { name: "Gifts", color: null, keywords: [], excludeFromSpending: false, monthlyBudgetCents: 20000 },
       db,
     );
     // No budget — must never appear, even though it has spend.
     noBudgetId = (
-      await createCategory(
+      await mustCreateCategory(
         { name: "Misc", color: null, keywords: [], excludeFromSpending: false },
         db,
       )
@@ -94,10 +197,10 @@ describe("getSpendingTrend (integration, temp DB)", () => {
 
   beforeAll(async () => {
     const db = ctx.db;
-    const { account } = await getOrCreateAccountByName("Trend Test", "CHECKING", db);
+    const account = await mustGetOrCreateAccount("Trend Test", db);
     const accountId = account.id;
     const transfersId = (
-      await createCategory(
+      await mustCreateCategory(
         { name: "Transfers", color: null, keywords: [], excludeFromSpending: true },
         db,
       )
@@ -135,19 +238,19 @@ describe("split-aware spending aggregates (integration, temp DB)", () => {
 
   beforeAll(async () => {
     db = ctx.db;
-    const { account } = await getOrCreateAccountByName("Split Agg", "CHECKING", db);
+    const account = await mustGetOrCreateAccount("Split Agg", db);
     const accountId = account.id;
     const groceries = (
-      await createCategory(
+      await mustCreateCategory(
         { name: "Groceries", color: null, keywords: [], excludeFromSpending: false, monthlyBudgetCents: 50000 },
         db,
       )
     ).id;
     const household = (
-      await createCategory({ name: "Household", color: null, keywords: [], excludeFromSpending: false }, db)
+      await mustCreateCategory({ name: "Household", color: null, keywords: [], excludeFromSpending: false }, db)
     ).id;
     const gift = (
-      await createCategory({ name: "Gift", color: null, keywords: [], excludeFromSpending: true }, db)
+      await mustCreateCategory({ name: "Gift", color: null, keywords: [], excludeFromSpending: true }, db)
     ).id;
 
     // A -100.00 store run split three ways: 60 groceries + 30 household + 10
@@ -189,5 +292,164 @@ describe("split-aware spending aggregates (integration, temp DB)", () => {
   it("spending trend reflects splits (excluded part dropped)", async () => {
     const points = await getSpendingTrend("2026-06", 1, db);
     expect(points[0]).toMatchObject({ month: "2026-06", spendingCents: 11000, incomeCents: 200000 });
+  });
+});
+
+describe("excluded categories share one spending and budget contract", () => {
+  const ctx = setupTestDbPerTest("finance-excluded-budget-");
+  let db: Db;
+  let excludedId: string;
+
+  beforeEach(async () => {
+    db = ctx.db;
+    const account = await mustGetOrCreateAccount("Exclusion contract", db);
+    const included = await mustCreateCategory(
+      {
+        name: "Included budget",
+        color: null,
+        keywords: [],
+        excludeFromSpending: false,
+        monthlyBudgetCents: 10000,
+      },
+      db,
+    );
+    const excluded = await mustCreateCategory(
+      {
+        name: "Excluded budget",
+        color: null,
+        keywords: [],
+        excludeFromSpending: false,
+        monthlyBudgetCents: 20000,
+      },
+      db,
+    );
+    excludedId = excluded.id;
+    await mustCreateCategory(
+      {
+        name: "Included zero spend",
+        color: null,
+        keywords: [],
+        excludeFromSpending: false,
+        monthlyBudgetCents: 30000,
+      },
+      db,
+    );
+    await expect(
+      updateCategory(excludedId, { excludeFromSpending: true }, db),
+    ).resolves.toEqual({ status: "updated", id: excludedId });
+
+    await db.insert(transactions).values([
+      {
+        date: "2026-06-01",
+        description: "INCLUDED OUTFLOW",
+        amountCents: -1000,
+        accountId: account.id,
+        categoryId: included.id,
+      },
+      {
+        date: "2026-06-02",
+        description: "INCLUDED INFLOW",
+        amountCents: 200,
+        accountId: account.id,
+        categoryId: included.id,
+      },
+      {
+        date: "2026-06-03",
+        description: "EXCLUDED OUTFLOW",
+        amountCents: -2000,
+        accountId: account.id,
+        categoryId: excludedId,
+      },
+      {
+        date: "2026-06-04",
+        description: "EXCLUDED INFLOW",
+        amountCents: 3000,
+        accountId: account.id,
+        categoryId: excludedId,
+      },
+      {
+        date: "2026-06-05",
+        description: "UNCATEGORIZED OUTFLOW",
+        amountCents: -400,
+        accountId: account.id,
+        categoryId: null,
+      },
+      {
+        date: "2026-06-06",
+        description: "UNCATEGORIZED INFLOW",
+        amountCents: 500,
+        accountId: account.id,
+        categoryId: null,
+      },
+      {
+        id: "exclusion-split",
+        date: "2026-06-07",
+        description: "SPLIT OUTFLOW",
+        amountCents: -5000,
+        accountId: account.id,
+        categoryId: null,
+      },
+    ]);
+    await db.insert(transactionSplits).values([
+      { transactionId: "exclusion-split", categoryId: included.id, amountCents: -3000 },
+      { transactionId: "exclusion-split", categoryId: excludedId, amountCents: -2000 },
+    ]);
+  });
+
+  it("omits excluded activity consistently while retaining included zero-spend budgets", async () => {
+    const spending = await getMonthlySpendingByCategory("2026-06", db);
+    expect(Object.fromEntries(spending.map((row) => [row.categoryName, row.spentCents])))
+      .toEqual({ "Included budget": 4000, null: 400 });
+
+    await expect(getMonthlySummary("2026-06", db)).resolves.toEqual({
+      incomeCents: 700,
+      spendingCents: 4400,
+    });
+    await expect(getSpendingTrend("2026-06", 1, db)).resolves.toEqual([
+      { month: "2026-06", incomeCents: 700, spendingCents: 4400 },
+    ]);
+
+    const budgets = await getBudgetVsActual("2026-06", db);
+    expect(budgets.map((row) => row.categoryName)).toEqual([
+      "Included budget",
+      "Included zero spend",
+    ]);
+    expect(budgets.map((row) => [row.categoryName, row.spentCents])).toEqual([
+      ["Included budget", 4000],
+      ["Included zero spend", 0],
+    ]);
+  });
+
+  it("restores the saved budget and split-aware actual when the category is included again", async () => {
+    await expect(
+      updateCategory(excludedId, { excludeFromSpending: false }, db),
+    ).resolves.toEqual({ status: "updated", id: excludedId });
+
+    const excluded = (await getBudgetVsActual("2026-06", db)).find(
+      (row) => row.categoryId === excludedId,
+    );
+    expect(excluded).toMatchObject({
+      budgetCents: 20000,
+      spentCents: 4000,
+      remainingCents: 16000,
+      overBudget: false,
+    });
+  });
+});
+
+describe("empty spending aggregate shapes", () => {
+  const ctx = setupTestDb("finance-summary-empty-");
+
+  it("returns finite zero and empty results", async () => {
+    await expect(getMonthlySpendingByCategory("2026-06", ctx.db)).resolves.toEqual([]);
+    await expect(getBudgetVsActual("2026-06", ctx.db)).resolves.toEqual([]);
+    await expect(getMonthlySummary("2026-06", ctx.db)).resolves.toEqual({
+      incomeCents: 0,
+      spendingCents: 0,
+    });
+    await expect(getSpendingTrend("2026-06", 2, ctx.db)).resolves.toEqual([
+      { month: "2026-05", incomeCents: 0, spendingCents: 0 },
+      { month: "2026-06", incomeCents: 0, spendingCents: 0 },
+    ]);
   });
 });

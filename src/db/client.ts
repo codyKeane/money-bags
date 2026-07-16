@@ -10,6 +10,7 @@ import {
   preflightExplicitDatabaseOpen,
   type DatabaseOpenPreflight,
 } from "./preflight";
+import { enforcePrivateProcessUmask } from "./private-process";
 
 // Compatibility adapter for callers that only need the selected path. It still
 // performs the complete fail-closed preflight and never opens SQLite.
@@ -23,6 +24,7 @@ function createDb(
   preflight: Readonly<DatabaseOpenPreflight>,
   opts: { installDefaults?: boolean } = {},
 ): { db: Db; sqlite: Database.Database } {
+  enforcePrivateProcessUmask();
   const file = preflight.databasePath;
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
 
@@ -58,7 +60,12 @@ function createDb(
 
 // Global-cached so Next dev hot reload doesn't pile up open handles.
 const globalForDb = globalThis as unknown as {
-  __financeDb?: { db: Db; sqlite: Database.Database; file: string };
+  __financeDb?: {
+    db: Db;
+    sqlite: Database.Database;
+    file: string;
+    defaultsInstalled: boolean;
+  };
 };
 
 // Test infrastructure uses this to release the worker-owned implicit handle
@@ -71,14 +78,21 @@ export function closeImplicitDb(): void {
   current.sqlite.close();
 }
 
-export function getDb(): Db {
+export function getDb(
+  options: { installDefaults?: boolean } = {},
+): Db {
+  const installDefaults = options.installDefaults ?? true;
   const preflight = preflightDatabaseOpen();
   if (globalForDb.__financeDb?.file !== preflight.databasePath) {
     closeImplicitDb();
     globalForDb.__financeDb = {
-      ...createDb(preflight, { installDefaults: true }),
+      ...createDb(preflight, { installDefaults }),
       file: preflight.databasePath,
+      defaultsInstalled: installDefaults,
     };
+  } else if (installDefaults && !globalForDb.__financeDb.defaultsInstalled) {
+    ensureDefaultCategories(globalForDb.__financeDb.db);
+    globalForDb.__financeDb.defaultsInstalled = true;
   }
   return globalForDb.__financeDb.db;
 }

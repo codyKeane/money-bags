@@ -33,7 +33,13 @@ export default async function ImportPage() {
           </p>
         </div>
         <ImportForm
-          accounts={accounts.map((a) => ({ id: a.id, name: a.name, type: a.type }))}
+          accounts={accounts.map((a) => ({
+            id: a.id,
+            name: a.name,
+            type: a.type,
+            rawCurrency: a.rawCurrency,
+            currencyState: a.currencyState,
+          }))}
         />
       </div>
       <ImportHistory

@@ -120,15 +120,15 @@ describe("parseStatementCsv", () => {
     expect(rows[0]?.date).toBe("2026-06-01");
   });
 
-  it("collects malformed rows as errors while good rows succeed", () => {
-    const { rows, errors } = parseStatementCsv(
+  it("rejects the whole file when any row is malformed", () => {
+    const result = parseStatementCsv(
       "Date,Description,Amount\nnot-a-date,BAD ROW,1.00\n2026-06-02,GOOD ROW,-2.00\n2026-06-03,NO AMOUNT,abc\n",
     );
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.description).toBe("GOOD ROW");
-    expect(errors).toHaveLength(2);
-    expect(errors[0]).toMatchObject({ rowNumber: 2 });
-    expect(errors[1]).toMatchObject({ rowNumber: 4 });
+    expect(result.status).toBe("invalid-file");
+    expect(result.rows).toEqual([]);
+    expect(result.errors).toHaveLength(2);
+    expect(result.errors[0]).toMatchObject({ rowNumber: 2 });
+    expect(result.errors[1]).toMatchObject({ rowNumber: 4 });
   });
 
   it("returns empty results for a header-only file", () => {
@@ -175,13 +175,16 @@ describe("parseStatementCsv", () => {
     expect(rows[0]).toMatchObject({ description: "COFFEE", amountCents: -350 });
   });
 
-  it("warns when 'auto' reads ambiguous dates as MM/DD (F3)", () => {
-    const { rows, warnings } = parseStatementCsv(
+  it("requires an explicit format before exposing ambiguous auto-date rows", () => {
+    const result = parseStatementCsv(
       "Date,Description,Amount\n03/04/2026,THING,-1.00\n",
     );
-    expect(rows[0]?.date).toBe("2026-03-04"); // read as MDY
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toMatch(/DD\/MM/);
+    expect(result).toMatchObject({
+      status: "date-format-required",
+      rows: [],
+      errors: [],
+      ambiguousRowNumbers: [2],
+    });
   });
 
   it("does not warn on unambiguous or explicitly-formatted dates (F3)", () => {
@@ -196,6 +199,133 @@ describe("parseStatementCsv", () => {
       }).warnings,
     ).toEqual([]);
   });
+
+  it("accepts ISO, equal-component, and component-over-12 dates in auto mode", () => {
+    const result = parseStatementCsv(
+      [
+        "Date,Description,Amount",
+        "2026-05-01,ISO,-1.00",
+        "05/05/2026,EQUAL,-2.00",
+        "25/12/2026,DAY FIRST,-3.00",
+        "12/25/2026,MONTH FIRST,-4.00",
+      ].join("\n"),
+    );
+    expect(result.status).toBe("ready");
+    expect(result.rows.map((row) => row.date)).toEqual([
+      "2026-05-01",
+      "2026-05-05",
+      "2026-12-25",
+      "2026-12-25",
+    ]);
+  });
+
+  it("prefers invalid-file over ambiguity and never exposes a valid subset", () => {
+    const result = parseStatementCsv(
+      "Date,Description,Amount\n03/04/2026,AMBIGUOUS,-1.00\n2026-06-02,BAD,not-money\n",
+    );
+    expect(result.status).toBe("invalid-file");
+    expect(result.rows).toEqual([]);
+    expect(result.errors).toEqual([{ rowNumber: 3, message: "Unparseable amount" }]);
+  });
+
+  it.each([
+    ["inconsistent columns", "Date,Description,Amount\n2026-06-01,ONE,-1.00,EXTRA\n"],
+    ["malformed quotes", 'Date,Description,Amount\n2026-06-01,"UNCLOSED,-1.00\n'],
+  ])("rejects %s as an invalid whole file", (_label, csv) => {
+    const result = parseStatementCsv(csv);
+    expect(result.status).toBe("invalid-file");
+    expect(result.rows).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toBe("Unparseable CSV structure");
+  });
+
+  it.each([
+    ["12.34", "0.00", -1234],
+    ["0", "12.34", 1234],
+    ["-12.34", "0", 1234],
+    ["0", "-12.34", -1234],
+    ["0", "0", 0],
+    ["0", "", 0],
+    ["", "0", 0],
+    ["-0.00", "", 0],
+    ["(0.00)", "", 0],
+    ["0.00-", "", 0],
+  ])("parses Debit=%j Credit=%j as exact cents %i", (debit, credit, expected) => {
+    const result = parseStatementCsv(
+      `Date,Description,Debit,Credit\n2026-06-01,ROW,${debit},${credit}\n`,
+    );
+    expect(result.status).toBe("ready");
+    expect(result.rows[0]?.amountCents).toBe(expected);
+    expect(Object.is(result.rows[0]?.amountCents, -0)).toBe(false);
+  });
+
+  it.each([
+    ["12.34", "56.78", "Both debit and credit contain nonzero values"],
+    ["garbage", "12.34", "Unparseable debit"],
+    ["", "", "No amount, debit, or credit value"],
+  ])("rejects invalid Debit=%j Credit=%j without rows", (debit, credit, message) => {
+    const result = parseStatementCsv(
+      `Date,Description,Debit,Credit\n2026-06-01,ROW,${debit},${credit}\n`,
+    );
+    expect(result.status).toBe("invalid-file");
+    expect(result.rows).toEqual([]);
+    expect(result.errors).toContainEqual({ rowNumber: 2, message });
+  });
+
+  it("keeps a populated canonical Amount column authoritative", () => {
+    const result = parseStatementCsv(
+      "Date,Description,Amount,Debit,Credit\n2026-06-01,ROW,-1.23,garbage,99.00\n",
+    );
+    expect(result.status).toBe("ready");
+    expect(result.rows[0]?.amountCents).toBe(-123);
+  });
+
+  it.each([
+    [null, "invalid-shape"],
+    [[], "invalid-shape"],
+    ["not-an-object", "invalid-shape"],
+    [{}, "empty-map"],
+    [{ unknown: "Date" }, "unknown-field"],
+    [{ date: 42 }, "invalid-header"],
+    [{ date: "" }, "invalid-header"],
+    [{ date: "x".repeat(121) }, "invalid-header"],
+    [{ date: "Date\u0007" }, "invalid-header"],
+    [{ date: " Date ", description: "date" }, "duplicate-claim"],
+  ])("strictly rejects column map %j", (columnMap, code) => {
+    const result = parseStatementCsv(
+      "Date,Description,Amount\n2026-06-01,ROW,-1.00\n",
+      { columnMap },
+    );
+    expect(result.status).toBe("invalid-column-map");
+    if (result.status === "invalid-column-map") {
+      expect(result.issues.some((issue) => issue.code === code)).toBe(true);
+    }
+    expect(result.rows).toEqual([]);
+  });
+
+  it("rejects mapped headers that are missing or duplicated in the file", () => {
+    const missing = parseStatementCsv(
+      "Date,Description,Amount\n2026-06-01,ROW,-1.00\n",
+      { columnMap: { description: "Memo" } },
+    );
+    expect(missing.status).toBe("invalid-column-map");
+    if (missing.status === "invalid-column-map") {
+      expect(missing.issues).toContainEqual(
+        expect.objectContaining({ field: "description", code: "missing-header" }),
+      );
+    }
+
+    const duplicated = parseStatementCsv(
+      "Date,Memo,Memo,Amount\n2026-06-01,FIRST,SECOND,-1.00\n",
+      { columnMap: { description: "Memo" } },
+    );
+    expect(duplicated.status).toBe("invalid-column-map");
+    if (duplicated.status === "invalid-column-map") {
+      expect(duplicated.issues).toContainEqual(
+        expect.objectContaining({ field: "description", code: "duplicate-header" }),
+      );
+    }
+  });
 });
 
 describe("parseAmountToCents", () => {
@@ -208,7 +338,11 @@ describe("parseAmountToCents", () => {
   it("rejects garbage", () => {
     expect(parseAmountToCents("")).toBeNull();
     expect(parseAmountToCents("abc")).toBeNull();
+    expect(parseAmountToCents(".5")).toBeNull();
+    expect(parseAmountToCents("+-3.00")).toBeNull();
+    expect(parseAmountToCents("-+3.00")).toBeNull();
     expect(parseAmountToCents("1.234")).toBeNull();
+    expect(parseAmountToCents("1.005")).toBeNull();
   });
 
   it("parses unambiguous European decimal commas", () => {
@@ -232,7 +366,13 @@ describe("parseAmountToCents", () => {
 
   it("rejects amounts past the safe-integer cents boundary", () => {
     expect(parseAmountToCents("90071992547409.91")).toBe(9007199254740991);
+    expect(parseAmountToCents("-90071992547409.91")).toBe(-9007199254740991);
     expect(parseAmountToCents("90071992547409.92")).toBeNull();
     expect(parseAmountToCents("99999999999999999.99")).toBeNull();
+  });
+
+  it("normalizes negative zero after bank-format sign handling", () => {
+    expect(parseAmountToCents("-0.00")).toBe(0);
+    expect(Object.is(parseAmountToCents("(0.00)"), -0)).toBe(false);
   });
 });

@@ -14,3 +14,10 @@ export function isActiveNav(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
   return pathname === href || pathname.startsWith(`${href}/`);
 }
+
+export function navAriaCurrent(
+  pathname: string,
+  href: string,
+): "page" | undefined {
+  return isActiveNav(pathname, href) ? "page" : undefined;
+}

@@ -2,6 +2,7 @@
 
 import { undoImportAction } from "@/server/actions";
 import { ConfirmButton } from "@/components/ui/confirm-button";
+import { RECENT_IMPORTS_FOCUS_ID } from "@/components/ui/focus-target";
 import { TableCard, bodyRowClass, headRowClass, thClass } from "@/components/ui/table";
 
 export interface ImportHistoryRow {
@@ -20,7 +21,13 @@ export interface ImportHistoryRow {
 export function ImportHistory({ batches }: { batches: ImportHistoryRow[] }) {
   return (
     <section className="flex flex-col gap-2">
-      <h2 className="text-sm font-medium">Recent imports</h2>
+      <h2
+        id={RECENT_IMPORTS_FOCUS_ID}
+        tabIndex={-1}
+        className="text-sm font-medium"
+      >
+        Recent imports
+      </h2>
       {batches.length === 0 ? (
         <p className="text-sm text-ink-muted">
           No imports yet. Imported statements appear here so you can undo one if
@@ -57,10 +64,11 @@ export function ImportHistory({ batches }: { batches: ImportHistoryRow[] }) {
                   <td className="px-3 py-2 whitespace-nowrap text-right">
                     <ConfirmButton
                       label="Undo"
-                      prompt="Undo?"
+                      prompt={`Undo this import? This permanently deletes the ${row.importedCount} ${noun}${source}, including later edits and split allocations. Manually added transactions and other imports remain.`}
                       title={`Undo this import — permanently deletes the ${row.importedCount} ${noun} it added${source}`}
                       confirmLabel="Undo import"
                       pendingLabel="Undoing…"
+                      successFocusId={RECENT_IMPORTS_FOCUS_ID}
                       onConfirm={async () => {
                         const res = await undoImportAction(row.id);
                         if (!res.ok) return res.error ?? "Undo failed.";

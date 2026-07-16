@@ -1,19 +1,52 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
-import { type Db } from "@/db/client";
+import { eq, sql } from "drizzle-orm";
+import { createTestDb, type Db } from "@/db/client";
 import { setupTestDbPerTest } from "@/test/test-db";
-import { transactionSplits } from "@/db/schema";
+import { accounts, importBatches, transactions, transactionSplits } from "@/db/schema";
 import {
   createTransaction,
   deleteTransaction,
+  getSplitMismatches,
   getSplitsForTransaction,
   getTransactionById,
   getTransactionsPage,
+  parseTransactionPage,
   replaceSplits,
+  setTransactionCategory,
+  transactionPageHref,
+  transactionQuerySearchParams,
+  type TransactionInput,
   updateTransaction,
 } from "./transactions";
-import { createAccount, getAccountsWithBalances } from "./accounts";
-import { createCategory } from "./categories";
+import { createAccount, getAccountsWithBalances, type CreateAccountInput } from "./accounts";
+import { createCategory, type CategoryInput } from "./categories";
+import {
+  getBudgetVsActual,
+  getMonthlySummary,
+  getSpendingTrend,
+} from "./summary";
+import { MAX_SPLIT_PARTS } from "./write-validation";
+
+async function mustCreateAccount(input: CreateAccountInput, db: Db) {
+  const result = await createAccount(input, db);
+  if (result.status !== "created") throw new Error(`account fixture failed: ${result.status}`);
+  return result.account;
+}
+
+async function mustCreateCategory(input: CategoryInput, db: Db) {
+  const result = await createCategory(input, db);
+  if (result.status !== "created") throw new Error(`category fixture failed: ${result.status}`);
+  return result.category;
+}
+
+async function mustCreateTransaction(input: TransactionInput, db: Db) {
+  const result = await createTransaction(input, db);
+  if (result.status !== "created") throw new Error(`transaction fixture failed: ${result.status}`);
+  return result.transaction;
+}
 
 describe("transactions service (integration, temp DB)", () => {
   const ctx = setupTestDbPerTest("finance-txn-");
@@ -24,17 +57,17 @@ describe("transactions service (integration, temp DB)", () => {
 
   beforeEach(async () => {
     db = ctx.db;
-    accountA = (await createAccount({ name: "A", type: "CHECKING" }, db)).id;
-    accountB = (await createAccount({ name: "B", type: "CREDIT_CARD" }, db)).id;
+    accountA = (await mustCreateAccount({ name: "A", type: "CHECKING", currency: "USD" }, db)).id;
+    accountB = (await mustCreateAccount({ name: "B", type: "CREDIT_CARD", currency: "USD" }, db)).id;
     groceriesId = (
-      await createCategory(
+      await mustCreateCategory(
         { name: "Groceries", color: null, keywords: [], excludeFromSpending: false },
         db,
       )
     ).id;
     // fixture rows across months/accounts/categories
     for (let i = 1; i <= 60; i++) {
-      await createTransaction(
+      await mustCreateTransaction(
         {
           accountId: accountA,
           categoryId: null,
@@ -45,7 +78,7 @@ describe("transactions service (integration, temp DB)", () => {
         db,
       );
     }
-    await createTransaction(
+    await mustCreateTransaction(
       {
         accountId: accountB,
         categoryId: groceriesId,
@@ -55,7 +88,7 @@ describe("transactions service (integration, temp DB)", () => {
       },
       db,
     );
-    await createTransaction(
+    await mustCreateTransaction(
       {
         accountId: accountA,
         categoryId: null,
@@ -68,7 +101,7 @@ describe("transactions service (integration, temp DB)", () => {
   });
 
   it("manual create stores signed cents with a null importHash", async () => {
-    const row = await createTransaction(
+    const row = await mustCreateTransaction(
       {
         accountId: accountA,
         categoryId: groceriesId,
@@ -82,8 +115,40 @@ describe("transactions service (integration, temp DB)", () => {
     expect(row.amountCents).toBe(-750);
   });
 
+  it("keeps a top-level normalized-or-null currency on money-rendering rows", async () => {
+    await db
+      .update(accounts)
+      .set({ currency: " eur " })
+      .where(eq(accounts.id, accountB));
+    const normalized = await getTransactionsPage({
+      q: "CORNER MARKET",
+      requestedPage: 1,
+    }, db);
+    expect(normalized.items[0]).toMatchObject({
+      rawCurrency: " eur ",
+      currency: " eur ",
+      normalizedCurrency: "EUR",
+      currencyState: { kind: "valid", currency: "EUR" },
+    });
+
+    await db
+      .update(accounts)
+      .set({ currency: "not-a-code" })
+      .where(eq(accounts.id, accountB));
+    const invalid = await getTransactionsPage({
+      q: "CORNER MARKET",
+      requestedPage: 1,
+    }, db);
+    expect(invalid.items[0]).toMatchObject({
+      rawCurrency: "not-a-code",
+      currency: "not-a-code",
+      normalizedCurrency: null,
+      currencyState: { kind: "invalid" },
+    });
+  });
+
   it("update changes every field; delete removes the row", async () => {
-    const row = await createTransaction(
+    const row = await mustCreateTransaction(
       {
         accountId: accountA,
         categoryId: null,
@@ -93,7 +158,7 @@ describe("transactions service (integration, temp DB)", () => {
       },
       db,
     );
-    await updateTransaction(
+    expect(await updateTransaction(
       row.id,
       {
         accountId: accountB,
@@ -103,7 +168,7 @@ describe("transactions service (integration, temp DB)", () => {
         amountCents: 2500,
       },
       db,
-    );
+    )).toEqual({ status: "updated", id: row.id });
     const updated = await getTransactionById(row.id, db);
     expect(updated).toMatchObject({
       accountId: accountB,
@@ -117,7 +182,7 @@ describe("transactions service (integration, temp DB)", () => {
   });
 
   it("balances include manual rows", async () => {
-    await createTransaction(
+    await mustCreateTransaction(
       {
         accountId: accountA,
         categoryId: null,
@@ -132,47 +197,171 @@ describe("transactions service (integration, temp DB)", () => {
     expect(a?.transactionCount).toBe(62);
   });
 
+  it("rejects invalid values and unknown references without writing", async () => {
+    const beforeCount = (await db.select().from(transactions)).length;
+    const base: TransactionInput = {
+      accountId: accountA,
+      categoryId: null,
+      date: "2026-06-20",
+      description: "DIRECT WRITE",
+      amountCents: -100,
+    };
+
+    await expect(
+      createTransaction({ ...base, date: "2026-02-30" }, db),
+    ).resolves.toMatchObject({ status: "invalid-input", field: "date" });
+    await expect(
+      createTransaction({ ...base, amountCents: Number.MAX_SAFE_INTEGER + 1 }, db),
+    ).resolves.toMatchObject({ status: "invalid-input", field: "amountCents" });
+    await expect(
+      createTransaction({ ...base, description: "   " }, db),
+    ).resolves.toMatchObject({ status: "invalid-input", field: "description" });
+    await expect(
+      createTransaction({ ...base, accountId: "missing-account" }, db),
+    ).resolves.toEqual({ status: "unknown-account" });
+    await expect(
+      createTransaction({ ...base, categoryId: "missing-category" }, db),
+    ).resolves.toEqual({ status: "unknown-category" });
+    expect(await db.select().from(transactions)).toHaveLength(beforeCount);
+  });
+
+  it("returns typed update and recategorization failures without changing the row", async () => {
+    const row = await mustCreateTransaction(
+      {
+        accountId: accountA,
+        categoryId: null,
+        date: "2026-06-21",
+        description: "UNCHANGED",
+        amountCents: -200,
+      },
+      db,
+    );
+    const before = await getTransactionById(row.id, db);
+
+    await expect(
+      updateTransaction(row.id, { ...row, categoryId: "missing-category" }, db),
+    ).resolves.toEqual({ status: "unknown-category" });
+    await expect(
+      updateTransaction("missing-transaction", {
+        accountId: accountA,
+        categoryId: null,
+        date: "2026-06-21",
+        description: "NO ROW",
+        amountCents: 1,
+      }, db),
+    ).resolves.toEqual({ status: "not-found" });
+    await expect(
+      setTransactionCategory(row.id, "missing-category", db),
+    ).resolves.toEqual({ status: "unknown-category" });
+    expect(await getTransactionById(row.id, db)).toEqual(before);
+  });
+
   it("paginates with a correct total count", async () => {
-    const page1 = await getTransactionsPage({ limit: 50, offset: 0 }, db);
-    const page2 = await getTransactionsPage({ limit: 50, offset: 50 }, db);
+    const page1 = await getTransactionsPage({ requestedPage: 1 }, db);
+    const page2 = await getTransactionsPage({ requestedPage: 2 }, db);
+    const clamped = await getTransactionsPage({ requestedPage: 999 }, db);
     expect(page1.totalCount).toBeGreaterThanOrEqual(62);
     expect(page1.items).toHaveLength(50);
+    expect(page1).toMatchObject({ page: 1, lastPage: 2 });
     expect(page2.totalCount).toBe(page1.totalCount);
     expect(page2.items.length).toBe(page1.totalCount - 50);
+    expect(page2).toMatchObject({ page: 2, lastPage: 2 });
+    expect(clamped).toMatchObject({ page: 2, lastPage: 2, totalCount: page1.totalCount });
+    expect(clamped.items.map((row) => row.id)).toEqual(page2.items.map((row) => row.id));
     // no overlap between pages
     const ids1 = new Set(page1.items.map((t) => t.id));
     expect(page2.items.every((t) => !ids1.has(t.id))).toBe(true);
   });
 
+  it.each([
+    "",
+    "0",
+    "-1",
+    "+1",
+    "01",
+    "1.5",
+    "1e2",
+    "Infinity",
+    "9007199254740992",
+    "9".repeat(1000),
+  ])("canonicalizes unsafe page text %j to page 1", (raw) => {
+    expect(parseTransactionPage(raw)).toEqual({
+      requestedPage: 1,
+      needsCanonicalRedirect: true,
+    });
+  });
+
+  it("accepts only absent or positive safe-integer page values", () => {
+    expect(parseTransactionPage(undefined)).toEqual({
+      requestedPage: 1,
+      needsCanonicalRedirect: false,
+    });
+    expect(parseTransactionPage("1")).toEqual({
+      requestedPage: 1,
+      needsCanonicalRedirect: false,
+    });
+    expect(parseTransactionPage("9007199254740991")).toEqual({
+      requestedPage: Number.MAX_SAFE_INTEGER,
+      needsCanonicalRedirect: false,
+    });
+  });
+
+  it("builds canonical page and export URLs without a page-1 redirect loop", () => {
+    const query = {
+      q: "rent & utilities",
+      accountId: "account/id",
+      categoryId: null,
+      month: "2026-06",
+      from: "2026-06-02",
+      to: "2026-06-20",
+    } as const;
+    const pageOne = transactionPageHref(query, 1);
+    expect(pageOne).toBe(
+      "/transactions?q=rent+%26+utilities&account=account%2Fid&category=uncategorized&month=2026-06&from=2026-06-02&to=2026-06-20",
+    );
+    expect(pageOne).not.toContain("page=");
+    expect(transactionPageHref(query, 2)).toBe(`${pageOne}&page=2`);
+    expect(transactionQuerySearchParams(query).toString()).toBe(pageOne.split("?")[1]);
+    expect(parseTransactionPage(undefined).needsCanonicalRedirect).toBe(false);
+    expect(() => transactionPageHref(query, 0)).toThrow(RangeError);
+  });
+
+  it("rejects invalid direct service page numbers before calculating an offset", async () => {
+    await expect(getTransactionsPage({ requestedPage: 0 }, db)).rejects.toThrow(RangeError);
+    await expect(
+      getTransactionsPage({ requestedPage: Number.MAX_SAFE_INTEGER + 1 }, db),
+    ).rejects.toThrow(RangeError);
+  });
+
   it("searches descriptions case-insensitively with literal wildcards", async () => {
-    const search = await getTransactionsPage({ q: "corner market", limit: 10, offset: 0 }, db);
+    const search = await getTransactionsPage({ q: "corner market", requestedPage: 1 }, db);
     expect(search.totalCount).toBe(1);
     expect(search.items[0]?.description).toBe("CORNER MARKET 100% JUICE");
     // literal % and _ must not act as wildcards
-    const percent = await getTransactionsPage({ q: "100%", limit: 10, offset: 0 }, db);
+    const percent = await getTransactionsPage({ q: "100%", requestedPage: 1 }, db);
     expect(percent.totalCount).toBe(1);
-    const underscore = await getTransactionsPage({ q: "under_score", limit: 10, offset: 0 }, db);
+    const underscore = await getTransactionsPage({ q: "under_score", requestedPage: 1 }, db);
     expect(underscore.totalCount).toBe(1);
-    const noWildcard = await getTransactionsPage({ q: "under.score", limit: 10, offset: 0 }, db);
+    const noWildcard = await getTransactionsPage({ q: "under.score", requestedPage: 1 }, db);
     expect(noWildcard.totalCount).toBe(0);
   });
 
   it("filters by account, category (incl. uncategorized), and month; filters AND together", async () => {
-    const byAccount = await getTransactionsPage({ accountId: accountB, limit: 10, offset: 0 }, db);
+    const byAccount = await getTransactionsPage({ accountId: accountB, requestedPage: 1 }, db);
     expect(byAccount.totalCount).toBe(1);
 
     const uncategorized = await getTransactionsPage(
-      { categoryId: null, month: "2026-06", limit: 10, offset: 0 },
+      { categoryId: null, month: "2026-06", requestedPage: 1 },
       db,
     );
     expect(uncategorized.totalCount).toBe(1);
     expect(uncategorized.items[0]?.description).toBe("under_score merchant");
 
-    const may = await getTransactionsPage({ month: "2026-05", limit: 100, offset: 0 }, db);
+    const may = await getTransactionsPage({ month: "2026-05", requestedPage: 1 }, db);
     expect(may.totalCount).toBe(60);
 
     const combined = await getTransactionsPage(
-      { q: "BULK", accountId: accountA, month: "2026-06", limit: 10, offset: 0 },
+      { q: "BULK", accountId: accountA, month: "2026-06", requestedPage: 1 },
       db,
     );
     expect(combined.totalCount).toBe(0);
@@ -189,29 +378,43 @@ describe("transaction splits service (integration, temp DB)", () => {
 
   beforeEach(async () => {
     db = ctx.db;
-    accountId = (await createAccount({ name: "SplitAcct", type: "CHECKING" }, db)).id;
-    catA = (await createCategory({ name: "CatA", color: null, keywords: [], excludeFromSpending: false }, db)).id;
-    catB = (await createCategory({ name: "CatB", color: null, keywords: [], excludeFromSpending: false }, db)).id;
+    accountId = (await mustCreateAccount({ name: "SplitAcct", type: "CHECKING", currency: "USD" }, db)).id;
+    catA = (await mustCreateCategory({ name: "CatA", color: null, keywords: [], excludeFromSpending: false, monthlyBudgetCents: 6000 }, db)).id;
+    catB = (await mustCreateCategory({ name: "CatB", color: null, keywords: [], excludeFromSpending: false }, db)).id;
     txId = (
-      await createTransaction(
+      await mustCreateTransaction(
         { accountId, categoryId: null, date: "2026-06-10", description: "SPLIT ME", amountCents: -10000 },
         db,
       )
     ).id;
   });
 
+  it("reports clearing an already-unsplit transaction as unchanged", async () => {
+    await expect(replaceSplits(txId, [], db)).resolves.toEqual({ status: "unchanged" });
+    await expect(getSplitsForTransaction(txId, db)).resolves.toEqual([]);
+  });
+
   it("replaceSplits persists parts that getSplitsForTransaction reads back", async () => {
-    await replaceSplits(
+    expect(await replaceSplits(
       txId,
       [
         { categoryId: catA, amountCents: -6000 },
         { categoryId: catB, amountCents: -4000 },
       ],
       db,
-    );
+    )).toEqual({ status: "updated" });
     const splits = await getSplitsForTransaction(txId, db);
     expect(splits).toHaveLength(2);
     expect(splits.reduce((a, s) => a + s.amountCents, 0)).toBe(-10000);
+  });
+
+  it("persists exactly the bounded maximum number of split parts", async () => {
+    const parts = Array.from({ length: MAX_SPLIT_PARTS }, () => ({
+      categoryId: catA,
+      amountCents: -40,
+    }));
+    expect(await replaceSplits(txId, parts, db)).toEqual({ status: "updated" });
+    expect(await getSplitsForTransaction(txId, db)).toHaveLength(MAX_SPLIT_PARTS);
   });
 
   it("flags the row as split in the transaction list", async () => {
@@ -223,11 +426,15 @@ describe("transaction splits service (integration, temp DB)", () => {
       ],
       db,
     );
-    const { items } = await getTransactionsPage({ q: "SPLIT ME", limit: 10, offset: 0 }, db);
+    const { items } = await getTransactionsPage({ q: "SPLIT ME", requestedPage: 1 }, db);
     expect(items[0]?.isSplit).toBe(true);
   });
 
   it("replaceSplits replaces rather than appends; empty parts clear the split", async () => {
+    await expect(setTransactionCategory(txId, catA, db)).resolves.toEqual({
+      status: "updated",
+      id: txId,
+    });
     await replaceSplits(
       txId,
       [
@@ -236,12 +443,324 @@ describe("transaction splits service (integration, temp DB)", () => {
       ],
       db,
     );
-    await replaceSplits(txId, [{ categoryId: catA, amountCents: -10000 }], db);
-    expect(await getSplitsForTransaction(txId, db)).toHaveLength(1); // replaced, not 3
+    await replaceSplits(
+      txId,
+      [
+        { categoryId: catA, amountCents: -7000 },
+        { categoryId: catB, amountCents: -3000 },
+      ],
+      db,
+    );
+    expect(
+      (await getSplitsForTransaction(txId, db))
+        .map((part) => part.amountCents)
+        .sort((left, right) => left - right),
+    ).toEqual([-7000, -3000]);
     await replaceSplits(txId, [], db);
     expect(await getSplitsForTransaction(txId, db)).toHaveLength(0);
-    const { items } = await getTransactionsPage({ q: "SPLIT ME", limit: 10, offset: 0 }, db);
+    const { items } = await getTransactionsPage({ q: "SPLIT ME", requestedPage: 1 }, db);
     expect(items[0]?.isSplit).toBe(false);
+    expect(items[0]?.categoryId).toBe(catA);
+  });
+
+  it("supports positive split totals", async () => {
+    const income = await mustCreateTransaction(
+      {
+        accountId,
+        categoryId: null,
+        date: "2026-06-11",
+        description: "SPLIT INCOME",
+        amountCents: 10000,
+      },
+      db,
+    );
+    await expect(
+      replaceSplits(
+        income.id,
+        [
+          { categoryId: catA, amountCents: 6000 },
+          { categoryId: catB, amountCents: 4000 },
+        ],
+        db,
+      ),
+    ).resolves.toEqual({ status: "updated" });
+  });
+
+  it("rejects invalid parts and unknown references without replacing existing parts", async () => {
+    expect(
+      await replaceSplits(
+        txId,
+        [
+          { categoryId: catA, amountCents: -6000 },
+          { categoryId: catB, amountCents: -4000 },
+        ],
+        db,
+      ),
+    ).toEqual({ status: "updated" });
+    const before = await getSplitsForTransaction(txId, db);
+
+    await expect(
+      replaceSplits(
+        txId,
+        [{ categoryId: catA, amountCents: Number.MAX_SAFE_INTEGER + 1 }],
+        db,
+      ),
+    ).resolves.toMatchObject({ status: "invalid-input", field: "amountCents" });
+    await expect(
+      replaceSplits(
+        txId,
+        Array.from({ length: MAX_SPLIT_PARTS + 1 }, () => ({
+          categoryId: catA,
+          amountCents: -1,
+        })),
+        db,
+      ),
+    ).resolves.toMatchObject({ status: "invalid-input", field: "parts" });
+    await expect(
+      replaceSplits(txId, [{ categoryId: catA, amountCents: -10000 }], db),
+    ).resolves.toMatchObject({ status: "invalid-input", field: "parts" });
+    await expect(
+      replaceSplits(
+        txId,
+        [
+          { categoryId: catA, amountCents: -10000 },
+          { categoryId: catB, amountCents: 0 },
+        ],
+        db,
+      ),
+    ).resolves.toMatchObject({ status: "invalid-input", field: "amountCents" });
+    await expect(
+      replaceSplits(
+        txId,
+        [
+          { categoryId: catA, amountCents: Number.MAX_SAFE_INTEGER },
+          { categoryId: catB, amountCents: 1 },
+        ],
+        db,
+      ),
+    ).resolves.toMatchObject({ status: "invalid-input", field: "parts" });
+    await expect(
+      replaceSplits(
+        txId,
+        [
+          { categoryId: catA, amountCents: -5000 },
+          { categoryId: catB, amountCents: -4000 },
+        ],
+        db,
+      ),
+    ).resolves.toEqual({
+      status: "split-total-mismatch",
+      parentAmountCents: -10000,
+      splitTotalCents: -9000,
+    });
+    await expect(
+      replaceSplits(
+        txId,
+        [
+          { categoryId: "missing-category", amountCents: -6000 },
+          { categoryId: catB, amountCents: -4000 },
+        ],
+        db,
+      ),
+    ).resolves.toEqual({ status: "unknown-category" });
+    await expect(
+      replaceSplits(
+        "missing-transaction",
+        [
+          { categoryId: catA, amountCents: -6000 },
+          { categoryId: catB, amountCents: -4000 },
+        ],
+        db,
+      ),
+    ).resolves.toEqual({ status: "not-found" });
+    expect(await getSplitsForTransaction(txId, db)).toEqual(before);
+  });
+
+  it("rolls back the delete when a replacement insert fails", async () => {
+    await replaceSplits(
+      txId,
+      [
+        { categoryId: catA, amountCents: -6000 },
+        { categoryId: catB, amountCents: -4000 },
+      ],
+      db,
+    );
+    const before = await getSplitsForTransaction(txId, db);
+    db.run(sql.raw(`
+      create trigger synthetic_split_insert_failure
+      before insert on transaction_splits
+      begin
+        select raise(abort, 'synthetic split insert failure');
+      end
+    `));
+
+    await expect(
+      replaceSplits(
+        txId,
+        [
+          { categoryId: catA, amountCents: -7000 },
+          { categoryId: catB, amountCents: -3000 },
+        ],
+        db,
+      ),
+    ).rejects.toThrow("synthetic split insert failure");
+    expect(await getSplitsForTransaction(txId, db)).toEqual(before);
+  });
+
+  it("allows metadata edits on a valid split, blocks amount edits, and preserves provenance", async () => {
+    await db.insert(importBatches).values({
+      id: "batch-1",
+      accountId,
+      filename: "synthetic.csv",
+      importedCount: 1,
+      skippedCount: 0,
+    });
+    await db
+      .update(transactions)
+      .set({ importHash: "synthetic-import-hash", batchId: "batch-1" })
+      .where(eq(transactions.id, txId));
+    await replaceSplits(
+      txId,
+      [
+        { categoryId: catA, amountCents: -6000 },
+        { categoryId: catB, amountCents: -4000 },
+      ],
+      db,
+    );
+    const beforeParts = await getSplitsForTransaction(txId, db);
+
+    await expect(
+      updateTransaction(
+        txId,
+        {
+          accountId,
+          categoryId: null,
+          date: "2026-06-10",
+          description: "AMOUNT EDIT REFUSED",
+          amountCents: -12000,
+        },
+        db,
+      ),
+    ).resolves.toEqual({
+      status: "split-amount-conflict",
+      currentAmountCents: -10000,
+      splitTotalCents: -10000,
+    });
+
+    const secondAccount = await mustCreateAccount(
+      { name: "SplitAcct2", type: "CHECKING", currency: "USD" },
+      db,
+    );
+    await expect(
+      updateTransaction(
+        txId,
+        {
+          accountId: secondAccount.id,
+          categoryId: catA,
+          date: "2026-06-12",
+          description: "METADATA EDITED",
+          amountCents: -10000,
+        },
+        db,
+      ),
+    ).resolves.toEqual({ status: "updated", id: txId });
+
+    expect(await getTransactionById(txId, db)).toMatchObject({
+      accountId: secondAccount.id,
+      categoryId: catA,
+      date: "2026-06-12",
+      description: "METADATA EDITED",
+      amountCents: -10000,
+      importHash: "synthetic-import-hash",
+      batchId: "batch-1",
+    });
+    expect(await getSplitsForTransaction(txId, db)).toEqual(beforeParts);
+  });
+
+  it("reports historical mismatches and blocks every ordinary parent edit", async () => {
+    await db.insert(transactions).values({
+      id: "unsafe-split-total",
+      accountId,
+      categoryId: null,
+      date: "2026-06-09",
+      description: "UNSAFE HISTORICAL TOTAL",
+      amountCents: -1,
+    });
+    await db.insert(transactionSplits).values([
+      { transactionId: txId, categoryId: catA, amountCents: -6000 },
+      { transactionId: txId, categoryId: catB, amountCents: -3000 },
+      {
+        transactionId: "unsafe-split-total",
+        categoryId: catA,
+        amountCents: Number.MAX_SAFE_INTEGER,
+      },
+      { transactionId: "unsafe-split-total", categoryId: catB, amountCents: 1 },
+    ]);
+    const beforeParent = await getTransactionById(txId, db);
+    const beforeParts = await getSplitsForTransaction(txId, db);
+
+    await expect(getSplitMismatches(db)).resolves.toContainEqual({
+      transactionId: txId,
+      parentAmountCents: -10000,
+      splitTotalCents: -9000,
+    });
+    await expect(getSplitMismatches(db)).resolves.toContainEqual({
+      transactionId: "unsafe-split-total",
+      parentAmountCents: -1,
+      splitTotalCents: null,
+    });
+    await expect(
+      updateTransaction(
+        txId,
+        {
+          accountId,
+          categoryId: catA,
+          date: "2026-06-20",
+          description: "MUST NOT CHANGE",
+          amountCents: -10000,
+        },
+        db,
+      ),
+    ).resolves.toEqual({
+      status: "existing-split-mismatch",
+      parentAmountCents: -10000,
+      splitTotalCents: -9000,
+    });
+    await expect(setTransactionCategory(txId, catA, db)).resolves.toEqual({
+      status: "existing-split-mismatch",
+      parentAmountCents: -10000,
+      splitTotalCents: -9000,
+    });
+    expect(await getTransactionById(txId, db)).toEqual(beforeParent);
+    expect(await getSplitsForTransaction(txId, db)).toEqual(beforeParts);
+  });
+
+  it("keeps balances, spending, budgets, and trends aligned after permitted mutations", async () => {
+    await replaceSplits(
+      txId,
+      [
+        { categoryId: catA, amountCents: -6000 },
+        { categoryId: catB, amountCents: -4000 },
+      ],
+      db,
+    );
+    expect((await getAccountsWithBalances(db)).find((row) => row.id === accountId)?.balanceCents)
+      .toBe(-10000);
+    await expect(getMonthlySummary("2026-06", db)).resolves.toMatchObject({
+      spendingCents: 10000,
+    });
+    expect((await getBudgetVsActual("2026-06", db)).find((row) => row.categoryId === catA))
+      .toMatchObject({ spentCents: 6000 });
+    await expect(getSpendingTrend("2026-06", 1, db)).resolves.toEqual([
+      { month: "2026-06", incomeCents: 0, spendingCents: 10000 },
+    ]);
+
+    await expect(replaceSplits(txId, [], db)).resolves.toEqual({ status: "updated" });
+    await expect(getMonthlySummary("2026-06", db)).resolves.toMatchObject({
+      spendingCents: 10000,
+    });
+    expect((await getBudgetVsActual("2026-06", db)).find((row) => row.categoryId === catA))
+      .toMatchObject({ spentCents: 0 });
   });
 
   it("deleting the transaction cascades to its splits", async () => {
@@ -259,5 +778,115 @@ describe("transaction splits service (integration, temp DB)", () => {
       .from(transactionSplits)
       .where(eq(transactionSplits.transactionId, txId));
     expect(remaining).toHaveLength(0);
+  });
+});
+
+describe("split writes across two real SQLite connections", () => {
+  it("serializes competing parent and split writes without committing a mismatch", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "finance-split-race-"));
+    const file = path.join(dir, "race.db");
+    const first = createTestDb(file);
+    const second = createTestDb(file);
+    first.sqlite.pragma("busy_timeout = 0");
+    second.sqlite.pragma("busy_timeout = 0");
+
+    try {
+      const account = await mustCreateAccount(
+        { name: "Race Account", type: "CHECKING", currency: "USD" },
+        first.db,
+      );
+      const categoryA = await mustCreateCategory(
+        { name: "Race A", color: null, keywords: [], excludeFromSpending: false },
+        first.db,
+      );
+      const categoryB = await mustCreateCategory(
+        { name: "Race B", color: null, keywords: [], excludeFromSpending: false },
+        first.db,
+      );
+      const parts = [
+        { categoryId: categoryA.id, amountCents: -6000 },
+        { categoryId: categoryB.id, amountCents: -4000 },
+      ];
+
+      const updateWins = await mustCreateTransaction(
+        {
+          accountId: account.id,
+          categoryId: null,
+          date: "2026-06-20",
+          description: "UPDATE WINS",
+          amountCents: -10000,
+        },
+        first.db,
+      );
+      let updateWinner: ReturnType<typeof updateTransaction> | undefined;
+      let splitLoser: ReturnType<typeof replaceSplits> | undefined;
+      first.db.transaction(
+        (tx) => {
+          updateWinner = updateTransaction(
+            updateWins.id,
+            { ...updateWins, description: "UPDATE WON", amountCents: -12000 },
+            tx,
+          );
+          splitLoser = replaceSplits(updateWins.id, parts, second.db);
+        },
+        { behavior: "immediate" },
+      );
+      if (!updateWinner || !splitLoser) throw new Error("race schedule did not execute");
+      await expect(updateWinner).resolves.toEqual({ status: "updated", id: updateWins.id });
+      await expect(splitLoser).rejects.toMatchObject({ code: "SQLITE_BUSY" });
+      await expect(replaceSplits(updateWins.id, parts, second.db)).resolves.toEqual({
+        status: "split-total-mismatch",
+        parentAmountCents: -12000,
+        splitTotalCents: -10000,
+      });
+      expect(await getSplitsForTransaction(updateWins.id, first.db)).toHaveLength(0);
+      expect((await getTransactionById(updateWins.id, first.db))?.amountCents).toBe(-12000);
+
+      const splitWins = await mustCreateTransaction(
+        {
+          accountId: account.id,
+          categoryId: null,
+          date: "2026-06-21",
+          description: "SPLIT WINS",
+          amountCents: -10000,
+        },
+        first.db,
+      );
+      let splitWinner: ReturnType<typeof replaceSplits> | undefined;
+      let updateLoser: ReturnType<typeof updateTransaction> | undefined;
+      first.db.transaction(
+        (tx) => {
+          splitWinner = replaceSplits(splitWins.id, parts, tx);
+          updateLoser = updateTransaction(
+            splitWins.id,
+            { ...splitWins, description: "UPDATE LOST", amountCents: -12000 },
+            second.db,
+          );
+        },
+        { behavior: "immediate" },
+      );
+      if (!splitWinner || !updateLoser) throw new Error("reverse race schedule did not execute");
+      await expect(splitWinner).resolves.toEqual({ status: "updated" });
+      await expect(updateLoser).rejects.toMatchObject({ code: "SQLITE_BUSY" });
+      await expect(
+        updateTransaction(
+          splitWins.id,
+          { ...splitWins, description: "RETRY", amountCents: -12000 },
+          second.db,
+        ),
+      ).resolves.toEqual({
+        status: "split-amount-conflict",
+        currentAmountCents: -10000,
+        splitTotalCents: -10000,
+      });
+      const finalParent = await getTransactionById(splitWins.id, first.db);
+      const finalParts = await getSplitsForTransaction(splitWins.id, first.db);
+      expect(finalParent?.amountCents).toBe(-10000);
+      expect(finalParts.reduce((total, part) => total + part.amountCents, 0)).toBe(-10000);
+    } finally {
+      second.sqlite.close();
+      first.sqlite.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

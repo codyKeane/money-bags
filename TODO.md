@@ -36,8 +36,9 @@ autofocus-on-open, formatted dates, StatCard link affordance, category color dot
   category form input + dashboard progress with over-budget `--delta-bad`.
 - **F2 CSV export** — `GET /api/export` + pure `transactionsToCsv`, footer link.
 - **F3 Import robustness** — `columnMap` via route JSON / CLI `--col-*` / an
-  Advanced UI; single file-level error for missing columns; ambiguous-date
-  warnings surfaced everywhere.
+  Advanced UI; single file-level error for missing columns. WP-06 later made
+  maps strict and replaced ambiguous-date warnings/partial imports with
+  whole-file preflight refusal.
 - **F4 Error handling** — root `error.tsx`; JSON errors + Content-Length
   pre-check on `/api/import`; `getCategoryById` guard in `recategorizeAction`.
 - **F5** account → `/transactions?account=` links · **F6** dangling filter-param
@@ -51,7 +52,8 @@ autofocus-on-open, formatted dates, StatCard link affordance, category color dot
   and a nullable `transactions.batch_id` (FK `set null`). `importStatement`
   records one batch per import that inserts ≥1 row (all-duplicate imports record
   nothing), stamps `batchId` on every inserted row, and returns it; `filename`
-  flows in from the UI upload and the CLI (`basename`). New services
+  flows in from the UI upload and CLI through one cross-platform display-name
+  normalizer. New services
   `getRecentImportBatches` + `undoImport` (two-step delete: rows first, then the
   batch — manual rows are untouched). `undoImportAction` re-verifies the batch
   server-side. `/import` now shows a "Recent imports" table with per-row Undo.
@@ -81,8 +83,10 @@ autofocus-on-open, formatted dates, StatCard link affordance, category color dot
 - **SP1 Transaction splitting** — `transaction_splits` table (migration 0004,
   FK cascade on the transaction / set-null on the category). A transaction with
   ≥1 splits is categorized by its parts, not its own `categoryId`; the parts must
-  sum to the transaction amount (`splitTransactionAction` enforces it
-  server-side). New `spendingLineItems()` UNION abstraction in `summary.ts` makes
+  sum to the transaction amount (`replaceSplits` enforces the complete invariant
+  inside an immediate service transaction). Parent amount edits and historical
+  mismatches are refused without changing rows; explicit repair/clear remains.
+  New `spendingLineItems()` UNION abstraction in `summary.ts` makes
   **all four** spending aggregates (by-category, budget-vs-actual, monthly
   summary, trend) split-aware — an excluded split part drops out on its own.
   Services `getSplitsForTransaction`/`replaceSplits`; `clearSplitsAction` reverts.
@@ -99,9 +103,11 @@ autofocus-on-open, formatted dates, StatCard link affordance, category color dot
   create succeeds (add-transaction, account, category, import's inline account).
 - **UX9 styled deletes** — `ConfirmButton` (`ui/confirm-button.tsx`) replaces
   all `window.confirm`: the trigger arms in place to a danger Confirm + Cancel
-  pair (full context in a `title` tooltip). Used by delete-transaction,
-  delete-category, and import-undo. Account delete keeps its type-the-name flow,
-  now danger-toned.
+  pair with the full consequence visible. Confirm receives focus; Cancel/Escape
+  restores the trigger; refusal stays actionable; success focuses a stable
+  surviving page control. Used by delete-transaction, delete-category, and
+  import-undo. Account delete keeps its labeled, server-verified type-the-name
+  flow with the same cancellation/success focus contract.
 - **UX10 inflow/outflow color** — "calm ledger": the amount column tints only
   income `--delta-good` (beside the signed number, color never alone); outflows
   stay default ink so `--delta-bad` stays reserved for danger. Delta tokens
@@ -128,13 +134,19 @@ autofocus-on-open, formatted dates, StatCard link affordance, category color dot
   controlled and shows a `ColorDot` that tracks the live selection (color rides
   along on `CategoryOption`).
 
-## Audit-remediation program — ACTIVE
+## Audit-remediation program — IMPLEMENTED; RELEASE GATES PENDING
 
 `IMPLEMENTATION_GUIDE.md` is the authoritative dependency-ordered delivery
 plan for current correctness, privacy, and operational work. WP-00 and
-WP-01A/B/C completed on 2026-07-13; WP-12A completed on 2026-07-14; WP-01D
-and WP-12B completed on 2026-07-15. The next slice is WP-02A; do not skip to
-WP-02B or the decision-gated transfer/refund/deduplication RFCs.
+WP-01A/B/C completed on 2026-07-13; WP-12A completed on 2026-07-14; WP-01D,
+WP-12B, WP-02A/B, WP-03, WP-06, WP-07, WP-08, WP-09, WP-10, WP-11, WP-04, and
+WP-05, WP-14A/B/C, WP-15, WP-16A, WP-13A, and WP-16B completed on 2026-07-15.
+WP-17 and WP-18 are implemented in the current worktree. This is not a production
+release: the real-browser/screen-reader matrix remains an explicit manual gate
+because no assistive-technology runtime was available in the implementation
+environment, and the operator-owned real-host service checks remain pending. Do
+not proceed to automated restore or the decision-gated
+transfer/refund/deduplication RFCs without a separate decision and scope.
 
 The product backlog below is retained as historical product context. Its rank
 does not override the guide, and an unchecked item is not implementation
@@ -172,9 +184,10 @@ pre-commit task is retained only by this resolution note, not as live work.
   Decide the policy before implementing netting.
 
 ### P2 — high-value functionality gaps (value-per-effort order)
-- [ ] **Uncategorized count on the dashboard (S)** — best value/effort. Absent
-  from `app/page.tsx`; surface a count linking to `/transactions` filtered to
-  uncategorized so the data-quality gap is visible.
+- [x] ~~Uncategorized count on the dashboard (S)~~ — the dashboard now shows a
+  decision-free data-quality reminder when active uncategorized transactions
+  exist and links to the canonical Uncategorized transaction filter. Split
+  transactions count once when any active split part is blank.
 - [ ] **Per-transaction exclude-from-spending override (M).** Exclusion is
   category-only today (`countsTowardSpending`, `summary.ts`); add a row-level
   flag wired into `spendingLineItems`.
@@ -189,6 +202,14 @@ pre-commit task is retained only by this resolution note, not as live work.
   date, so net-worth-over-time can't place it on the timeline.
 
 ### Shipped (kept for history)
+- [x] ~~Truthful and spreadsheet-safe transaction export~~ — WP-10. The exact
+  five-column compatibility endpoint remains available, while the UI uses a
+  streamed currency-explicit detailed format with deterministic split details,
+  snapshot/keyset paging, active-category filters, and export-only formula
+  protection.
+- [x] ~~Fail-closed one-time demo initializer~~ — WP-03. Requires an existing
+  current schema, atomically accepts only empty/default-only targets, never
+  updates existing rows, and refuses repeat/custom targets without a force flag.
 - [x] ~~Transaction splitting across categories~~ — SP1, migration 0004.
 - [x] ~~Import batch id + undo-an-import~~ — U1, migration 0003.
 
@@ -203,6 +224,5 @@ pre-commit task is retained only by this resolution note, not as live work.
 Recurring-transaction auto-detection, OFX/QIF, multi-currency conversion,
 Docker, auth, double-entry ledger, chart accessibility layer, month jump
 picker, pagination page numbers, bulk recategorize, analytics round 2
-(per-category trend, net-worth-over-time). The `db:seed` real-data guard is no
-longer deferred; it is selected remediation work in WP-03 after WP-02A and
-WP-12A.
+(per-category trend, net-worth-over-time). The `db:seed` real-data guard shipped
+in WP-03 and is recorded above.

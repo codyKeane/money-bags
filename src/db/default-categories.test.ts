@@ -1,5 +1,5 @@
 import { eq, sql } from "drizzle-orm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type Db } from "./client";
 import { setupTestDbPerTest } from "@/test/test-db";
 import { categories } from "./schema";
@@ -24,11 +24,50 @@ describe("ensureDefaultCategories", () => {
     ensureDefaultCategories(db);
     expect(await count()).toBe(DEFAULT_CATEGORIES.length);
     const rows = await db.select().from(categories);
-    for (const row of rows) {
-      expect(Array.isArray(parseKeywords(row.keywords))).toBe(true);
-    }
-    const transfers = rows.find((r) => r.name === "Transfers");
-    expect(transfers?.excludeFromSpending).toBe(true);
+    expect(
+      rows
+        .map((row) => ({
+          name: row.name,
+          color: row.color,
+          keywords: parseKeywords(row.keywords),
+          excludeFromSpending: row.excludeFromSpending,
+          monthlyBudgetCents: row.monthlyBudgetCents,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    ).toEqual(
+      DEFAULT_CATEGORIES.map((def) => ({
+        name: def.name,
+        color: def.color,
+        keywords: [...def.keywords],
+        excludeFromSpending: def.excludeFromSpending ?? false,
+        monthlyBudgetCents: null,
+      })).sort((a, b) => a.name.localeCompare(b.name)),
+    );
+  });
+
+  it("uses the installed immediate transaction API", () => {
+    const transaction = vi.spyOn(db, "transaction");
+    ensureDefaultCategories(db);
+    expect(transaction).toHaveBeenCalledOnce();
+    expect(transaction.mock.calls[0]?.[1]).toEqual({ behavior: "immediate" });
+  });
+
+  it("rolls back a failed fifth insert and installs all defaults on retry", async () => {
+    db.run(sql.raw(`
+      CREATE TRIGGER abort_fifth_default
+      BEFORE INSERT ON categories
+      WHEN (SELECT count(*) FROM categories) = 4
+      BEGIN
+        SELECT RAISE(ABORT, 'synthetic default-category failure');
+      END
+    `));
+
+    expect(() => ensureDefaultCategories(db)).toThrow("synthetic default-category failure");
+    expect(await count()).toBe(0);
+
+    db.run(sql.raw("DROP TRIGGER abort_fifth_default"));
+    ensureDefaultCategories(db);
+    expect(await count()).toBe(DEFAULT_CATEGORIES.length);
   });
 
   it("is a no-op when categories already exist", async () => {
@@ -51,5 +90,33 @@ describe("ensureDefaultCategories", () => {
       .from(categories)
       .where(eq(categories.name, "Groceries"));
     expect(parseKeywords(groceries?.keywords ?? "[]")).toEqual(["custom"]);
+  });
+
+  it("leaves a historically partial category table exactly unchanged", async () => {
+    db.insert(categories)
+      .values({
+        id: "historical-category",
+        name: "Historical custom category",
+        color: "#123456",
+        keywords: JSON.stringify(["custom"]),
+        excludeFromSpending: true,
+        monthlyBudgetCents: 12345,
+        createdAt: 123456789,
+      })
+      .run();
+    const before = await db.select().from(categories);
+
+    ensureDefaultCategories(db);
+
+    expect(await db.select().from(categories)).toEqual(before);
+  });
+
+  it("reinstalls the full defaults after the table becomes completely empty", async () => {
+    ensureDefaultCategories(db);
+    await db.delete(categories);
+
+    ensureDefaultCategories(db);
+
+    expect(await count()).toBe(DEFAULT_CATEGORIES.length);
   });
 });

@@ -2,20 +2,26 @@
 
 import { z } from "zod";
 import { ACCOUNT_TYPES } from "@/lib/account-types";
-import { parseAmountToCents } from "@/lib/csv/parse-statement";
+import { decimalTextToCents } from "@/lib/money";
+import { revalidateAfterMutation } from "@/server/revalidation";
+import { assertTrustedActionOrigin } from "@/server/security/trusted-origin";
 import {
   createAccount,
   deleteAccount,
   getAccountById,
-  getAccountByName,
   updateAccount,
 } from "@/server/services/accounts";
 import {
-  firstError,
+  firstFormError,
   requiredId,
-  revalidateAll,
+  serviceFormError,
+  type ActionResult,
   type CreateAccountState,
 } from "./shared";
+
+const ACCOUNT_FIELD_ALIASES = {
+  openingBalanceCents: "openingBalance",
+} as const;
 
 // Signed dollars string -> cents; empty/missing -> 0; unparseable -> null.
 const openingBalanceField = z
@@ -24,7 +30,7 @@ const openingBalanceField = z
   .transform((v, ctx) => {
     const trimmed = v.trim();
     if (!trimmed) return 0;
-    const cents = parseAmountToCents(trimmed);
+    const cents = decimalTextToCents(trimmed);
     if (cents === null) {
       ctx.addIssue({ code: "custom", message: "Invalid opening balance" });
       return z.NEVER;
@@ -41,6 +47,11 @@ const AccountSchema = z.object({
     .max(120)
     .default("")
     .transform((v) => v || null),
+  currency: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z]{3}$/, "Currency must be a three-letter code")
+    .transform((v) => v.toUpperCase()),
   openingBalance: openingBalanceField,
 });
 
@@ -49,6 +60,7 @@ function accountFormInput(formData: FormData) {
     name: formData.get("name"),
     type: formData.get("type"),
     institution: formData.get("institution") ?? "",
+    currency: formData.get("currency"),
     openingBalance: formData.get("openingBalance") ?? "",
   };
 }
@@ -57,41 +69,52 @@ export async function createAccountAction(
   _prev: CreateAccountState,
   formData: FormData,
 ): Promise<CreateAccountState> {
+  const originFailure = await assertTrustedActionOrigin();
+  if (originFailure) return originFailure;
   const parsed = AccountSchema.safeParse(accountFormInput(formData));
-  if (!parsed.success) return { ok: false, error: firstError(parsed.error) };
-  if (await getAccountByName(parsed.data.name)) {
-    return { ok: false, error: "An account with that name already exists" };
-  }
-  const account = await createAccount({
+  if (!parsed.success) return { ok: false, ...firstFormError(parsed.error) };
+  const result = await createAccount({
     name: parsed.data.name,
     type: parsed.data.type,
     institution: parsed.data.institution,
+    currency: parsed.data.currency,
     openingBalanceCents: parsed.data.openingBalance,
   });
-  revalidateAll();
-  return { ok: true, accountId: account.id };
+  if (result.status === "duplicate-name") {
+    return { ok: false, error: "An account with that name already exists", field: "name" };
+  }
+  if (result.status === "invalid-input") {
+    return { ok: false, ...serviceFormError(result, ACCOUNT_FIELD_ALIASES) };
+  }
+  revalidateAfterMutation();
+  return { ok: true, accountId: result.account.id };
 }
 
 export async function updateAccountAction(
   _prev: CreateAccountState,
   formData: FormData,
 ): Promise<CreateAccountState> {
+  const originFailure = await assertTrustedActionOrigin();
+  if (originFailure) return originFailure;
   const accountId = requiredId(formData, "accountId");
   if (!accountId) return { ok: false, error: "Missing account id" };
   const parsed = AccountSchema.safeParse(accountFormInput(formData));
-  if (!parsed.success) return { ok: false, error: firstError(parsed.error) };
-  const existing = await getAccountByName(parsed.data.name);
-  if (existing && existing.id !== accountId) {
-    return { ok: false, error: "An account with that name already exists" };
-  }
-  const updated = await updateAccount(accountId, {
+  if (!parsed.success) return { ok: false, ...firstFormError(parsed.error) };
+  const result = await updateAccount(accountId, {
     name: parsed.data.name,
     type: parsed.data.type,
     institution: parsed.data.institution,
+    currency: parsed.data.currency,
     openingBalanceCents: parsed.data.openingBalance,
   });
-  if (!updated) return { ok: false, error: "Account not found" };
-  revalidateAll();
+  if (result.status === "not-found") return { ok: false, error: "Account not found" };
+  if (result.status === "duplicate-name") {
+    return { ok: false, error: "An account with that name already exists", field: "name" };
+  }
+  if (result.status === "invalid-input") {
+    return { ok: false, ...serviceFormError(result, ACCOUNT_FIELD_ALIASES) };
+  }
+  revalidateAfterMutation();
   return { ok: true, accountId };
 }
 
@@ -100,13 +123,20 @@ export async function updateAccountAction(
 export async function deleteAccountAction(
   accountId: string,
   confirmName: string,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<ActionResult> {
+  const originFailure = await assertTrustedActionOrigin();
+  if (originFailure) return originFailure;
   const account = await getAccountById(accountId);
   if (!account) return { ok: false, error: "Account not found" };
   if (confirmName !== account.name) {
-    return { ok: false, error: "Typed name does not match the account name" };
+    return {
+      ok: false,
+      error: "Typed name does not match the account name",
+      field: "confirmName",
+    };
   }
-  await deleteAccount(accountId);
-  revalidateAll();
+  const deleted = await deleteAccount(accountId);
+  if (!deleted) return { ok: false, error: "Account not found" };
+  revalidateAfterMutation();
   return { ok: true };
 }

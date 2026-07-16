@@ -82,7 +82,18 @@ export function TransactionTable({
               <td
                 className={`px-3 py-2 text-right whitespace-nowrap tabular-nums ${amountToneClass(t.amountCents)}`}
               >
-                {formatCents(t.amountCents, t.currency)}
+                {t.currencyState.kind === "valid" && Number.isSafeInteger(t.amountCents) ? (
+                  formatCents(t.amountCents, t.currencyState.currency)
+                ) : (
+                  <span className="text-delta-bad">
+                    Unavailable
+                    {t.currencyState.kind === "invalid" ? (
+                      <Link href="/accounts" className="ml-2 underline">
+                        Repair currency
+                      </Link>
+                    ) : null}
+                  </span>
+                )}
               </td>
               {editable ? (
                 <td className="px-3 py-2 whitespace-nowrap text-right">

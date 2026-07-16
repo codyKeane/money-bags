@@ -23,7 +23,13 @@ export interface CategorySpendingDatum {
 // Nominal categories, one series: every bar wears slot-1 blue — identity is
 // already on the y-axis labels, so extra hues would just re-encode bar length.
 // One series also means no legend; the section title names it.
-export function SpendingByCategoryChart({ data }: { data: CategorySpendingDatum[] }) {
+export function SpendingByCategoryChart({
+  data,
+  currency,
+}: {
+  data: CategorySpendingDatum[];
+  currency: string;
+}) {
   const dark = useDarkMode();
   const mode = dark ? "dark" : "light";
   const series = CATEGORICAL_SLOTS[0]![mode];
@@ -44,7 +50,7 @@ export function SpendingByCategoryChart({ data }: { data: CategorySpendingDatum[
           />
           <XAxis
             type="number"
-            tickFormatter={(v: number) => formatCentsCompact(v)}
+            tickFormatter={(v: number) => formatCentsCompact(v, currency)}
             tick={{ fill: CHROME.inkMuted[mode], fontSize: 11 }}
             axisLine={{ stroke: CHROME.baseline[mode] }}
             tickLine={false}
@@ -69,7 +75,7 @@ export function SpendingByCategoryChart({ data }: { data: CategorySpendingDatum[
                     {
                       key: "spent",
                       label: "spent",
-                      value: formatCents(datum.spentCents),
+                      value: formatCents(datum.spentCents, currency),
                       color: series,
                     },
                   ]}
@@ -82,7 +88,7 @@ export function SpendingByCategoryChart({ data }: { data: CategorySpendingDatum[
             <LabelList
               dataKey="spentCents"
               position="right"
-              formatter={(v) => formatCentsCompact(Number(v))}
+              formatter={(v) => formatCentsCompact(Number(v), currency)}
               style={{ fill: CHROME.inkSecondary[mode], fontSize: 11 }}
             />
           </Bar>
@@ -101,7 +107,7 @@ export function SpendingByCategoryChart({ data }: { data: CategorySpendingDatum[
             {data.map((d) => (
               <tr key={d.name}>
                 <td className="pr-6 text-ink-2">{d.name}</td>
-                <td className="tabular-nums">{formatCents(d.spentCents)}</td>
+                <td className="tabular-nums">{formatCents(d.spentCents, currency)}</td>
               </tr>
             ))}
           </tbody>

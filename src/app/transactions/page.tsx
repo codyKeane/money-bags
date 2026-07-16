@@ -1,17 +1,23 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { AddTransactionSection } from "@/components/AddTransactionSection";
 import { ApplyRulesButton } from "@/components/ApplyRulesButton";
 import { TransactionFilters } from "@/components/TransactionFilters";
 import { TransactionTable } from "@/components/TransactionTable";
 import { getAccountOptions } from "@/server/services/accounts";
 import { getAllCategories } from "@/server/services/categories";
-import { getTransactionsPage, parseTransactionQuery } from "@/server/services/transactions";
+import {
+  getTransactionsPage,
+  parseTransactionPage,
+  parseTransactionQuery,
+  transactionPageHref,
+  transactionQuerySearchParams,
+  TRANSACTIONS_PAGE_SIZE,
+} from "@/server/services/transactions";
 
 export const dynamic = "force-dynamic";
 
 export const metadata = { title: "Transactions" };
-
-const PAGE_SIZE = 50;
 
 function first(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -25,7 +31,7 @@ export default async function TransactionsPage({
   const params = await searchParams;
   const get = (key: string) => first(params[key]);
   const query = parseTransactionQuery(get);
-  const page = Math.max(1, parseInt(get("page") ?? "1", 10) || 1);
+  const pageInput = parseTransactionPage(get("page"));
 
   // Load the option lists first so we can drop filter ids that no longer exist
   // — a deleted account/category left in the URL would otherwise show a
@@ -39,15 +45,23 @@ export default async function TransactionsPage({
       ? query.categoryId
       : undefined;
 
-  const { items, totalCount } = await getTransactionsPage({
-    ...query,
-    accountId,
-    categoryId,
-    limit: PAGE_SIZE,
-    offset: (page - 1) * PAGE_SIZE,
-  });
+  // Dead ids and invalid date/month bounds are dropped before any canonical
+  // redirect, pagination link, or export URL is built.
+  const sanitizedQuery = { ...query, accountId, categoryId };
+  const pageHref = (target: number) => transactionPageHref(sanitizedQuery, target);
+  if (pageInput.needsCanonicalRedirect) redirect(pageHref(1));
 
-  const accountOptions = accounts.map((a) => ({ id: a.id, name: a.name }));
+  const { items, totalCount, page, lastPage } = await getTransactionsPage({
+    ...sanitizedQuery,
+    requestedPage: pageInput.requestedPage,
+  });
+  if (page !== pageInput.requestedPage) redirect(pageHref(page));
+
+  const accountOptions = accounts.map((a) => ({
+    id: a.id,
+    name: a.name,
+    currencyState: a.currencyState,
+  }));
   // color rides along so the in-row CategorySelect can show a matching dot (UX18).
   const categoryOptions = categories.map((c) => ({ id: c.id, name: c.name, color: c.color }));
 
@@ -58,33 +72,11 @@ export default async function TransactionsPage({
     query.q || accountId || categoryId !== undefined || query.month || query.from || query.to,
   );
 
-  const lastPage = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
-  const rowFrom = totalCount === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
-  const rowTo = Math.min(page * PAGE_SIZE, totalCount);
-
-  // Sanitized filter params, shared by Prev/Next and the CSV export link — dead
-  // account/category ids and invalid month/date bounds are already dropped, so
-  // links stay consistent with what the page actually shows.
-  const rawCategory = get("category");
-  const filterParams = () => {
-    const sp = new URLSearchParams();
-    if (query.q) sp.set("q", query.q);
-    if (accountId) sp.set("account", accountId);
-    if (rawCategory === "uncategorized") sp.set("category", "uncategorized");
-    else if (categoryId) sp.set("category", categoryId);
-    if (query.month) sp.set("month", query.month);
-    if (query.from) sp.set("from", query.from);
-    if (query.to) sp.set("to", query.to);
-    return sp;
-  };
-  const pageHref = (target: number) => {
-    const next = filterParams();
-    if (target > 1) next.set("page", String(target));
-    const qs = next.toString();
-    return qs ? `/transactions?${qs}` : "/transactions";
-  };
-  const exportQs = filterParams().toString();
-  const exportHref = exportQs ? `/api/export?${exportQs}` : "/api/export";
+  const rowFrom = totalCount === 0 ? 0 : (page - 1) * TRANSACTIONS_PAGE_SIZE + 1;
+  const rowTo = Math.min(page * TRANSACTIONS_PAGE_SIZE, totalCount);
+  const exportParams = transactionQuerySearchParams(sanitizedQuery);
+  exportParams.set("format", "detailed");
+  const exportHref = `/api/export?${exportParams.toString()}`;
 
   return (
     <div className="flex flex-col gap-4">
@@ -99,7 +91,10 @@ export default async function TransactionsPage({
       </div>
 
       <AddTransactionSection accounts={accountOptions} categories={categoryOptions} />
-      <TransactionFilters accounts={accountOptions} categories={categoryOptions} />
+      <TransactionFilters
+        accounts={accountOptions.map(({ id, name }) => ({ id, name }))}
+        categories={categoryOptions}
+      />
 
       {items.length === 0 ? (
         <div

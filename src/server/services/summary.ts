@@ -3,6 +3,21 @@ import { unionAll } from "drizzle-orm/sqlite-core";
 import { getDb, type Db } from "@/db/client";
 import { categories, transactions, transactionSplits } from "@/db/schema";
 import { addMonths, monthRange, monthStart } from "@/lib/month";
+import type { CurrencyState } from "@/lib/currency";
+import type { NetWorthOverview } from "./accounts";
+
+export class UnsafeFinancialAggregateError extends RangeError {
+  constructor(label: string) {
+    super(`${label} is outside the exact supported cents range`);
+    this.name = "UnsafeFinancialAggregateError";
+  }
+}
+
+function assertSafeAggregate(label: string, ...values: number[]): void {
+  if (values.some((value) => !Number.isSafeInteger(value))) {
+    throw new UnsafeFinancialAggregateError(label);
+  }
+}
 
 // Spending "line items" — the split-aware unit every spending aggregate reads.
 // A transaction WITH splits contributes one line per split (its own categoryId
@@ -63,7 +78,7 @@ export async function getMonthlySpendingByCategory(
 ): Promise<CategorySpending[]> {
   const { start, endExclusive } = monthRange(month);
   const li = spendingLineItems(db, start, endExclusive);
-  return db
+  const rows = await db
     .select({
       categoryId: li.categoryId,
       categoryName: categories.name,
@@ -75,6 +90,8 @@ export async function getMonthlySpendingByCategory(
     .where(and(lt(li.amountCents, 0), countsTowardSpending(li)))
     .groupBy(li.categoryId)
     .orderBy(sql`sum(${li.amountCents})`); // biggest spend first
+  for (const row of rows) assertSafeAggregate("category spending", row.spentCents);
+  return rows;
 }
 
 export interface BudgetVsActual {
@@ -87,12 +104,12 @@ export interface BudgetVsActual {
   overBudget: boolean;
 }
 
-// Every category that has a monthlyBudgetCents set, paired with its actual
-// outflow for the month. LEFT JOIN so a budgeted category with zero spend still
-// appears; the negative-only filter lives INSIDE the aggregate (not WHERE) so
-// it can't drop those zero-spend rows. Refunds (positive amounts) don't reduce
-// the number. Spend counts split parts assigned to the category, mirroring
-// getMonthlySpendingByCategory.
+// Every included category that has a monthlyBudgetCents set, paired with its
+// actual outflow for the month. LEFT JOIN so a budgeted category with zero spend
+// still appears; the negative-only filter lives INSIDE the aggregate (not WHERE)
+// so it can't drop those zero-spend rows. Refunds (positive amounts) don't
+// reduce the number. Spend counts split parts assigned to the category,
+// mirroring getMonthlySpendingByCategory.
 export async function getBudgetVsActual(
   month: string,
   db: Db = getDb(),
@@ -109,19 +126,27 @@ export async function getBudgetVsActual(
     })
     .from(categories)
     .leftJoin(li, eq(li.categoryId, categories.id))
-    .where(isNotNull(categories.monthlyBudgetCents))
+    .where(
+      and(
+        isNotNull(categories.monthlyBudgetCents),
+        eq(categories.excludeFromSpending, false),
+      ),
+    )
     .groupBy(categories.id)
     .orderBy(categories.name);
 
   return rows.map((r) => {
     const budgetCents = r.budgetCents ?? 0;
+    assertSafeAggregate("budget progress", budgetCents, r.spentCents);
+    const remainingCents = budgetCents - r.spentCents;
+    assertSafeAggregate("budget progress", remainingCents);
     return {
       categoryId: r.categoryId,
       categoryName: r.categoryName,
       color: r.color,
       budgetCents,
       spentCents: r.spentCents,
-      remainingCents: budgetCents - r.spentCents,
+      remainingCents,
       overBudget: r.spentCents > budgetCents,
     };
   });
@@ -143,7 +168,9 @@ export async function getMonthlySummary(month: string, db: Db = getDb()): Promis
     .from(li)
     .leftJoin(categories, eq(li.categoryId, categories.id))
     .where(countsTowardSpending(li));
-  return row ?? { incomeCents: 0, spendingCents: 0 };
+  const summary = row ?? { incomeCents: 0, spendingCents: 0 };
+  assertSafeAggregate("monthly summary", summary.incomeCents, summary.spendingCents);
+  return summary;
 }
 
 export interface TrendPoint {
@@ -181,10 +208,108 @@ export async function getSpendingTrend(
     .orderBy(monthOf);
 
   const byMonth = new Map(rows.map((r) => [r.month, r]));
+  for (const row of rows) {
+    assertSafeAggregate("spending trend", row.incomeCents, row.spendingCents);
+  }
   const points: TrendPoint[] = [];
   for (let i = 0; i < months; i++) {
     const month = addMonths(startMonth, i);
     points.push(byMonth.get(month) ?? { month, incomeCents: 0, spendingCents: 0 });
   }
   return points;
+}
+
+type SingleCurrencyState = Extract<CurrencyState, { kind: "single" }>;
+type UnavailableSummary = { incomeCents: null; spendingCents: null };
+
+export type MonthlySpendingOverview =
+  | {
+      currencyState: SingleCurrencyState;
+      aggregateState: { kind: "ready" };
+      summary: MonthlySummary;
+      byCategory: CategorySpending[];
+    }
+  | {
+      currencyState: CurrencyState;
+      aggregateState: { kind: "unavailable" } | { kind: "unsafe" };
+      summary: UnavailableSummary;
+      byCategory: [];
+    };
+
+export async function getMonthlySpendingOverview(
+  month: string,
+  netWorth: NetWorthOverview,
+  db: Db = getDb(),
+): Promise<MonthlySpendingOverview> {
+  if (netWorth.aggregateState.kind !== "ready") {
+    return {
+      currencyState: netWorth.currencyState,
+      aggregateState: netWorth.aggregateState,
+      summary: { incomeCents: null, spendingCents: null },
+      byCategory: [],
+    };
+  }
+  if (netWorth.currencyState.kind !== "single") {
+    throw new Error("ready aggregate state requires one valid currency");
+  }
+
+  try {
+    const [summary, byCategory] = await Promise.all([
+      getMonthlySummary(month, db),
+      getMonthlySpendingByCategory(month, db),
+    ]);
+    return {
+      currencyState: netWorth.currencyState,
+      aggregateState: { kind: "ready" },
+      summary,
+      byCategory,
+    };
+  } catch (error) {
+    if (!(error instanceof UnsafeFinancialAggregateError)) throw error;
+    return {
+      currencyState: netWorth.currencyState,
+      aggregateState: { kind: "unsafe" },
+      summary: { incomeCents: null, spendingCents: null },
+      byCategory: [],
+    };
+  }
+}
+
+export interface DashboardAggregateOverview {
+  currencyState: CurrencyState;
+  aggregateState: { kind: "ready" } | { kind: "unavailable" } | { kind: "unsafe" };
+  summary: { incomeCents: number | null; spendingCents: number | null };
+  byCategory: CategorySpending[];
+  budgets: BudgetVsActual[];
+  trend: TrendPoint[];
+}
+
+export async function getDashboardAggregateOverview(
+  month: string,
+  trendEndMonth: string,
+  netWorth: NetWorthOverview,
+  db: Db = getDb(),
+): Promise<DashboardAggregateOverview> {
+  const monthly = await getMonthlySpendingOverview(month, netWorth, db);
+  if (monthly.aggregateState.kind !== "ready") {
+    return { ...monthly, budgets: [], trend: [] };
+  }
+
+  try {
+    const [budgets, trend] = await Promise.all([
+      getBudgetVsActual(month, db),
+      getSpendingTrend(trendEndMonth, 6, db),
+    ]);
+    return { ...monthly, budgets, trend };
+  } catch (error) {
+    if (!(error instanceof UnsafeFinancialAggregateError)) throw error;
+    return {
+      currencyState: monthly.currencyState,
+      aggregateState: { kind: "unsafe" },
+      summary: { incomeCents: null, spendingCents: null },
+      byCategory: [],
+      budgets: [],
+      trend: [],
+    };
+  }
 }

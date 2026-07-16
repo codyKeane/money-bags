@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import {
   existsSync,
@@ -24,7 +24,12 @@ import {
   runMode,
   runTemporaryDatabaseCommand,
 } from "./run-with-temp-db.mjs";
-import { nextArgumentsForMode } from "./run-next.mjs";
+import {
+  TRUST_LOOPBACK_PROXY_ENV_NAME as LAUNCHER_TRUST_LOOPBACK_PROXY_ENV_NAME,
+  nextArgumentsForMode,
+  trustsLoopbackProxyForMode,
+} from "./run-next.mjs";
+import { TRUST_LOOPBACK_PROXY_ENV_NAME as POLICY_TRUST_LOOPBACK_PROXY_ENV_NAME } from "../src/lib/origin-policy";
 
 const repositoryRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const temporaryParents = [];
@@ -201,6 +206,66 @@ describe("temporary database command", () => {
     expect(existsSync(path.dirname(target))).toBe(false);
   });
 
+  it("runs a post-success gate only after a clean child exit and before cleanup", async () => {
+    let target;
+    let gateCalls = 0;
+    const result = await runTemporaryDatabaseCommand({
+      executable: process.execPath,
+      args: ["-e", "process.exit(0)"],
+      repositoryRoot,
+      onTarget(value) {
+        target = value;
+      },
+      postSuccess({ lease, environment }) {
+        gateCalls += 1;
+        expect(existsSync(lease.rootPath)).toBe(true);
+        expect(environment.DB_FILE_NAME).toBe(lease.databasePath);
+        return { boundary: "synthetic", ok: true };
+      },
+    });
+
+    expect(gateCalls).toBe(1);
+    expect(result.postSuccessError).toBeNull();
+    expect(result.postSuccessResult).toMatchObject({ ok: true });
+    expect(existsSync(path.dirname(target))).toBe(false);
+  });
+
+  it("skips the post-success gate after a nonzero child status", async () => {
+    let gateCalls = 0;
+    const result = await runTemporaryDatabaseCommand({
+      executable: process.execPath,
+      args: ["-e", "process.exit(23)"],
+      repositoryRoot,
+      postSuccess() {
+        gateCalls += 1;
+      },
+    });
+
+    expect(result.code).toBe(23);
+    expect(gateCalls).toBe(0);
+    expect(result.postSuccessError).toBeNull();
+  });
+
+  it("records a post-success failure and still cleans the lease", async () => {
+    let target;
+    const injectedError = new Error("synthetic privacy failure");
+    const result = await runTemporaryDatabaseCommand({
+      executable: process.execPath,
+      args: ["-e", "process.exit(0)"],
+      repositoryRoot,
+      onTarget(value) {
+        target = value;
+      },
+      postSuccess() {
+        throw injectedError;
+      },
+    });
+
+    expect(result.code).toBe(0);
+    expect(result.postSuccessError).toBe(injectedError);
+    expect(existsSync(path.dirname(target))).toBe(false);
+  });
+
   it("reports a synchronous spawn failure and cleans the lease", async () => {
     let target;
     const result = await runTemporaryDatabaseCommand({
@@ -339,9 +404,109 @@ describe("temporary database command", () => {
     expect(invocation.options.env.MONEYBAGS_TEMP_DB_TOKEN).toMatch(/^[a-f0-9]{64}$/);
     expect(existsSync(result.rootPath)).toBe(false);
   });
+
+  it("preloads the telemetry opt-out before the Next build CLI", async () => {
+    let invocation;
+    let gateCalls = 0;
+    const result = await runMode("build", ["--debug"], {
+      repositoryRoot,
+      signalSource: new EventEmitter(),
+      postSuccess() {
+        gateCalls += 1;
+      },
+      spawnImplementation(executable, args, options) {
+        invocation = { executable, args, options };
+        const fake = new EventEmitter();
+        fake.pid = 2_147_483_647;
+        fake.exitCode = null;
+        fake.signalCode = null;
+        queueMicrotask(() => {
+          fake.exitCode = 0;
+          fake.emit("close", 0, null);
+        });
+        return fake;
+      },
+    });
+
+    expect(result.code).toBe(0);
+    expect(gateCalls).toBe(1);
+    expect(invocation.executable).toBe(process.execPath);
+    expect(invocation.args.slice(0, 2)).toEqual([
+      "--require",
+      path.join(repositoryRoot, "scripts", "next-telemetry-disabled.cjs"),
+    ]);
+    expect(invocation.args.at(-2)).toBe("build");
+    expect(invocation.args.at(-1)).toBe("--debug");
+    expect(invocation.args[2]).toMatch(/node_modules[/\\]next[/\\]dist[/\\]bin[/\\]next$/);
+    expect(existsSync(result.rootPath)).toBe(false);
+  });
 });
 
 describe("Next launcher arguments", () => {
+  it("loads the intrinsic telemetry opt-out in a clean process before Next", () => {
+    const cleanHome = makeTemporaryParent("moneybags-clean-home-");
+    const preloadPath = path.join(
+      repositoryRoot,
+      "scripts",
+      "next-telemetry-disabled.cjs",
+    );
+    const launcherSource = readFileSync(
+      path.join(repositoryRoot, "scripts", "run-next.mjs"),
+      "utf8",
+    );
+    const preloadImport = 'import "./next-telemetry-disabled.cjs";';
+
+    expect(launcherSource.indexOf(preloadImport)).toBeGreaterThanOrEqual(0);
+    expect(launcherSource.indexOf(preloadImport)).toBeLessThan(
+      launcherSource.indexOf("await import(pathToFileURL(binPath).href)"),
+    );
+
+    const child = spawnSync(
+      process.execPath,
+      [
+        "--require",
+        preloadPath,
+        "-e",
+        "process.stdout.write(process.env.NEXT_TELEMETRY_DISABLED === '1' && process.env.NEXT_TELEMETRY_DEBUG === '' && process.env.NEXT_MANUAL_SIG_HANDLE === '' && (process.platform === 'win32' || process.umask(0o077) === 0o077) ? 'disabled:no-debug:signal:private' : 'unsafe')",
+      ],
+      {
+        cwd: repositoryRoot,
+        encoding: "utf8",
+        env: {
+          HOME: cleanHome,
+          TMPDIR: cleanHome,
+          NEXT_TELEMETRY_DEBUG: "1",
+        },
+      },
+    );
+
+    expect(child.status).toBe(0);
+    expect(child.stdout).toBe("disabled:no-debug:signal:private");
+    expect(child.stderr).toBe("");
+  });
+
+  it("keeps the preload safe when Next inherits it in a worker thread", () => {
+    const preloadPath = path.join(
+      repositoryRoot,
+      "scripts",
+      "next-telemetry-disabled.cjs",
+    );
+    const child = spawnSync(
+      process.execPath,
+      [
+        "--require",
+        preloadPath,
+        "-e",
+        'const { Worker } = require("node:worker_threads"); new Worker("process.stdout.write(process.env.NEXT_TELEMETRY_DISABLED === \'1\' ? \'worker-safe\' : \'unsafe\')", { eval: true });',
+      ],
+      { cwd: repositoryRoot, encoding: "utf8" },
+    );
+
+    expect(child.status).toBe(0);
+    expect(child.stdout).toBe("worker-safe");
+    expect(child.stderr).toBe("");
+  });
+
   it.each([
     ["dev", ["dev", "-p", "3100", "-H", "127.0.0.1"]],
     ["start", ["start", "-p", "3100", "-H", "127.0.0.1"]],
@@ -356,6 +521,21 @@ describe("Next launcher arguments", () => {
 
   it("rejects unknown launcher modes", () => {
     expect(() => nextArgumentsForMode("build")).toThrow(/Unsupported/);
+  });
+
+  it("marks only the non-overridden loopback modes as trusted proxy deployments", () => {
+    expect(LAUNCHER_TRUST_LOOPBACK_PROXY_ENV_NAME).toBe(
+      POLICY_TRUST_LOOPBACK_PROXY_ENV_NAME,
+    );
+    expect(trustsLoopbackProxyForMode("dev")).toBe(true);
+    expect(trustsLoopbackProxyForMode("start", ["--debug"])).toBe(true);
+    expect(trustsLoopbackProxyForMode("dev:lan")).toBe(false);
+    expect(trustsLoopbackProxyForMode("start:lan")).toBe(false);
+    expect(trustsLoopbackProxyForMode("dev", ["-H", "0.0.0.0"])).toBe(false);
+    expect(trustsLoopbackProxyForMode("dev", ["-H0.0.0.0"])).toBe(false);
+    expect(trustsLoopbackProxyForMode("start", ["--hostname=0.0.0.0"])).toBe(
+      false,
+    );
   });
 });
 

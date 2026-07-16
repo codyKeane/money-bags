@@ -1,4 +1,5 @@
-# Runs finance-backup.service daily (and catches up if the machine was off).
+# Runs rendered finance-backup.service daily (and catches up if the machine was
+# off). Install this timer only with the two rendered and verified services.
 [Unit]
 Description=Daily Finance Engine backup
 
