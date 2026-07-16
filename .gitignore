@@ -34,10 +34,11 @@ yarn-error.log*
 .env*
 !.env.example
 
-# local financial data: SQLite DB (incl. WAL/SHM), backups, and real statement CSVs — never commit
-data/*.db*
-data/backups/
-data/imports/
+# local financial data: everything below data/ is private unless it is an
+# explicitly fake sample — never commit runtime ledgers, sidecars, imports, or backups
+/data/**
+!/data/samples/
+!/data/samples/**
 
 # vercel
 .vercel

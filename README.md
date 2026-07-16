@@ -49,13 +49,17 @@ Normal `npm run dev` / `npm start` runtime support is unchanged.
 > it until you have made and validated a backup; a code-level guard is planned
 > in WP-03 of `IMPLEMENTATION_GUIDE.md`.
 
-**Backups**: `npm run db:backup` writes a WAL-safe online copy to
-the `backups/` directory beside the active database (safe while the server
-runs); `npm run db:backup -- --keep 14` also prunes all but the 14 newest. To
-restore, first stop the server. Copy the backup over the exact database target
-resolved from `DB_FILE_NAME` (the default is `data/finance.db`), remove the
-matching `<target>-wal` and `<target>-shm` sidecars if present, then restart.
-Never restore a custom-path ledger into the default path by assumption.
+**Backups**: run `npm run audit:data-path` to print the normalized active target
+and its derived sibling backup directory without opening SQLite.
+`npm run db:backup` writes a WAL-safe online copy to that `backups/` directory
+beside the resolved target (safe while the server runs);
+`npm run db:backup -- --keep 14` also
+prunes all but the 14 newest. An external `DB_FILE_NAME` therefore has an
+external sibling backup directory that you must protect and include in your
+backup plan. To restore, first stop the server. Copy the chosen backup over the
+exact target reported by the audit, remove the matching `<target>-wal` and
+`<target>-shm` sidecars if present, then restart. Never restore a custom-path
+ledger into the default path by assumption.
 
 **Database path policy**: when `DB_FILE_NAME` is relative, it is resolved from
 the repository root and must stay below `data/` (for example,
@@ -65,7 +69,11 @@ in-repository targets outside `data/` are refused before a directory or SQLite
 file is created. Startup also validates the root `.env` as UTF-8 assignment
 syntax and verifies the migration journal plus reviewed SQL hashes before
 opening the ledger; a missing `.env` is the only ignored environment-file
-condition.
+condition. Everything below `data/` is excluded from Git except explicitly fake
+files below `data/samples/`. The read-only `npm run audit:data-path` command
+checks that an in-repository target is below `data/` and ignored, reports the
+target and direct parent/file POSIX modes when available, and gives remediation
+without querying ledger tables.
 
 If an older installation points to a ledger elsewhere inside this checkout,
 do not start the new version and do not let it create a replacement default.
@@ -153,10 +161,10 @@ guessed); ISO/MDY/DMY dates. Negative Debit values are treated as refunds
 reported row by row.
 
 Keep real statement CSVs in the default `data/imports/` directory; it and the
-default `data/*.db*` targets are gitignored. Until WP-12B broadens and audits
-the Git boundary, keep custom in-repository targets below `data/` only with an
-explicit verified ignore rule, or use a canonical absolute path outside the
-repository.
+rest of `data/` are gitignored. Only explicitly fake files in `data/samples/`
+are trackable. Use `npm run audit:data-path` after changing `DB_FILE_NAME`; a
+canonical absolute target outside the repository is outside Git's protection,
+so its permissions and backup lifecycle remain the operator's responsibility.
 
 ## Commands
 
@@ -165,6 +173,7 @@ repository.
 | `npm run dev` / `npm run build && npm start` | dev / production server on 127.0.0.1:3100 |
 | `npm run dev:lan` / `npm run start:lan` | same, bound to all interfaces (no auth — deliberate opt-in) |
 | `npm run smoke:dev` / `npm run smoke:start` | bounded loopback health smoke with a temporary ledger (`smoke:start` requires an existing build) |
+| `npm run audit:data-path` | Read-only configured target, Git-boundary, backup-location, and mode audit |
 | `npm run db:backup` | WAL-safe online backup beside the active database |
 | `npm test` | Vitest suite (parser, categorizer, dedupe, DB integration) |
 | `npm run lint` | ESLint |

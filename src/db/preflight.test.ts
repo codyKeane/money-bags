@@ -275,6 +275,7 @@ describe("database adapter contract", () => {
       "scripts/backup-db.ts",
       "scripts/import-csv.ts",
       "src/db/seed.ts",
+      "scripts/audit-data-path.ts",
     ].map(source);
 
     for (const adapter of adapters) {
@@ -286,5 +287,7 @@ describe("database adapter contract", () => {
     expect(adapters[2]).toContain("preflightDatabaseOpen().databasePath");
     expect(adapters[3]).toContain("../src/server/services/import");
     expect(adapters[4]).toContain('getDb } from "./client"');
+    expect(adapters[5]).toContain("preflightDatabaseOpen");
+    expect(adapters[5]).not.toContain("better-sqlite3");
   });
 });

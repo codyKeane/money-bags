@@ -214,6 +214,7 @@ describe("resolveDatabasePath", () => {
   it("rejects target and parent symlinks, including dangling links and loops", () => {
     const root = makeRepository();
     const data = path.join(root, "data");
+    const external = makeTemp("moneybags-path-external-");
     const actual = path.join(data, "actual");
     mkdirSync(actual, { recursive: true });
     writeFileSync(path.join(actual, "real.db"), "fixture only");
@@ -226,6 +227,16 @@ describe("resolveDatabasePath", () => {
     symlinkSync(actual, path.join(data, "parent-link"));
     expect(() =>
       resolveDatabasePath(root, path.join(data, "parent-link", "ledger.db")),
+    ).toThrow(/symbolic links/);
+
+    symlinkSync(external, path.join(data, "external-parent"), "dir");
+    expect(() =>
+      resolveDatabasePath(root, path.join(data, "external-parent", "ledger.db")),
+    ).toThrow(/symbolic links/);
+
+    symlinkSync(data, path.join(external, "repository-parent"), "dir");
+    expect(() =>
+      resolveDatabasePath(root, path.join(external, "repository-parent", "ledger.db")),
     ).toThrow(/symbolic links/);
 
     symlinkSync("missing-parent", path.join(data, "dangling"));

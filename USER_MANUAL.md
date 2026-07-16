@@ -598,12 +598,17 @@ Your data is one file on your computer. Protect it (details in
 [Section 9](#9-keeping-your-data-safe)):
 
 ```bash
+npm run audit:data-path
 npm run db:backup
 ```
 
-This writes a timestamped copy into the `backups/` directory beside the active
-database (`data/backups/` for the default target). It's safe to run even while
-the app is open. Do it regularly (or on a schedule).
+The audit reads configuration, migration files, Git rules, and path metadata;
+it does not open the database or read any ledger table. It prints the exact
+active target and the `backups/` directory beside it. The backup command writes
+a timestamped copy there (`data/backups/` for the default target) and is safe to
+run even while the app is open. Do it regularly (or on a schedule). If the
+target is an external absolute path, its sibling backup directory is external
+too and must be included explicitly in your backup plan.
 
 ### Recipe I — Set a monthly budget for a category
 
@@ -820,11 +825,11 @@ bad import, fix the file or the settings, and import again.
 ### Where to keep your statement files
 
 Put real statement CSVs in the project's `data/imports/` folder. That folder
-and the default `data/*.db*` database targets are deliberately kept out of
-version control. Until WP-12B broadens and audits the Git boundary, keep a
-custom in-repository target below `data/` only with an explicit verified ignore
-rule, or use a canonical absolute path outside the repository. The
-`data/samples/` folder holds fake data for testing.
+and every other path below `data/` are deliberately kept out of version
+control. Only explicitly fake files below `data/samples/` are trackable. Run
+`npm run audit:data-path` after changing `DB_FILE_NAME`. A canonical absolute
+target outside the repository is outside Git's protection, so you are
+responsible for its permissions and backup lifecycle.
 
 ### Importing from the command line (optional)
 
@@ -909,6 +914,18 @@ the migration journal is the reviewed, unchanged SQL file. Only a missing
 `.env` is ignored; malformed or unreadable configuration stops startup instead
 of silently selecting a different ledger.
 
+You can inspect this configuration safely before startup:
+
+```bash
+npm run audit:data-path
+```
+
+The audit reports the normalized target, whether it is protected by the
+repository's `data/` Git boundary, the exact sibling backup directory, and
+direct parent/file POSIX modes when available. It reads metadata only and never
+queries ledger tables. For an external absolute target, Git protection is not
+applicable; protect that target and its reported backup directory yourself.
+
 If an older setup uses a database elsewhere inside the project, stop before
 upgrading. With the old version, stop all writers and make and verify a backup.
 Then explicitly restore or move the offline ledger below `data/`, update
@@ -919,20 +936,23 @@ path. Money Bags never moves a database automatically.
 ### Make a backup
 
 ```bash
+npm run audit:data-path
 npm run db:backup
 ```
 
-This safely copies the database to `backups/finance-<timestamp>.db` beside the
-active database, even while the app is running. With the default target that is
+First confirm the exact active target and sibling backup directory reported by
+the audit. The backup command safely copies the database to
+`backups/finance-<timestamp>.db` beside that target, even while the app is
+running. With the default target that is
 `data/backups/finance-<timestamp>.db`. Run it often. (A good habit: back up
 before and after importing a big statement.)
 
 ### Restore from a backup
 
 1. **Stop the app** (Ctrl + C in its terminal).
-2. Identify the exact active database target resolved from `DB_FILE_NAME`
-   (`data/finance.db` only when the default is in use). Never guess that a
-   custom-path ledger belongs at the default path.
+2. Run `npm run audit:data-path` and use the exact normalized active target it
+   reports (`data/finance.db` only when the default is in use). Never guess that
+   a custom-path ledger belongs at the default path.
 3. Copy your chosen backup file over that exact target.
 4. Delete the matching `<target>-wal` and `<target>-shm` helper files if they
    exist.
@@ -941,10 +961,9 @@ before and after importing a big statement.)
 ### Privacy reminders
 
 - The app makes **zero** network calls while running. It doesn't phone home.
-- The default `data/*.db*` database targets and `data/imports/` statements are
-  excluded from version control. Until WP-12B, keep a custom in-repository
-  target below `data/` only with verified ignore protection, or use a canonical
-  external absolute path.
+- Everything below `data/` is excluded from version control except explicitly
+  fake files below `data/samples/`. A canonical external absolute target is
+  outside Git's protection; audit and back it up explicitly.
 - Because there's **no login**, treat "who can reach the app" as "who can see
   your money." Keep it on `127.0.0.1` or behind Tailscale.
 
@@ -960,6 +979,7 @@ Run these from the project folder in a terminal.
 | `npm run dev` | Start the app (development mode) at `http://127.0.0.1:3100`. |
 | `npm run build` then `npm start` | Build without opening the configured ledger, then start the faster production version on that ledger; see the pre-WP-04 packaging caveat above. |
 | `npm run smoke:dev` / `npm run smoke:start` | Run a bounded loopback health check with a temporary ledger; the start smoke needs an existing build. |
+| `npm run audit:data-path` | Read-only check of the configured target, Git boundary, backup location, and path modes. |
 | `npm run db:migrate` | Create/upgrade the database file. |
 | `npm run db:seed` | Unguarded demo seed; new disposable ledgers only. |
 | `npm run db:backup` | Make a timestamped backup beside the active database. |

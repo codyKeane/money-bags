@@ -2,9 +2,9 @@
 
 > Status: active, decision-complete implementation north star for the audit-remediation program
 > Code baseline: clean historical snapshot `main` at `3d967baf8d7451f8c8202f3f9489401771bcc3b7` (`3d967ba`)
-> Implementation checkpoint: WP-00 and WP-01A/B/C completed 2026-07-13; WP-12A completed 2026-07-14; WP-01D completed 2026-07-15; WP-12B is next
-> Checkpoint verification: default and shuffled suites passed 20 files / 191 tests with seeds `17`, `2718`, and `20260714`; the sanitized copied-workspace gate passed tests, lint, real dev/start health smokes, and the first wrapped production build
-> Additional gates: ESLint, TypeScript, migration integrity, cross-cwd and bundled-launcher root resolution, direct-Vitest fallback, zero-artifact guards, and documentation checks passed; security audit cleared the implementation, while independent review recorded the disclosed native-Windows validation limitation
+> Implementation checkpoint: WP-00 and WP-01A/B/C completed 2026-07-13; WP-12A completed 2026-07-14; WP-01D and WP-12B completed 2026-07-15; WP-02A is next
+> Checkpoint verification: the current default and seed-`12012` shuffled suites passed 21 files / 207 tests; ESLint, TypeScript, Git-ignore/re-inclusion checks, sanitized audit-CLI checks, and `git diff --check` passed; the earlier sanitized copied-workspace gate passed tests, lint, real dev/start health smokes, and the first wrapped production build
+> Additional gates: migration integrity, cross-cwd and bundled-launcher root resolution, direct-Vitest fallback, zero-artifact guards, hostile Git-environment refusal, terminal-safe audit output, and documentation checks passed; security and independent review cleared WP-12B, while the disclosed native-Windows validation-wrapper limitation remains
 > Safety gate: no Next build ran in the working repository; the only build used an allowlisted sanitized copy, a clean HOME/TMPDIR, and an unchanged fake default-ledger sentinel. Until WP-04, all validation/packaging builds retain this copied-workspace restriction
 > Prepared: 2026-07-15
 > Scope: correctness, data integrity, privacy, operational safety, architecture, and accessibility
@@ -2179,6 +2179,31 @@ Uncertainty requiring user input:
   after a leader exits. Linux, macOS, and WSL own a POSIX process group. Normal
   Windows dev/start support remains, while wrapped test/lint/build/smoke needs
   WSL until a separately reviewed Windows job-object supervisor exists.
+- WP-12B broadens the root Git boundary to all `data/**` paths while
+  re-including only `data/samples/**`. Path-string checks covered the default
+  DB, common SQLite extensions, nested targets, WAL/SHM, imports, backups, and
+  the fake-sample exception; the committed fake sample remained tracked.
+- The read-only path audit reuses strict env/path/migration preflight, anchors
+  to its own checkout, reports normalized target/classification, derived backup
+  directory, Git status, and direct parent/file modes, and never imports or
+  opens SQLite. Git inspection strips redirecting control variables, disables
+  external config/locks/prompts, verifies the canonical worktree, and accepts
+  only a positive NUL-delimited match from the root `.gitignore`. Tracked,
+  negated, alternate-provenance, malformed, and error results fail closed.
+- A sanitized copied CLI fixture with no `.env` or runtime data used clean
+  HOME/TMPDIR state plus hostile `GIT_DIR`, `GIT_WORK_TREE`, and injected Git
+  configuration. `npm run audit:data-path` passed, created no target, parent,
+  data tree, WAL/SHM, HOME, or TMPDIR artifact, and the fixture was removed.
+  The direct no-cache TypeScript loader avoids the `tsx` CLI child/IPC/cache
+  path.
+- Final WP-12B focused validation passed 3 files / 53 tests. The current full
+  suite passed 21 files / 207 tests in default order and shuffled with seed
+  `12012`; repository ESLint, `tsc --noEmit`, and `git diff --check` passed,
+  every reported validation lease was absent afterward, and no build was
+  required for this non-Next path/Git/documentation slice. No real `.env`,
+  ledger, ignored data tree, database operation, server, or deployment was
+  used. Security review found no remaining blocker; POSIX-mode enforcement and
+  validated backup hardening remain WP-13 work.
 
 Exact guarded command forms used for WP-12A:
 
@@ -2207,30 +2232,31 @@ For each of its 45 `{ file, name }` results, the command runner invoked
 invocations passed, and a post-run `/tmp/moneybags-exact-*` search plus direct
 checks of the default/shuffle/focused guard directories found no artifacts.
 
-### Prepared handoff: WP-12B
+### Prepared handoff: WP-02A
 
-The next session should select **WP-12B — Path policy, Git boundary, and
-audit**. WP-00, WP-01A/B/C/D, and WP-12A are complete. Keep every validation
-command behind WP-01D's temporary-target harness, and keep builds in sanitized
-copied workspaces until WP-04; do not skip ahead to packaging, financial
-behavior, or a deferred RFC.
+The next session should select **WP-02A — Service-owned domain write contracts
+and exact money**. WP-00, WP-01A/B/C/D, and WP-12A/B are complete. Keep every
+database-bearing validation command behind WP-01D's temporary-target harness,
+and keep builds in sanitized copied workspaces until WP-04. Do not begin
+WP-02B split-integrity changes or decision-gated RFC behavior before the WP-02A
+contracts are stable.
 
 ```text
-Selected package/slice: WP-12B
-Finding IDs addressed: MB-010
-Decision gates resolved: enforce the full data/ Git boundary, preserve only reviewed fake samples, and keep the audit command read-only as specified in Section 9
+Selected package/slice: WP-02A
+Finding IDs addressed: PG-01, PG-02
+Decision gates resolved: service-owned write invariants and the exact editable-money grammar/serialization contract in Section 9; no generic repository abstraction and no schema migration
 Repository root: the checkout root; confirm it before running any command
 Branch / starting state: main at the commit containing this handoff; reconfirm a clean worktree
 Applicable instructions: repository-root AGENTS.md plus any active session working agreement
 Installed versions to preserve: Next 16.2.10, Drizzle ORM 0.45.2, better-sqlite3 12.11.1, Node >=20.12
-Fake fixture/temp DB plan: wrapper-owned unique OS-temp roots only; fake external and in-repository path fixtures; never enumerate or open the real data tree or configured ledger
-Expected files changed: .gitignore, a side-effect-free read-only data-path audit command and tests, narrow path/backup/restore documentation, and package-script wiring
+Fake fixture/temp DB plan: wrapper-owned unique OS-temp DBs and synthetic services/forms only; never open, migrate, seed, import, or inspect the configured ledger
+Expected files changed: narrow pure money helpers/tests; existing account/category/transaction/import service contracts and focused callers/tests; exact form/default/export adapters identified by repository exploration
 Expected migration/lockfile impact: none; do not edit schema, migrations 0000-0004, dependency versions, or package-lock.json
-Failing reproduction/test: common SQLite extensions/custom nested data paths can escape current ignore rules; prove full data/** ignore plus data/samples/** re-inclusion without inspecting runtime files
-Rollback plan: retain the strict resolver and broad data-boundary ignore; if audit presentation is wrong, remove only its package entry while correcting it—never weaken path refusal or re-expose runtime data
-Focused validation: git check-ignore matrix, lexical/canonical path tests, read-only audit mode/classification tests, and explicit zero-DB-open/artifact checks
-Repository validation: wrapped tests/lint/typecheck and final Git status/diff; any later Next build remains sanitized-copy-only until WP-04
-Uncertainty requiring user input: stop if a currently tracked non-sample file under data/ appears, or an existing operator workflow depends on in-repository runtime data outside data/
+Failing reproduction/test: prove 1.005 and unsafe-cent inputs are currently rounded/accepted where specified, and direct service calls can bypass caller-only date/currency/reference/budget validation, using fake data only
+Rollback plan: retain exact parsing/serialization and service-owned validation if an adapter mapping needs correction; roll back only the affected adapter, never return to Math.round, float serialization, or caller-only invariants
+Focused validation: pure boundary/round-trip money tests; direct-service invalid-input/reference/conflict tests; exact no-write assertions; caller mapping and existing hash/migration compatibility tests
+Repository validation: wrapped default/shuffled tests, lint, typecheck, final Git status/diff; any Next build remains sanitized-copy-only until WP-04
+Uncertainty requiring user input: stop only if repository evidence exposes a contract choice not already locked in WP-02A or requires a schema/dependency/public-API expansion beyond the package
 ```
 
 ## 17. Handoff template for every completed package

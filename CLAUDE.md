@@ -12,9 +12,8 @@ dashboard (Net Worth, Monthly Spending by Category, Recent Transactions).
   The running app makes **zero** network calls; npm registry is used at
   dev time only.
 - `NEXT_TELEMETRY_DISABLED=1` stays set (see `.env` / `.env.example`).
-- The SQLite database (`data/*.db*`) and real statement CSVs
-  (`data/imports/`) are gitignored and must **never** be committed.
-  `data/samples/` contains fake data only.
+- Everything below `data/` is gitignored and must **never** be committed except
+  explicitly fake fixtures below `data/samples/`.
 
 ## Stack
 
@@ -179,8 +178,15 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
   `dev:lan` / `start:lan` bind 0.0.0.0 as an explicit opt-in)
 - `npm run db:backup [-- --keep N]` — WAL-safe online backup to
   `backups/` beside the resolved `DB_FILE_NAME` target (optional `--keep N`
-  prunes to the N newest; restore: stop server, copy back over that exact
-  target, delete its matching `<target>-wal`/`<target>-shm`, restart)
+  prunes to the N newest; use `npm run audit:data-path` to identify that exact
+  target and sibling backup directory; restore: stop server, copy back over
+  that exact target, delete its matching `<target>-wal`/`<target>-shm`, restart)
+- `npm run audit:data-path` — read-only strict preflight plus normalized target,
+  repository/Git-boundary classification, sibling backup location, and direct
+  parent/file mode reporting. It must not import the DB client or SQLite, query
+  tables, print environment values, or create/modify the repository, database
+  target, parent, or sidecars. Its direct no-cache TypeScript loader avoids the
+  `tsx` CLI child/IPC/cache path.
 - `GET /api/health` — liveness probe (`{ok:true}` / 500) for uptime
   monitoring; `deploy/` holds systemd unit + backup timer examples
 - `GET /api/export?q=&account=&category=&month=&from=&to=` — the filtered
@@ -215,8 +221,8 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
 
 - `IMPLEMENTATION_GUIDE.md` — audit-remediation north star: immutable contracts,
   decision gates, dependency-ordered work packages, rollback, and acceptance
-  tests. WP-00, WP-01A/B/C/D, and WP-12A are complete; WP-12B is the prepared
-  next slice.
+  tests. WP-00, WP-01A/B/C/D, and WP-12A/B are complete; WP-02A is the prepared
+  next remediation slice.
   Read it before implementing audit findings or selecting the next
   correctness/privacy/operations package.
 - `TODO.md` — historical/product backlog and shipped milestones. Its IDs

@@ -22,7 +22,8 @@
     "import": "tsx scripts/import-csv.ts",
     "dev:lan": "node scripts/run-next.mjs dev:lan",
     "start:lan": "node scripts/run-next.mjs start:lan",
-    "db:backup": "tsx scripts/backup-db.ts"
+    "db:backup": "tsx scripts/backup-db.ts",
+    "audit:data-path": "node --import ./scripts/disable-tsx-cache.mjs --import tsx scripts/audit-data-path.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",
