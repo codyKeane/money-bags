@@ -179,7 +179,7 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
   are untouched; it returns the deleted count or null if the batch is gone. Pass
   `filename` into `importStatement` from any new caller so history stays useful.
   The `batch_id` FK's `ON DELETE set null` is hand-added to migration 0003
-  (drizzle-kit omits it from `ALTER TABLE ADD`). Migrations 0000–0004 are
+  (drizzle-kit omits it from `ALTER TABLE ADD`). Migrations 0000–0005 are
   historical and byte-locked by `src/db/migrations.test.ts`; never regenerate
   or edit them. Append a reviewed migration for future schema work.
 - **Category colors**: constrained to the validated `CATEGORICAL_SLOTS` in
@@ -219,6 +219,13 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
   Transaction pagination accepts only positive safe-integer text, counts first,
   clamps to the fixed 50-row last page, then computes the offset; invalid and
   clamped URLs redirect to a tested canonical path with page 1 omitted.
+- **Transaction annotations**: migration 0005 adds defaulted `notes` and `tags`
+  text columns. Supported writes normalize notes as bounded safe Unicode text and
+  tags as a sorted, lowercase, de-duplicated JSON string array. Service/API reads
+  tolerate malformed historical tag JSON by returning an empty array. `q`
+  searches description/note/tag text with escaped LIKE literals; `tag` uses a
+  bound exact canonical match through guarded `json_each`. Imports leave both
+  empty and the frozen import-hash formula is unchanged.
 - **Transaction export**: `/api/export` delegates all SQLite work to the
   dedicated `server/services/transaction-export.ts` service. It opens a
   read-only `fileMustExist` connection, starts a deferred transaction to retain
@@ -227,8 +234,9 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
   completion commits/closes; errors and cancellation roll back/close. Omitted
   format and `legacy` preserve the exact five-column header and refuse
   mixed/invalid selected currency before bytes; `detailed` adds Currency and
-  deterministic split JSON and permits mixed valid currencies. The Transactions
-  UI deliberately requests detailed. `lib/csv/transaction-export.ts` owns exact
+  deterministic split JSON and permits mixed valid currencies. `annotated`
+  preserves that shape and appends Notes and deterministic tag JSON. The
+  Transactions UI deliberately requests annotated. `lib/csv/transaction-export.ts` owns exact
   cent serialization, RFC 4180 quoting, binary/null-last split ordering, ISO-date
   validation, and export-only formula protection for text cells. Never replace
   this path with an unbounded list materialization or a route-owned DB handle.
@@ -304,9 +312,10 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
   destinations without importing SQLite, creating paths, or repairing modes.
   The early Next preload pins the root-`.env` database selection/default and
   graceful signal behavior before Next's own production environment loading.
-- `GET /api/export?q=&account=&category=&month=&from=&to=` — the filtered
+- `GET /api/export?q=&tag=&account=&category=&month=&from=&to=` — the filtered
   transaction view as the five-column compatibility CSV; add
-  `format=detailed` for Currency and Split Details (the UI uses detailed)
+  `format=detailed` for Currency and Split Details or `format=annotated` for
+  Notes and Tags (the UI uses annotated)
 - `npm run build` / `npm start` — production build / serve. Build runs through
   the mandatory external temporary-database wrapper and then scans every NFT
   manifest; start deliberately opens the configured runtime ledger.
@@ -327,10 +336,10 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
 - `npm run lint` — ESLint through a temporary lease that fails if lint opens DB
   artifacts
 - `npm run db:generate` — generate a new append-only migration from schema
-  changes; never regenerate or edit migrations 0000–0004
+  changes; never regenerate or edit migrations 0000–0005
 - `npm run db:migrate` — apply migrations (also auto-applied on startup;
   default categories install automatically when the table is empty). Historical
-  migrations 0000–0004 are byte-locked compatibility assets.
+  migrations 0000–0005 are byte-locked compatibility assets.
 - `npm run db:seed` — one-time fail-closed demo initializer; requires an
   existing current schema with no ledger rows and either no categories or the
   exact untouched defaults, refuses repeat/custom targets, and has no force flag

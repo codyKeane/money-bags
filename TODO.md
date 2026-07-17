@@ -193,7 +193,9 @@ pre-commit task is retained only by this resolution note, not as live work.
   flag wired into `spendingLineItems`.
 - [ ] **Reconciliation / cleared flag + running balance (M).** No `cleared`
   column on `transactions`; blocks statement reconciliation + running balance.
-- [ ] **Notes / tags on transactions (M).** No notes/tags columns exist.
+- [x] ~~Notes / tags on transactions (M)~~ — migration 0005 adds bounded notes
+  and canonical tags across create/edit, list/API, search/exact filtering, and
+  annotated CSV while preserving import hashes and existing export contracts.
 - [ ] **Merge two categories (S).** Reassign `categoryId` (+ splits) then delete
   the emptied category — no merge path today.
 - [ ] **Merchant / recurring rollup (M).** Group by normalized merchant to spot

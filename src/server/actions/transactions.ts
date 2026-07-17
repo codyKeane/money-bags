@@ -5,7 +5,12 @@ import { centsToDecimalText, decimalTextToCents } from "@/lib/money";
 import { isValidIsoDate } from "@/lib/month";
 import { revalidateAfterMutation } from "@/server/revalidation";
 import { assertTrustedActionOrigin } from "@/server/security/trusted-origin";
-import { MAX_SPLIT_PARTS } from "@/server/services/write-validation";
+import {
+  MAX_SPLIT_PARTS,
+  normalizeTransactionNotes,
+  normalizeTransactionTags,
+  WRITE_LIMITS,
+} from "@/server/services/write-validation";
 import {
   createTransaction,
   deleteTransaction,
@@ -67,6 +72,28 @@ const TransactionSchema = z.object({
     .transform((v) => v || null),
   date: z.string().refine(isValidIsoDate, "Date must be a valid YYYY-MM-DD"),
   description: z.string().trim().min(1, "Description is required").max(500),
+  notes: z.string().transform((value, ctx) => {
+    const notes = normalizeTransactionNotes(value);
+    if (notes === null) {
+      ctx.addIssue({
+        code: "custom",
+        message: `Notes must be at most ${WRITE_LIMITS.transactionNotes} characters and contain only safe text`,
+      });
+      return z.NEVER;
+    }
+    return notes;
+  }),
+  tags: z.string().transform((value, ctx) => {
+    const tags = normalizeTransactionTags(value.split(","));
+    if (tags === null) {
+      ctx.addIssue({
+        code: "custom",
+        message: `Use at most ${WRITE_LIMITS.transactionTags} tags of ${WRITE_LIMITS.transactionTag} characters each`,
+      });
+      return z.NEVER;
+    }
+    return tags;
+  }),
   amount: z
     .string()
     .trim()
@@ -87,6 +114,8 @@ function parseTransactionForm(formData: FormData) {
     categoryId: formData.get("categoryId") ?? "",
     date: formData.get("date"),
     description: formData.get("description"),
+    notes: formData.get("notes") ?? "",
+    tags: formData.get("tags") ?? "",
     amount: formData.get("amount"),
   });
   if (!parsed.success) return { error: firstFormError(parsed.error) } as const;
@@ -96,6 +125,8 @@ function parseTransactionForm(formData: FormData) {
       categoryId: parsed.data.categoryId,
       date: parsed.data.date,
       description: parsed.data.description,
+      notes: parsed.data.notes,
+      tags: parsed.data.tags,
       amountCents: parsed.data.amount,
     },
   } as const;

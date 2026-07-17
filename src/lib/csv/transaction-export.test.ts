@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ANNOTATED_EXPORT_HEADER,
   DETAILED_EXPORT_HEADER,
   LEGACY_EXPORT_HEADER,
   serializeExportRow,
@@ -15,6 +16,8 @@ interface ExportRow {
   categoryName: string | null;
   isSplit: boolean;
   splitDetails: { category: string | null; amountCents: number }[];
+  notes: string;
+  tags: string[];
 }
 
 function row(overrides: Partial<ExportRow> = {}): ExportRow {
@@ -27,6 +30,8 @@ function row(overrides: Partial<ExportRow> = {}): ExportRow {
     categoryName: "Groceries",
     isSplit: false,
     splitDetails: [],
+    notes: "",
+    tags: [],
     ...overrides,
   };
 }
@@ -39,6 +44,22 @@ describe("transaction export headers", () => {
   it("keeps the detailed header exact", () => {
     expect(DETAILED_EXPORT_HEADER).toBe(
       "Date,Description,Amount,Currency,Account,Category,Split Details",
+    );
+  });
+
+  it("adds annotations only in the annotated format", () => {
+    expect(ANNOTATED_EXPORT_HEADER).toBe(
+      "Date,Description,Amount,Currency,Account,Category,Split Details,Notes,Tags",
+    );
+    const annotated = row({
+      notes: "\t=private, note",
+      tags: ["reimbursable", "work"],
+    });
+    expect(serializeExportRow(annotated, "detailed")).toBe(
+      "2026-06-01,CORNER MARKET,-12.34,USD,Everyday Checking,Groceries,",
+    );
+    expect(serializeExportRow(annotated, "annotated")).toBe(
+      '2026-06-01,CORNER MARKET,-12.34,USD,Everyday Checking,Groceries,,"\'\t=private, note","[""reimbursable"",""work""]"',
     );
   });
 });

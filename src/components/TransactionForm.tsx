@@ -20,6 +20,8 @@ export interface TransactionFormInitial {
   categoryId: string | null;
   date: string;
   description: string;
+  notes: string;
+  tags: string[];
   amountCents: number;
 }
 
@@ -36,6 +38,8 @@ export function TransactionForm({
 }) {
   const router = useRouter();
   const errorId = `${useId()}-error`;
+  const notesHelpId = `${errorId}-notes-help`;
+  const tagsHelpId = `${errorId}-tags-help`;
   const mode = initial ? "edit" : "create";
   const [state, formAction, pending, errorSummaryRef] =
     useServerForm<TransactionFormState>(
@@ -94,6 +98,30 @@ export function TransactionForm({
           className={inputClass}
           {...fieldErrorAttributes(errorId, errorField, "description")}
         />
+      </Field>
+      <Field label="Notes (optional)">
+        <textarea
+          name="notes"
+          rows={3}
+          defaultValue={initial?.notes}
+          className={inputClass}
+          {...fieldErrorAttributes(errorId, errorField, "notes", notesHelpId)}
+        />
+        <span id={notesHelpId} className="text-xs text-ink-muted">
+          Up to 2,000 characters. Line breaks are preserved.
+        </span>
+      </Field>
+      <Field label="Tags (optional)">
+        <input
+          name="tags"
+          defaultValue={initial?.tags.join(", ")}
+          placeholder="travel, reimbursable"
+          className={inputClass}
+          {...fieldErrorAttributes(errorId, errorField, "tags", tagsHelpId)}
+        />
+        <span id={tagsHelpId} className="text-xs text-ink-muted">
+          Separate up to 20 tags with commas. Tags are saved in lowercase.
+        </span>
       </Field>
       <Field label="Amount (signed dollars — negative = money out)">
         <input

@@ -62,6 +62,18 @@ describe("GET /api/export", () => {
     );
   });
 
+  it("passes annotated format and an exact normalized tag filter", async () => {
+    prepareTransactionExport.mockResolvedValue({
+      status: "ready",
+      stream: csvStream("annotated"),
+      isClosed: () => true,
+    });
+
+    await GET(request("format=annotated&tag=%20Work%20"));
+
+    expect(prepareTransactionExport).toHaveBeenCalledWith({ tag: "work" }, "annotated");
+  });
+
   it("rejects an unknown format without calling the export service", async () => {
     const response = await GET(request("format=allocation"));
 
@@ -69,7 +81,7 @@ describe("GET /api/export", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     await expect(response.json()).resolves.toEqual({
       error: "invalid-format",
-      message: "format must be legacy or detailed.",
+      message: "format must be legacy, detailed, or annotated.",
     });
     expect(prepareTransactionExport).not.toHaveBeenCalled();
   });

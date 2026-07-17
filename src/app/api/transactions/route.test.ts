@@ -20,6 +20,8 @@ describe("GET /api/transactions currency contract", () => {
         normalizedCurrency: "JPY",
         currencyState: { kind: "valid", currency: "JPY" },
         amountCents: 123,
+        notes: "Shared purchase",
+        tags: ["reimbursable", "work"],
       },
       {
         id: "repair-transaction",
@@ -41,6 +43,8 @@ describe("GET /api/transactions currency contract", () => {
       currency: " jpy ",
       normalizedCurrency: "JPY",
       currencyState: { kind: "valid", currency: "JPY" },
+      notes: "Shared purchase",
+      tags: ["reimbursable", "work"],
     });
     expect(body.transactions[1]).toMatchObject({
       rawCurrency: "not-a-code",

@@ -86,6 +86,14 @@ const EXPECTED_MIGRATIONS = [
     breakpoints: true,
     sha256: "163081861a670360f47dfc52c8934f70bbed808606a8a85f18ffbf4e61baf0f1",
   },
+  {
+    idx: 5,
+    version: "6",
+    when: 1784189434031,
+    tag: "0005_annotations",
+    breakpoints: true,
+    sha256: "1a259e7d6f3d70fb1a52ec59ea6202224f950feab72237ac3c7f6121c6981bab",
+  },
 ] as const;
 
 function getAppliedMigrations(sqlite: Database.Database): AppliedMigration[] {
@@ -328,6 +336,16 @@ function insertHistoricalFixture(sqlite: Database.Database, lastIndex: number): 
       insertSplit.run("split-food", "tx-split", "cat-food", -6_000);
       insertSplit.run("split-excluded", "tx-split", "cat-excluded", -4_000);
     }
+
+    if (lastIndex >= 5) {
+      sqlite
+        .prepare(`UPDATE transactions SET notes = ?, tags = ? WHERE id = ?`)
+        .run(
+          "Historical fixture note",
+          '["fixture","reviewed"]',
+          "tx-categorized",
+        );
+    }
   });
   insert();
 }
@@ -360,6 +378,20 @@ function assertCurrentSchema(sqlite: Database.Database): void {
     "transaction_splits",
     "transactions",
   ]);
+
+  const transactionColumns = sqlite.pragma("table_info('transactions')") as Array<{
+    name: string;
+    notnull: number;
+    dflt_value: string | null;
+  }>;
+  expect(transactionColumns.find((column) => column.name === "notes")).toMatchObject({
+    notnull: 1,
+    dflt_value: "''",
+  });
+  expect(transactionColumns.find((column) => column.name === "tags")).toMatchObject({
+    notnull: 1,
+    dflt_value: "'[]'",
+  });
 
   const expectedIndexes: Record<string, { unique: number; columns: string[] }> = {
     accounts_name_unique: { unique: 1, columns: ["name"] },
@@ -556,6 +588,8 @@ function assertPopulatedFixture(sqlite: Database.Database, lastIndex: number): v
         categoryId: string | null;
         importHash: string | null;
         batchId: string | null;
+        notes: string;
+        tags: string;
         createdAt: number;
         updatedAt: number;
       }
@@ -563,6 +597,7 @@ function assertPopulatedFixture(sqlite: Database.Database, lastIndex: number): v
       `SELECT id, date, description, amount_cents AS amountCents,
               account_id AS accountId, category_id AS categoryId,
               import_hash AS importHash, batch_id AS batchId,
+              notes, tags,
               created_at AS createdAt, updated_at AS updatedAt
        FROM transactions ORDER BY id`,
     )
@@ -577,6 +612,8 @@ function assertPopulatedFixture(sqlite: Database.Database, lastIndex: number): v
       categoryId: "cat-food",
       importHash: "fixture-hash-categorized",
       batchId: lastIndex >= 3 ? "batch-fixture" : null,
+      notes: lastIndex >= 5 ? "Historical fixture note" : "",
+      tags: lastIndex >= 5 ? '["fixture","reviewed"]' : "[]",
       createdAt: 1_700_000_000_000,
       updatedAt: 1_700_000_000_000,
     },
@@ -591,6 +628,8 @@ function assertPopulatedFixture(sqlite: Database.Database, lastIndex: number): v
             categoryId: null,
             importHash: null,
             batchId: null,
+            notes: "",
+            tags: "[]",
             createdAt: 1_700_000_000_000,
             updatedAt: 1_700_000_000_000,
           },
@@ -605,6 +644,8 @@ function assertPopulatedFixture(sqlite: Database.Database, lastIndex: number): v
       categoryId: null,
       importHash: "fixture-hash-uncategorized",
       batchId: null,
+      notes: "",
+      tags: "[]",
       createdAt: 1_700_000_000_000,
       updatedAt: 1_700_000_000_000,
     },
@@ -798,7 +839,7 @@ function assertForeignKeyBehavior(sqlite: Database.Database): void {
 }
 
 describe("migration compatibility", () => {
-  it("pins the first five journal entries and migration SQL bytes", () => {
+  it("pins all reviewed journal entries and migration SQL bytes", () => {
     // This independent test oracle intentionally duplicates the production
     // manifest so a coordinated journal/manifest edit cannot bless itself.
     expect(REVIEWED_MIGRATION_JOURNAL).toEqual({

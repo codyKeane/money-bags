@@ -20,6 +20,7 @@ import {
 import { enforcePrivateProcessUmask } from "@/db/private-process";
 import { deriveCurrencyState, normalizeCurrencyCode } from "@/lib/currency";
 import {
+  ANNOTATED_EXPORT_HEADER,
   DETAILED_EXPORT_HEADER,
   LEGACY_EXPORT_HEADER,
   serializeExportRow,
@@ -28,6 +29,7 @@ import {
 } from "@/lib/csv/transaction-export";
 import { transactionHasSplits } from "./active-category";
 import { buildTransactionWhere, type TransactionQuery } from "./transactions";
+import { parseStoredTransactionTags } from "./write-validation";
 
 export const EXPORT_PARENT_CHUNK_SIZE = 500;
 
@@ -185,7 +187,12 @@ export async function prepareTransactionExport(
       }),
     );
     const encoder = new TextEncoder();
-    const header = format === "legacy" ? LEGACY_EXPORT_HEADER : DETAILED_EXPORT_HEADER;
+    const header =
+      format === "legacy"
+        ? LEGACY_EXPORT_HEADER
+        : format === "detailed"
+          ? DETAILED_EXPORT_HEADER
+          : ANNOTATED_EXPORT_HEADER;
     let cursor: ParentCursor | null = null;
 
     const stream = new ReadableStream<Uint8Array>({
@@ -206,6 +213,8 @@ export async function prepareTransactionExport(
               date: transactions.date,
               createdAt: transactions.createdAt,
               description: transactions.description,
+              notes: transactions.notes,
+              tagsJson: transactions.tagsJson,
               amountCents: transactions.amountCents,
               accountId: transactions.accountId,
               accountName: accounts.name,
@@ -251,6 +260,8 @@ export async function prepareTransactionExport(
               {
                 date: parent.date,
                 description: parent.description,
+                notes: parent.notes,
+                tags: parseStoredTransactionTags(parent.tagsJson),
                 amountCents: parent.amountCents,
                 currency,
                 accountName: parent.accountName,

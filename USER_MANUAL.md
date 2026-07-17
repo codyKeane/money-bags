@@ -485,6 +485,8 @@ recategorize a single row."*
 | **Account** | Which account it belongs to. |
 | **Date** | A date picker. |
 | **Description** | What it was (e.g. *Farmers market*). |
+| **Notes (optional)** | Up to 2,000 characters; line breaks are preserved. |
+| **Tags (optional)** | Up to 20 comma-separated tags, 40 characters each. Tags are saved in lowercase, de-duplicated, and sorted. |
 | **Amount** | Signed dollars. **Negative = money out.** The form literally says so, with `-12.50` as the example. |
 | **Category** | Pick one, or leave it **Uncategorized**. |
 
@@ -492,7 +494,8 @@ Click **Add transaction** to save.
 
 **Filter and search** — a row of controls above the table:
 
-- **Search descriptions…** — type any text to find matching transactions.
+- **Search descriptions, notes, or tags…** — type any text to find matching transactions. `%` and `_` are treated as ordinary characters, not wildcards.
+- **Tag badge** — select a `#tag` beneath any description to apply an exact tag filter; select the filter chip's × to remove it.
 - **All accounts** — narrow to one account.
 - **All categories** — narrow to one category, or pick **Uncategorized** to find
   transactions that still need a label.
@@ -515,7 +518,8 @@ the table or export. **Uncategorized** includes an unsplit blank category and a
 split with at least one blank part, so a split transaction can appear in both a
 named-category view and the Uncategorized view.
 
-**The table** shows Date, Description, Account, Category, and Amount. Dates read
+**The table** shows Date, Description, Account, Category, and Amount. Notes and
+tag badges appear beneath the Description when present. Dates read
 as **"Jul 7, 2026"** (hover to see the exact `YYYY-MM-DD`), and money coming
 **in** (a paycheck, a refund) is tinted **green** so it stands out; money going
 out stays in the normal text color, with its minus sign. (Red is saved for
@@ -565,10 +569,12 @@ downloads exactly the rows your current filters produce (not just the page
 you're looking at) as a spreadsheet file — handy for taxes, sharing with an
 accountant, or your own analysis. Clear the filters first to export everything.
 The downloaded columns are **Date, Description, Amount, Currency, Account,
-Category, and Split Details**. A split transaction stays one row with its full
-ledger amount, says **Split** in Category, and includes all allocations in Split
-Details. When a category filter matches one allocation, the complete parent row
-and every allocation are exported; the ignored parent category never matches.
+Category, Split Details, Notes, and Tags**. Tags are compact JSON in one cell. A
+split transaction stays one row with its full ledger amount, says **Split** in
+Category, and includes all allocations in Split Details. When a category filter
+matches one allocation, or an exact tag filter matches the parent, the complete
+parent row and every allocation are exported; the ignored parent category never
+matches.
 
 The download can safely contain accounts in different currencies because every
 row names its currency. If a stored account currency needs repair, export is
@@ -576,6 +582,11 @@ refused with instructions to fix it on **Accounts**. Text that could be mistaken
 for a spreadsheet formula receives a leading apostrophe in the downloaded CSV;
 that apostrophe may be visible in a strict text/CSV reader. The saved transaction
 and its categorization are unchanged, and signed Amount cells remain numbers.
+
+Imported rows start with empty notes/tags. Adding them later does not change the
+statement duplicate hash, so re-importing the same source still skips the row
+without overwriting your annotations. Undoing the import deletes the annotated
+transaction with the rest of its batch.
 
 **Pagination** — the table shows 50 transactions at a time. At the bottom you'll
 see *"Showing 1–50 of 320"* with **← Prev** and **Next →** links. Your filters

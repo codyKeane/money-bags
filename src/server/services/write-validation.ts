@@ -12,6 +12,10 @@ export const WRITE_LIMITS = {
   institution: 120,
   keyword: 120,
   keywords: 100,
+  transactionNotes: 2_000,
+  transactionTag: 40,
+  transactionTags: 20,
+  transactionTagsJson: 1_024,
 } as const;
 
 // Three bound values are inserted per split row. Staying at 250 keeps a bulk
@@ -63,6 +67,83 @@ export function normalizeCategoryName(value: unknown): string | null {
 
 export function normalizeDescription(value: unknown): string | null {
   return normalizeRequiredText(value, WRITE_LIMITS.description);
+}
+
+function hasUnsafeCodePoint(value: string, allowedControls: ReadonlySet<number>): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (
+      codePoint === undefined ||
+      (codePoint <= 0x1f && !allowedControls.has(codePoint)) ||
+      (codePoint >= 0x7f && codePoint <= 0x9f) ||
+      (codePoint >= 0xd800 && codePoint <= 0xdfff) ||
+      UNSAFE_FORMATTING.has(codePoint)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+const NOTE_CONTROLS = new Set([0x09, 0x0a]);
+const NO_CONTROLS = new Set<number>();
+const UNSAFE_FORMATTING = new Set([
+  0x061c,
+  0x200e,
+  0x200f,
+  0x202a,
+  0x202b,
+  0x202c,
+  0x202d,
+  0x202e,
+  0x2066,
+  0x2067,
+  0x2068,
+  0x2069,
+  0xfeff,
+]);
+
+export function normalizeTransactionNotes(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.replace(/\r\n?/g, "\n").normalize("NFC").trim();
+  if (
+    [...normalized].length > WRITE_LIMITS.transactionNotes ||
+    hasUnsafeCodePoint(normalized, NOTE_CONTROLS)
+  ) {
+    return null;
+  }
+  return normalized;
+}
+
+export function normalizeTransactionTags(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length > WRITE_LIMITS.transactionTags) return null;
+
+  const normalized = new Set<string>();
+  for (const rawTag of value) {
+    if (typeof rawTag !== "string") return null;
+    const nfc = rawTag.normalize("NFC");
+    if (nfc.includes(",") || hasUnsafeCodePoint(nfc, NO_CONTROLS)) return null;
+    const tag = nfc.trim().replace(/\s+/gu, " ").toLowerCase();
+    if (!tag) continue;
+    if ([...tag].length > WRITE_LIMITS.transactionTag) return null;
+    normalized.add(tag);
+  }
+
+  const tags = [...normalized].sort();
+  if (tags.length > WRITE_LIMITS.transactionTags) return null;
+  if (JSON.stringify(tags).length > WRITE_LIMITS.transactionTagsJson) return null;
+  return tags;
+}
+
+export function parseStoredTransactionTags(value: unknown): string[] {
+  if (typeof value !== "string" || value.length > WRITE_LIMITS.transactionTagsJson) {
+    return [];
+  }
+  try {
+    return normalizeTransactionTags(JSON.parse(value)) ?? [];
+  } catch {
+    return [];
+  }
 }
 
 export function normalizeFilename(value: unknown): string | null {
@@ -135,6 +216,8 @@ export interface TransactionInput {
   date: string;
   description: string;
   amountCents: number;
+  notes?: string;
+  tags?: readonly string[];
 }
 
 export interface NormalizedTransactionInput {
@@ -143,6 +226,8 @@ export interface NormalizedTransactionInput {
   date: string;
   description: string;
   amountCents: number;
+  notes?: string;
+  tagsJson?: string;
 }
 
 export function normalizeTransactionInput(
@@ -177,6 +262,27 @@ export function normalizeTransactionInput(
       result: invalidWriteInput("amountCents", "Transaction amount must be exact cents"),
     };
   }
+  const notes =
+    input.notes === undefined ? undefined : normalizeTransactionNotes(input.notes);
+  if (notes === null) {
+    return {
+      ok: false,
+      result: invalidWriteInput(
+        "notes",
+        `Transaction notes must be at most ${WRITE_LIMITS.transactionNotes} characters and contain only safe text`,
+      ),
+    };
+  }
+  const tags = input.tags === undefined ? undefined : normalizeTransactionTags(input.tags);
+  if (tags === null) {
+    return {
+      ok: false,
+      result: invalidWriteInput(
+        "tags",
+        `Use at most ${WRITE_LIMITS.transactionTags} comma-free tags of ${WRITE_LIMITS.transactionTag} characters each`,
+      ),
+    };
+  }
   return {
     ok: true,
     value: {
@@ -185,6 +291,8 @@ export function normalizeTransactionInput(
       date: input.date,
       description,
       amountCents: input.amountCents,
+      ...(notes === undefined ? {} : { notes }),
+      ...(tags === undefined ? {} : { tagsJson: JSON.stringify(tags) }),
     },
   };
 }

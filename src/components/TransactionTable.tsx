@@ -49,7 +49,34 @@ export function TransactionTable({
               <td className="px-3 py-2 whitespace-nowrap text-ink-2 tabular-nums" title={t.date}>
                 {formatIsoDate(t.date)}
               </td>
-              <td className="px-3 py-2">{t.description}</td>
+              <td className="max-w-md px-3 py-2">
+                <div>{t.description}</div>
+                {t.notes ? (
+                  <p
+                    className="mt-1 line-clamp-2 whitespace-pre-line break-words text-xs text-ink-muted"
+                    title={t.notes}
+                  >
+                    {t.notes}
+                  </p>
+                ) : null}
+                {t.tags.length > 0 ? (
+                  <ul
+                    aria-label={`Tags for ${t.description}`}
+                    className="mt-1 flex flex-wrap gap-1"
+                  >
+                    {t.tags.map((tag) => (
+                      <li key={tag}>
+                        <Link
+                          href={`/transactions?tag=${encodeURIComponent(tag)}`}
+                          className="inline-flex min-h-11 items-center rounded-full border border-hairline bg-gridline/30 px-2 py-0.5 text-xs text-ink-2 hover:bg-gridline/60"
+                        >
+                          #{tag}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </td>
               <td className="px-3 py-2 whitespace-nowrap text-ink-2">
                 <Link
                   href={`/transactions?account=${t.accountId}`}

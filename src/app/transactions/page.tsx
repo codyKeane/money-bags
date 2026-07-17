@@ -49,7 +49,8 @@ export default async function TransactionsPage({
   // redirect, pagination link, or export URL is built.
   const sanitizedQuery = { ...query, accountId, categoryId };
   const pageHref = (target: number) => transactionPageHref(sanitizedQuery, target);
-  if (pageInput.needsCanonicalRedirect) redirect(pageHref(1));
+  const rawTag = get("tag")?.trim() || undefined;
+  if (pageInput.needsCanonicalRedirect || rawTag !== query.tag) redirect(pageHref(1));
 
   const { items, totalCount, page, lastPage } = await getTransactionsPage({
     ...sanitizedQuery,
@@ -69,13 +70,13 @@ export default async function TransactionsPage({
   // so the empty state can point the user at the right next step. categoryId is
   // null when filtering for uncategorized — still an active filter.
   const hasActiveFilters = Boolean(
-    query.q || accountId || categoryId !== undefined || query.month || query.from || query.to,
+    query.q || query.tag || accountId || categoryId !== undefined || query.month || query.from || query.to,
   );
 
   const rowFrom = totalCount === 0 ? 0 : (page - 1) * TRANSACTIONS_PAGE_SIZE + 1;
   const rowTo = Math.min(page * TRANSACTIONS_PAGE_SIZE, totalCount);
   const exportParams = transactionQuerySearchParams(sanitizedQuery);
-  exportParams.set("format", "detailed");
+  exportParams.set("format", "annotated");
   const exportHref = `/api/export?${exportParams.toString()}`;
 
   return (

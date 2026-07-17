@@ -25,8 +25,8 @@ describe("backup CLI adapter", () => {
             "moneybags-20260715T120000000Z-10000000-0000-4000-8000-000000000001.sqlite3",
           revision: {
             kind: "current",
-            index: 4,
-            tag: "0004_right_gamma_corps",
+            index: 5,
+            tag: "0005_annotations",
           },
           pruned: 2,
           durability: "confirmed",
@@ -40,7 +40,7 @@ describe("backup CLI adapter", () => {
     expect(status).toBe(0);
     expect(observedKeep).toEqual([14]);
     expect(output.join("\n")).toContain("Backup publication: VALID");
-    expect(output.join("\n")).toContain("Schema revision: current 0004_right_gamma_corps");
+    expect(output.join("\n")).toContain("Schema revision: current 0005_annotations");
     expect(output.join("\n")).toContain("Retention pruned: 2");
     expect(output.join("\n")).toContain("Durability: confirmed");
     expect(output.join("\n")).toContain("Filesystem privacy: POSIX modes enforced");
@@ -55,7 +55,7 @@ describe("backup CLI adapter", () => {
         backupDirectory: path.join(repositoryRoot, "data", "backups", "target-synthetic"),
         filename:
           "moneybags-20260715T120000000Z-10000000-0000-4000-8000-000000000001.sqlite3",
-        revision: { kind: "current", index: 4, tag: "0004_right_gamma_corps" },
+        revision: { kind: "current", index: 5, tag: "0005_annotations" },
         pruned: 0,
         durability: "platform-best-effort",
         filesystemPrivacy: "acl-unverified",

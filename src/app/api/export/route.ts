@@ -14,18 +14,23 @@ function json(body: unknown, status: number): Response {
 function parseFormat(value: string | null): TransactionExportFormat | null {
   if (value === null || value === "legacy") return "legacy";
   if (value === "detailed") return "detailed";
+  if (value === "annotated") return "annotated";
   return null;
 }
 
-// GET /api/export?q=&account=&category=&month=&from=&to=&format=legacy|detailed
+// GET /api/export?q=&tag=&account=&category=&month=&from=&to=&format=legacy|detailed|annotated
 // streams the complete filtered parent-ledger view. Legacy retains the original
-// five-column contract; detailed is currency-explicit and split-aware.
+// five-column contract; detailed is currency-explicit and split-aware; annotated
+// adds notes and tags without changing either existing representation.
 export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;
   const format = parseFormat(sp.get("format"));
   if (!format) {
     return json(
-      { error: "invalid-format", message: "format must be legacy or detailed." },
+      {
+        error: "invalid-format",
+        message: "format must be legacy, detailed, or annotated.",
+      },
       400,
     );
   }
@@ -38,7 +43,7 @@ export async function GET(request: NextRequest) {
         {
           error: result.status,
           message:
-            "Legacy export requires one currency. Use detailed format or filter to one account.",
+            "Legacy export requires one currency. Use detailed/annotated format or filter to one account.",
         },
         409,
       );

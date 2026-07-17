@@ -66,6 +66,10 @@ export const transactions = sqliteTable(
     id: id(),
     date: text("date").notNull(), // YYYY-MM-DD (statement dates are date-only)
     description: text("description").notNull(),
+    notes: text("notes").notNull().default(""),
+    // Canonical JSON string[]; service reads tolerate malformed historical
+    // values while every supported write stores bounded normalized tags.
+    tagsJson: text("tags").notNull().default("[]"),
     amountCents: integer("amount_cents").notNull(), // signed: negative = outflow
     accountId: text("account_id")
       .notNull()

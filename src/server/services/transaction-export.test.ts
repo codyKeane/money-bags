@@ -4,8 +4,10 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createTestDb } from "@/db/client";
 import {
+  ANNOTATED_EXPORT_HEADER,
   DETAILED_EXPORT_HEADER,
   LEGACY_EXPORT_HEADER,
+  type TransactionExportFormat,
 } from "@/lib/csv/transaction-export";
 import { prepareTransactionExport } from "./transaction-export";
 
@@ -28,6 +30,8 @@ interface TransactionFixture {
   accountId: string;
   categoryId?: string | null;
   createdAt?: number;
+  notes?: string;
+  tagsJson?: string;
 }
 
 interface SplitFixture {
@@ -113,8 +117,8 @@ describe("transaction export service (integration, temp DB)", () => {
       .prepare(
         `insert into transactions (
           id, date, description, amount_cents, account_id, category_id,
-          import_hash, batch_id, created_at, updated_at
-        ) values (?, ?, ?, ?, ?, ?, null, null, ?, ?)`,
+          import_hash, batch_id, notes, tags, created_at, updated_at
+        ) values (?, ?, ?, ?, ?, ?, null, null, ?, ?, ?, ?)`,
       )
       .run(
         fixture.id,
@@ -123,6 +127,8 @@ describe("transaction export service (integration, temp DB)", () => {
         fixture.amountCents,
         fixture.accountId,
         fixture.categoryId ?? null,
+        fixture.notes ?? "",
+        fixture.tagsJson ?? "[]",
         createdAt,
         createdAt,
       );
@@ -144,7 +150,7 @@ describe("transaction export service (integration, temp DB)", () => {
   }
 
   async function prepareReady(
-    format: "legacy" | "detailed",
+    format: TransactionExportFormat,
     query: Parameters<typeof prepareTransactionExport>[0] = {},
     options: Omit<
       NonNullable<Parameters<typeof prepareTransactionExport>[2]>,
@@ -188,6 +194,25 @@ describe("transaction export service (integration, temp DB)", () => {
 
     await expect(readStream(result.stream)).resolves.toBe(`${DETAILED_EXPORT_HEADER}\r\n`);
     expect(result.isClosed()).toBe(true);
+  });
+
+  it("streams normalized annotations only in the annotated format", async () => {
+    addAccount({ id: "account-usd", name: "Checking", currency: "USD" });
+    addTransaction({
+      id: "annotated",
+      date: "2026-07-01",
+      description: "Lunch",
+      amountCents: -2500,
+      accountId: "account-usd",
+      notes: "Shared with Rowan",
+      tagsJson: '["reimbursable","work"]',
+    });
+
+    const result = await prepareReady("annotated", { tag: "work" });
+    await expect(readStream(result.stream)).resolves.toBe(
+      `${ANNOTATED_EXPORT_HEADER}\r\n` +
+        '2026-07-01,Lunch,-25.00,USD,Checking,Uncategorized,,Shared with Rowan,"[""reimbursable"",""work""]"\r\n',
+    );
   });
 
   it("refuses a legacy export selected across normalized currencies before streaming", async () => {

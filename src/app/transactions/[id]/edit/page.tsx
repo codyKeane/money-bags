@@ -105,6 +105,8 @@ export default async function EditTransactionPage({
             categoryId: transaction.categoryId,
             date: transaction.date,
             description: transaction.description,
+            notes: transaction.notes,
+            tags: transaction.tags,
             amountCents: transaction.amountCents,
           }}
         />

@@ -6,7 +6,7 @@ telemetry, no CDN assets, no remote fonts. The only network access this
 project ever performs is `npm install` at development time.
 
 - **Ledger**: SQLite (WAL mode) via Drizzle ORM — signed integer cents,
-  date-only ISO transaction dates
+  date-only ISO transaction dates, optional notes, and canonical tags
 - **Ingestion**: file-atomic CSV bank-statement import (CLI + web UI) with
   occurrence-aware hash dedupe and keyword auto-categorization
 - **Dashboard**: net worth, monthly spending by category, income-vs-spending
@@ -365,22 +365,40 @@ controls are at least 44×44 CSS pixels and include part/category context in
 repeated accessible names. The reproducible browser/screen-reader matrix remains
 a manual release gate; automated Node tests do not claim to replace it.
 
+## Transaction notes and tags
+
+Manual transactions can carry an optional 2,000-character note and up to 20
+comma-separated tags (40 characters each). Notes preserve line breaks. Tags are
+Unicode-normalized, collapsed around whitespace, saved in lowercase, de-duplicated,
+and sorted. They appear beneath the description; selecting a `#tag` badge opens an
+exact tag-filtered ledger view. The search box matches descriptions, notes, and
+tags while treating `%` and `_` literally.
+
+Statement imports intentionally leave notes/tags empty and do not use them in the
+frozen duplicate hash. Adding annotations to an imported row therefore does not
+change re-import deduplication, and undoing that import still removes the annotated
+row with its parent batch.
+
 ## Exporting transactions
 
 The **Export CSV** control on `/transactions` downloads every parent transaction
-matching the current filters, not only the visible 50-row page. It uses the
-currency-explicit detailed format:
+matching the current filters, not only the visible 50-row page. The UI uses the
+currency-explicit annotated format:
 
 ```text
-Date,Description,Amount,Currency,Account,Category,Split Details
+Date,Description,Amount,Currency,Account,Category,Split Details,Notes,Tags
 ```
 
 Unsplit rows use their active category or `Uncategorized`. Split rows remain one
 full parent-ledger row, use `Category=Split`, and carry deterministic compact JSON
-for every allocation. A category filter therefore means “the transaction
-contains this active category/allocation”; the export still includes the full
-parent amount and all of its split details. Rows are ordered oldest-first by
-date, creation time, then stable ID.
+for every allocation. Tags are deterministic compact JSON in one CSV cell. A
+category filter means “the transaction contains this active category/allocation”;
+an exact tag filter matches the parent annotation. Either way, the export still
+includes the full parent amount and all of its split details. Rows are ordered
+oldest-first by date, creation time, then stable ID.
+
+`/api/export?format=detailed` retains its existing seven-column header without
+annotations. `/api/export?format=annotated` adds Notes and Tags as shown above.
 
 Local scripts may keep using `/api/export` or
 `/api/export?format=legacy`, whose compatibility header remains exactly:
@@ -390,14 +408,14 @@ Date,Description,Amount,Account,Category
 ```
 
 Because legacy rows have no currency column, a mixed-currency selection returns
-a non-cacheable `409` response; use `format=detailed` or filter to one account.
-Both formats refuse an invalid stored account currency and direct you to repair
-it on **Accounts**. Unknown formats return `400`. Empty selections contain only
-the selected format's header.
+a non-cacheable `409` response; use `format=detailed`, `format=annotated`, or
+filter to one account. Every format refuses an invalid stored account currency
+and directs you to repair it on **Accounts**. Unknown formats return `400`.
+Empty selections contain only the selected format's header.
 
 CSV text fields are spreadsheet-safe by default. A description, currency,
-account, category, or split-details cell whose first character after leading
-ASCII control/whitespace is `=`, `+`, `-`, or `@` receives one leading
+account, category, split-details, note, or tags cell whose first character after
+leading ASCII control/whitespace is `=`, `+`, `-`, or `@` receives one leading
 apostrophe before RFC 4180 quoting.
 This can be visible to strict CSV consumers, but prevents spreadsheet formula
 interpretation; signed numeric Amount cells such as `-12.34` remain numeric and
@@ -440,6 +458,12 @@ use the manual offline procedure to restore the backup paired with the older cod
 Retain the rescue/quarantine until that older revision passes health and ledger
 validation. Code rollback and database rollback are related decisions, not one
 blind file copy.
+
+Migration `0005_annotations` only appends defaulted transaction
+columns, but the supported rollback remains the validated backup paired with the
+prior code. There is no down migration. If transactions were added or edited
+after the upgrade, restoring that backup discards those later ledger changes;
+prefer a reviewed roll-forward fix unless an offline restore is truly required.
 
 ## Commands
 

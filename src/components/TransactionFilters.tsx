@@ -48,10 +48,20 @@ export function TransactionFilters({
         value={q}
         onChange={(e) => setQ(e.target.value)}
         onBlur={() => apply({ q: q.trim() })}
-        placeholder="Search descriptions…"
-        aria-label="Search descriptions"
-        className={`${inputClass} w-56`}
+        placeholder="Search descriptions, notes, or tags…"
+        aria-label="Search descriptions, notes, or tags"
+        className={`${inputClass} w-72`}
       />
+      {params.get("tag") ? (
+        <button
+          type="button"
+          onClick={() => apply({ tag: "" })}
+          className="inline-flex min-h-11 items-center rounded-full border border-hairline bg-gridline/30 px-3 text-xs text-ink-2"
+          aria-label={`Remove tag filter ${params.get("tag")}`}
+        >
+          #{params.get("tag")} ×
+        </button>
+      ) : null}
       <select
         value={params.get("account") ?? ""}
         onChange={(e) => apply({ account: e.target.value })}

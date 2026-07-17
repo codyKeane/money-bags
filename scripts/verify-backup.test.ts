@@ -14,13 +14,13 @@ const fakePreflight = Object.freeze({
 const fakeOracle = Object.freeze({
   currentRevision: Object.freeze({
     kind: "current" as const,
-    index: 4,
-    tag: "0004_right_gamma_corps",
+    index: 5,
+    tag: "0005_annotations",
   }),
   validate: () => ({
     kind: "current" as const,
-    index: 4,
-    tag: "0004_right_gamma_corps",
+    index: 5,
+    tag: "0005_annotations",
   }),
 });
 
@@ -41,7 +41,7 @@ describe("backup verification CLI adapter", () => {
     expect(status).toBe(0);
     expect(output).toEqual([
       "Backup verification: VALID",
-      "Schema revision: current 0004_right_gamma_corps",
+      "Schema revision: current 0005_annotations",
     ]);
     expect(output.join("\n")).not.toContain(candidate);
     expect(output.join("\n")).not.toMatch(/account|transaction|SELECT/i);

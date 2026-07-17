@@ -13,6 +13,7 @@ import {
   getSplitsForTransaction,
   getTransactionById,
   getTransactionsPage,
+  parseTransactionQuery,
   parseTransactionPage,
   replaceSplits,
   setTransactionCategory,
@@ -108,11 +109,15 @@ describe("transactions service (integration, temp DB)", () => {
         date: "2026-06-15",
         description: "MANUAL CASH BUY",
         amountCents: -750,
+        notes: "  Met Sam\r\noutside  ",
+        tags: ["Personal", "cash", "PERSONAL"],
       },
       db,
     );
     expect(row.importHash).toBeNull();
     expect(row.amountCents).toBe(-750);
+    expect(row.notes).toBe("Met Sam\noutside");
+    expect(row.tagsJson).toBe('["cash","personal"]');
   });
 
   it("keeps a top-level normalized-or-null currency on money-rendering rows", async () => {
@@ -155,6 +160,8 @@ describe("transactions service (integration, temp DB)", () => {
         date: "2026-06-16",
         description: "TO EDIT",
         amountCents: -100,
+        notes: "Original note",
+        tags: ["original"],
       },
       db,
     );
@@ -166,6 +173,8 @@ describe("transactions service (integration, temp DB)", () => {
         date: "2026-06-17",
         description: "EDITED",
         amountCents: 2500,
+        notes: "Edited note",
+        tags: ["Travel", "reviewed"],
       },
       db,
     )).toEqual({ status: "updated", id: row.id });
@@ -176,9 +185,45 @@ describe("transactions service (integration, temp DB)", () => {
       date: "2026-06-17",
       description: "EDITED",
       amountCents: 2500,
+      notes: "Edited note",
+      tags: ["reviewed", "travel"],
     });
     expect(await deleteTransaction(row.id, db)).toBe(row.id);
     expect(await getTransactionById(row.id, db)).toBeNull();
+  });
+
+  it("preserves annotations when a legacy service caller omits them", async () => {
+    const row = await mustCreateTransaction(
+      {
+        accountId: accountA,
+        categoryId: null,
+        date: "2026-06-16",
+        description: "ANNOTATED LEGACY UPDATE",
+        amountCents: -100,
+        notes: "Keep this note",
+        tags: ["keep", "reviewed"],
+      },
+      db,
+    );
+
+    await expect(
+      updateTransaction(
+        row.id,
+        {
+          accountId: accountA,
+          categoryId: groceriesId,
+          date: "2026-06-17",
+          description: "LEGACY CALLER UPDATED",
+          amountCents: -200,
+        },
+        db,
+      ),
+    ).resolves.toEqual({ status: "updated", id: row.id });
+    expect(await getTransactionById(row.id, db)).toMatchObject({
+      description: "LEGACY CALLER UPDATED",
+      notes: "Keep this note",
+      tags: ["keep", "reviewed"],
+    });
   });
 
   it("balances include manual rows", async () => {
@@ -216,6 +261,12 @@ describe("transactions service (integration, temp DB)", () => {
     await expect(
       createTransaction({ ...base, description: "   " }, db),
     ).resolves.toMatchObject({ status: "invalid-input", field: "description" });
+    await expect(
+      createTransaction({ ...base, notes: "x".repeat(2_001) }, db),
+    ).resolves.toMatchObject({ status: "invalid-input", field: "notes" });
+    await expect(
+      createTransaction({ ...base, tags: ["comma,inside"] }, db),
+    ).resolves.toMatchObject({ status: "invalid-input", field: "tags" });
     await expect(
       createTransaction({ ...base, accountId: "missing-account" }, db),
     ).resolves.toEqual({ status: "unknown-account" });
@@ -309,6 +360,7 @@ describe("transactions service (integration, temp DB)", () => {
   it("builds canonical page and export URLs without a page-1 redirect loop", () => {
     const query = {
       q: "rent & utilities",
+      tag: "shared trip",
       accountId: "account/id",
       categoryId: null,
       month: "2026-06",
@@ -317,13 +369,22 @@ describe("transactions service (integration, temp DB)", () => {
     } as const;
     const pageOne = transactionPageHref(query, 1);
     expect(pageOne).toBe(
-      "/transactions?q=rent+%26+utilities&account=account%2Fid&category=uncategorized&month=2026-06&from=2026-06-02&to=2026-06-20",
+      "/transactions?q=rent+%26+utilities&tag=shared+trip&account=account%2Fid&category=uncategorized&month=2026-06&from=2026-06-02&to=2026-06-20",
     );
     expect(pageOne).not.toContain("page=");
     expect(transactionPageHref(query, 2)).toBe(`${pageOne}&page=2`);
     expect(transactionQuerySearchParams(query).toString()).toBe(pageOne.split("?")[1]);
     expect(parseTransactionPage(undefined).needsCanonicalRedirect).toBe(false);
     expect(() => transactionPageHref(query, 0)).toThrow(RangeError);
+  });
+
+  it("canonicalizes one exact tag query and drops malformed tag input", () => {
+    expect(parseTransactionQuery((key) => (key === "tag" ? "  Summer   Trip  " : undefined)))
+      .toMatchObject({ tag: "summer trip" });
+    expect(parseTransactionQuery((key) => (key === "tag" ? "two,tags" : undefined)).tag)
+      .toBeUndefined();
+    expect(parseTransactionQuery((key) => (key === "tag" ? "bad\0tag" : undefined)).tag)
+      .toBeUndefined();
   });
 
   it("rejects invalid direct service page numbers before calculating an offset", async () => {
@@ -344,6 +405,72 @@ describe("transactions service (integration, temp DB)", () => {
     expect(underscore.totalCount).toBe(1);
     const noWildcard = await getTransactionsPage({ q: "under.score", requestedPage: 1 }, db);
     expect(noWildcard.totalCount).toBe(0);
+  });
+
+  it("searches annotations and filters one exact canonical tag without duplicate rows", async () => {
+    const annotated = await mustCreateTransaction(
+      {
+        accountId: accountA,
+        categoryId: null,
+        date: "2026-06-18",
+        description: "GENERIC MERCHANT",
+        amountCents: -900,
+        notes: "Shared with Rowan at the lake 100%",
+        tags: ["Summer Trip", "under_score"],
+      },
+      db,
+    );
+
+    const byNote = await getTransactionsPage({ q: "rowan", requestedPage: 1 }, db);
+    expect(byNote.items).toHaveLength(1);
+    expect(byNote.items[0]).toMatchObject({
+      id: annotated.id,
+      notes: "Shared with Rowan at the lake 100%",
+      tags: ["summer trip", "under_score"],
+    });
+    expect((await getTransactionsPage({ q: "100%", requestedPage: 1 }, db)).totalCount).toBe(2);
+    expect((await getTransactionsPage({ q: "under_score", requestedPage: 1 }, db)).totalCount).toBe(2);
+    expect((await getTransactionsPage({ q: "under.score", requestedPage: 1 }, db)).totalCount).toBe(0);
+    expect((await getTransactionsPage({ q: "[", requestedPage: 1 }, db)).totalCount).toBe(0);
+
+    const byTag = await getTransactionsPage(
+      { tag: "summer trip", requestedPage: 1 },
+      db,
+    );
+    expect(byTag.items.map((row) => row.id)).toEqual([annotated.id]);
+  });
+
+  it("tolerates malformed historical tag JSON without treating object values as tags", async () => {
+    const row = await mustCreateTransaction(
+      {
+        accountId: accountA,
+        categoryId: null,
+        date: "2026-06-19",
+        description: "MALFORMED TAG FIXTURE",
+        amountCents: -1,
+      },
+      db,
+    );
+    await db
+      .update(transactions)
+      .set({ tagsJson: '{"unexpected":"work"}' })
+      .where(eq(transactions.id, row.id));
+
+    const page = await getTransactionsPage({ q: "MALFORMED TAG", requestedPage: 1 }, db);
+    expect(page.items[0]).toMatchObject({ id: row.id, tags: [] });
+    expect((await getTransactionsPage({ tag: "work", requestedPage: 1 }, db)).totalCount)
+      .toBe(0);
+
+    await db
+      .update(transactions)
+      .set({ tagsJson: "not-json" })
+      .where(eq(transactions.id, row.id));
+    await expect(
+      getTransactionsPage({ tag: "work", requestedPage: 1 }, db),
+    ).resolves.toMatchObject({ totalCount: 0 });
+    await expect(
+      getTransactionsPage({ q: "work", requestedPage: 1 }, db),
+    ).resolves.toMatchObject({ totalCount: 0 });
   });
 
   it("filters by account, category (incl. uncategorized), and month; filters AND together", async () => {
@@ -660,6 +787,8 @@ describe("transaction splits service (integration, temp DB)", () => {
           date: "2026-06-12",
           description: "METADATA EDITED",
           amountCents: -10000,
+          notes: "Shared household purchase",
+          tags: ["split", "reviewed"],
         },
         db,
       ),
@@ -671,6 +800,8 @@ describe("transaction splits service (integration, temp DB)", () => {
       date: "2026-06-12",
       description: "METADATA EDITED",
       amountCents: -10000,
+      notes: "Shared household purchase",
+      tags: ["reviewed", "split"],
       importHash: "synthetic-import-hash",
       batchId: "batch-1",
     });

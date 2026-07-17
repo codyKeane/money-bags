@@ -4,8 +4,9 @@ import { isValidIsoDate } from "../month";
 export const LEGACY_EXPORT_HEADER = "Date,Description,Amount,Account,Category";
 export const DETAILED_EXPORT_HEADER =
   "Date,Description,Amount,Currency,Account,Category,Split Details";
+export const ANNOTATED_EXPORT_HEADER = `${DETAILED_EXPORT_HEADER},Notes,Tags`;
 
-export type TransactionExportFormat = "legacy" | "detailed";
+export type TransactionExportFormat = "legacy" | "detailed" | "annotated";
 
 export interface TransactionExportSplitDetail {
   category: string | null;
@@ -21,6 +22,8 @@ export interface TransactionExportRow {
   categoryName: string | null;
   isSplit: boolean;
   splitDetails: readonly TransactionExportSplitDetail[];
+  notes: string;
+  tags: readonly string[];
 }
 
 const FORMULA_PREFIX = /^[\u0000-\u0020]*[=+\-@]/;
@@ -86,11 +89,17 @@ export function serializeExportRow(
   }
 
   const splitDetails = row.isSplit ? serializeSplitDetails(row.splitDetails) : "";
-  return [
+  const detailed = [
     ...base,
     safeTextField(row.currency),
     safeTextField(row.accountName),
     safeTextField(category),
     safeTextField(splitDetails),
+  ];
+  if (format === "detailed") return detailed.join(",");
+  return [
+    ...detailed,
+    safeTextField(row.notes),
+    safeTextField(JSON.stringify(row.tags)),
   ].join(",");
 }

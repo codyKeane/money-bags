@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, lt, lte, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, lte, or, sql, type SQL } from "drizzle-orm";
 import { getDb, type Db } from "@/db/client";
 import {
   accounts,
@@ -17,6 +17,8 @@ import {
   MAX_SPLIT_PARTS,
   normalizeId,
   normalizeTransactionInput,
+  normalizeTransactionTags,
+  parseStoredTransactionTags,
   type InvalidWriteInput,
   type NormalizedTransactionInput,
   type TransactionInput,
@@ -29,6 +31,8 @@ export interface TransactionListItem {
   id: string;
   date: string;
   description: string;
+  notes: string;
+  tags: string[];
   amountCents: number;
   accountId: string;
   accountName: string;
@@ -49,6 +53,8 @@ const transactionListColumns = {
   id: transactions.id,
   date: transactions.date,
   description: transactions.description,
+  notes: transactions.notes,
+  tagsJson: transactions.tagsJson,
   amountCents: transactions.amountCents,
   accountId: transactions.accountId,
   accountName: accounts.name,
@@ -61,15 +67,18 @@ const transactionListColumns = {
 
 type TransactionListRow = Omit<
   TransactionListItem,
-  "currency" | "normalizedCurrency" | "currencyState" | "isSplit"
+  "currency" | "normalizedCurrency" | "currencyState" | "isSplit" | "tags"
 > & {
   isSplit: number;
+  tagsJson: string;
 };
 
 function toTransactionListItem(row: TransactionListRow): TransactionListItem {
   const currencyState = inspectCurrencyCode(row.rawCurrency);
+  const { tagsJson, ...rest } = row;
   return {
-    ...row,
+    ...rest,
+    tags: parseStoredTransactionTags(tagsJson),
     currency: row.rawCurrency,
     normalizedCurrency: currencyState.kind === "valid" ? currencyState.currency : null,
     currencyState,
@@ -96,7 +105,8 @@ export async function getRecentTransactions(
 
 // The filterable predicate set, shared by the paged list and the CSV export.
 export interface TransactionQuery {
-  q?: string; // description substring, case-insensitive
+  q?: string; // description/note/tag substring, case-insensitive
+  tag?: string; // one exact canonical tag
   accountId?: string;
   categoryId?: string | null; // null = uncategorized, undefined = any
   month?: string; // YYYY-MM
@@ -121,8 +131,11 @@ export function parseTransactionQuery(
     v && isValidIsoDate(v) ? v : undefined;
   const rawMonth = get("month") || undefined;
   const rawCategory = get("category") || undefined;
+  const rawTag = get("tag")?.trim();
+  const tag = rawTag ? normalizeTransactionTags([rawTag])?.[0] : undefined;
   return {
     q: get("q")?.trim() || undefined,
+    tag,
     accountId: get("account") || undefined,
     categoryId: rawCategory === "uncategorized" ? null : rawCategory,
     month: rawMonth && isValidMonth(rawMonth) ? rawMonth : undefined,
@@ -134,6 +147,7 @@ export function parseTransactionQuery(
 export function transactionQuerySearchParams(query: TransactionQuery): URLSearchParams {
   const params = new URLSearchParams();
   if (query.q) params.set("q", query.q);
+  if (query.tag) params.set("tag", query.tag);
   if (query.accountId) params.set("account", query.accountId);
   if (query.categoryId === null) params.set("category", "uncategorized");
   else if (query.categoryId) params.set("category", query.categoryId);
@@ -188,9 +202,47 @@ export function buildTransactionWhere(filter: TransactionQuery): SQL | undefined
   if (filter.q) {
     // escape LIKE wildcards so the user searches literal text
     const escaped = filter.q.replace(/[\\%_]/g, (c) => `\\${c}`);
+    const pattern = "%" + escaped + "%";
     conditions.push(
-      sql`${transactions.description} LIKE ${"%" + escaped + "%"} ESCAPE '\\'`,
+      or(
+        sql`${transactions.description} LIKE ${pattern} ESCAPE '\\'`,
+        sql`${transactions.notes} LIKE ${pattern} ESCAPE '\\'`,
+        sql`exists (
+          select 1
+          from json_each(
+            case
+              when json_valid(${transactions.tagsJson})
+              then case
+                when json_type(${transactions.tagsJson}) = 'array'
+                then ${transactions.tagsJson}
+                else '[]'
+              end
+              else '[]'
+            end
+          ) as searched_tag
+          where searched_tag.type = 'text'
+            and searched_tag.value LIKE ${pattern} ESCAPE '\\'
+        )`,
+      )!,
     );
+  }
+  if (filter.tag) {
+    conditions.push(sql`exists (
+      select 1
+      from json_each(
+        case
+          when json_valid(${transactions.tagsJson})
+          then case
+            when json_type(${transactions.tagsJson}) = 'array'
+            then ${transactions.tagsJson}
+            else '[]'
+          end
+          else '[]'
+        end
+      ) as transaction_tag
+      where transaction_tag.type = 'text'
+        and lower(trim(transaction_tag.value)) = ${filter.tag}
+    )`);
   }
   if (filter.accountId) conditions.push(eq(transactions.accountId, filter.accountId));
   if (filter.categoryId === null || filter.categoryId) {
@@ -595,7 +647,9 @@ export async function deleteTransaction(id: string, db: Db = getDb()): Promise<s
 
 export async function getTransactionById(id: string, db: Db = getDb()) {
   const [row] = await db.select().from(transactions).where(eq(transactions.id, id)).limit(1);
-  return row ?? null;
+  if (!row) return null;
+  const { tagsJson, ...transaction } = row;
+  return { ...transaction, tags: parseStoredTransactionTags(tagsJson) };
 }
 
 // ---------- transaction splits ----------

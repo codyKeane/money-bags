@@ -15,7 +15,7 @@ import {
   undoImport,
 } from "./import";
 import { getAccountsWithBalances, getNetWorth, getOrCreateAccountByName } from "./accounts";
-import { createTransaction } from "./transactions";
+import { createTransaction, updateTransaction } from "./transactions";
 import { getMonthlySpendingByCategory, getMonthlySummary } from "./summary";
 
 const CSV = [
@@ -72,6 +72,8 @@ describe("importStatement (integration, temp DB)", () => {
     expect(result.errors).toEqual([]);
     expect(result.skipped).toEqual([]);
     expect(result.imported).toBe(5);
+    const importedRows = await db.select().from(transactions);
+    expect(importedRows.every((row) => row.notes === "" && row.tagsJson === "[]")).toBe(true);
 
     const spending = await getMonthlySpendingByCategory("2026-06", db);
     const groceries = spending.find((s) => s.categoryName === "Groceries");
@@ -94,6 +96,41 @@ describe("importStatement (integration, temp DB)", () => {
     expect(result.imported).toBe(0);
     expect(result.skipped).toHaveLength(5);
     expect(result.skipped[0]).toMatchObject({ description: "ACME PAYROLL" });
+  });
+
+  it("keeps imported annotations and the frozen hash when the source is re-imported", async () => {
+    const first = await importStatement({ account: existingAccount(accountId), csvText: CSV }, db);
+    expect(first.imported).toBe(5);
+    const [row] = await db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.description, "ACME PAYROLL"));
+    if (!row?.importHash) throw new Error("expected imported payroll fixture");
+
+    await expect(
+      updateTransaction(
+        row.id,
+        {
+          accountId: row.accountId,
+          categoryId: row.categoryId,
+          date: row.date,
+          description: row.description,
+          amountCents: row.amountCents,
+          notes: "Reviewed payroll deposit",
+          tags: ["Income", "reviewed"],
+        },
+        db,
+      ),
+    ).resolves.toEqual({ status: "updated", id: row.id });
+
+    const second = await importStatement({ account: existingAccount(accountId), csvText: CSV }, db);
+    expect(second).toMatchObject({ imported: 0, batchId: null });
+    const [after] = await db.select().from(transactions).where(eq(transactions.id, row.id));
+    expect(after).toMatchObject({
+      importHash: row.importHash,
+      notes: "Reviewed payroll deposit",
+      tagsJson: '["income","reviewed"]',
+    });
   });
 
   it("balances reflect opening balance plus imported rows", async () => {
