@@ -40,8 +40,9 @@ Treat this file as the default plan until repository evidence disproves an assum
 10. Stop and ask only when a retained non-goal is deliberately brought into
     scope, a real-host/destructive operation needs authorization, or new
     repository evidence invalidates a selected contract. The scoped decision
-    records below are now implemented; browser/assistive and real-host release
-    gates remain environment-owned.
+    records below are now implemented; the screen-reader and real-host release
+    gates remain environment-owned. The Firefox keyboard/focus matrix is
+    recorded in the WP-17 checkpoint below.
 
 The guide uses “must” for a product or safety invariant, “should” for the recommended implementation, and “may” for an optional refinement. Suggested file and symbol names are review aids, not permission for speculative abstraction.
 
@@ -2792,25 +2793,40 @@ confirmation refusal state, surviving focus lookup, action field retention, and
 active-route semantics, including the typed account-name mismatch field. The
 focused matrix passed 8 files / 59 tests; the default and seed-`171717` shuffled
 suites passed 62 files / 816 tests, and full ESLint and TypeScript passed. An
-independent review returned READY with no remaining code-level blocker. Full
-browser and assistive-technology behavior remains a manual gate as required by
-WP-17.
+independent review returned READY with no remaining code-level blocker. At that
+implementation checkpoint, browser and assistive-technology behavior remained
+manual gates; the follow-on Firefox record below closes the keyboard/focus
+portion only.
 
 #### Manual accessibility gate record
 
 | Field | Recorded value |
 | --- | --- |
-| Date | 2026-07-15 |
-| Host OS | Linux 7.1.3-arch1-2 x86_64 |
-| Browser and version | Not run — the `agent-browser` executable was unavailable; no browser package was installed |
-| Screen reader and version | Not run — no screen-reader runtime was available |
-| Result | **PENDING** — run every WP-17 manual acceptance-matrix row in a real browser/screen-reader pair before release |
+| Date | 2026-07-20 |
+| Host OS | Linux 7.1.4-arch1-1 x86_64 |
+| Browser and version | Mozilla Firefox 152.0.6, headless, controlled through its built-in WebDriver BiDi endpoint |
+| Screen reader and version | Not run — no Orca or AT-SPI screen-reader runtime was installed |
+| Result | **PARTIAL PASS** — the real-browser keyboard/focus/touch-target matrix passed; the screen-reader announcement smoke remains pending |
 
-The attempted browser session used the repository's wrapper-owned synthetic
-temporary database and was stopped before interaction when the executable was
-found missing; cleanup was verified. An earlier ordinary dev launch was stopped
-before page access as soon as Next reported root environment detection. No
-configured ledger was opened and no environment contents were printed.
+The browser gate ran from an allowlisted sanitized workspace with a freshly
+migrated and demo-seeded throwaway SQLite database. No browser package was
+installed. Actual Enter/Escape actions covered transaction/category deletion,
+typed-name account deletion, import undo, and split save/clear. Confirmations
+moved focus to the destructive action, Escape restored the trigger, success
+moved focus to the documented surviving target, and a synthetic stale-row
+refusal remained armed with the error related to and focused on the confirm
+control. A server-validated account form error focused its alert summary and
+linked the invalid field. All six routes exposed the correct `aria-current`,
+the controlled mobile menu restored its toggle at a 375-pixel viewport, and
+split controls had distinct part/category names and measured at least 44 by 44
+CSS pixels. The temporary workspace, ledger, Firefox profile, and processes
+were removed after the run.
+
+This evidence does not substitute DOM roles for assistive-technology output.
+Release still requires a real screen-reader smoke for error announcements,
+active navigation, and destructive/split status. No configured ledger,
+environment file, real statement, backup, service, deployment, or production
+host was opened or changed.
 
 ### Completed implementation checkpoint: WP-18
 
@@ -2831,10 +2847,11 @@ build/preflight/smoke paths. No live-workspace Next build, configured ledger,
 private environment, real backup, service operation, deployment, schema change,
 migration, dependency, or lockfile change was used for this closeout.
 
-This is an implementation closeout, not a production-release claim. A release
-still requires the recorded real-browser/screen-reader matrix, operator-owned
-real-host socket/reboot/SIGTERM/restart/timer checks, and an authorized review of
-the sensitive environment template.
+This is an implementation closeout, not a production-release claim. The
+follow-on Firefox matrix closes the real-browser keyboard/focus portion. A
+release still requires the screen-reader smoke, operator-owned real-host
+socket/reboot/SIGTERM/restart/timer checks, and an authorized review of the
+sensitive environment template.
 
 ### Completed product checkpoint: dashboard uncategorized review
 
@@ -2877,9 +2894,9 @@ execution.
 Verification for this checkpoint uses only synthetic/temp databases. The full
 65-file/880-test suite, ESLint, TypeScript, guarded build, copied-workspace
 ordinary/standalone build and privacy validator, and `git diff --check` passed.
-The manual browser/screen-reader, real-host operations, and
-sensitive-environment review gates remain pending and are not implied by the
-synthetic checks.
+The follow-on Firefox keyboard/focus gate passed on 2026-07-20. The
+screen-reader, real-host operations, and sensitive-environment review gates
+remain pending and are not implied by the synthetic checks.
 
 ## 17. Handoff template for every completed package
 

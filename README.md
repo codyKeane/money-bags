@@ -396,8 +396,10 @@ actionable after a refusal, and focus a stable surviving page control after
 success. Account deletion keeps its server-verified typed-name guard with an
 explicit label and the same cancellation/surviving-focus behavior. Split part
 controls are at least 44×44 CSS pixels and include part/category context in
-repeated accessible names. The reproducible browser/screen-reader matrix remains
-a manual release gate; automated Node tests do not claim to replace it.
+repeated accessible names. The real-browser keyboard/focus matrix passed in
+Firefox 152.0.6 on 2026-07-20 using only a throwaway synthetic ledger. A
+screen-reader announcement smoke remains a manual release gate; DOM roles and
+automated Node checks do not claim to replace assistive-technology output.
 
 ## Transaction notes and tags
 

@@ -375,8 +375,9 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
 - `IMPLEMENTATION_GUIDE.md` — audit-remediation north star: immutable contracts,
   decision records, dependency-ordered work packages, rollback, and acceptance
   tests. The selected WP-00 through WP-18 packages and the 2026-07 product
-  decision checkpoint are implemented; the guide records the pending
-  browser/assistive-technology and real-host release gates. Read it before
+  decision checkpoint are implemented; the guide records the passed Firefox
+  keyboard/focus matrix and the pending screen-reader and real-host release
+  gates. Read it before
   changing a remediation contract or selecting deferred work.
 - `TODO.md` — historical/product backlog and shipped milestones. Its IDs
   (P1–P7 perf, Q1–Q9 code quality, O1/O2 ops, F#/… features) are the same tags

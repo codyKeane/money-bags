@@ -141,16 +141,17 @@ plan for current correctness, privacy, and operational work. WP-00 and
 WP-01A/B/C completed on 2026-07-13; WP-12A completed on 2026-07-14; WP-01D,
 WP-12B, WP-02A/B, WP-03, WP-06, WP-07, WP-08, WP-09, WP-10, WP-11, WP-04, and
 WP-05, WP-14A/B/C, WP-15, WP-16A, WP-13A, and WP-16B completed on 2026-07-15.
-WP-17 and WP-18 are implemented in the current checkpoint. This is not a production
-release: the real-browser/screen-reader matrix remains an explicit manual gate
-because no assistive-technology runtime was available in the implementation
-environment, and the operator-owned real-host service checks remain pending.
+WP-17 and WP-18 are implemented in the current checkpoint. This is not a
+production release: the real-browser keyboard/focus matrix passed in Firefox
+152.0.6 on 2026-07-20, but no screen-reader runtime was available, so the
+assistive-technology announcement smoke and the operator-owned real-host
+service checks remain pending.
 The 2026-07-17 autonomous checkpoint resolves and implements the scoped
 duplicate-review, transfer, refund, mixed-sign split, currency-group,
 reconciliation, merchant, category-merge, opening-date, and guarded-restore
-decisions. Those implementations are still synthetic-data verified only; they
-do not close the manual browser, screen-reader, real-host, or sensitive-env
-release gates.
+decisions. Those implementations are still synthetic-data verified only. The
+follow-on Firefox run closes the browser keyboard/focus portion, but not the
+screen-reader, real-host, or sensitive-env release gates.
 
 The product backlog below is retained as historical product context. Its rank
 does not override the guide, and an unchecked item is not implementation
@@ -217,8 +218,9 @@ checkpoint. No configured ledger, real statement, real backup, service, or
 deployment was touched.
 The final default and fixed-seed shuffled suites each passed 65 files / 880
 tests; ESLint, the guarded build, copied-workspace privacy validation, and
-`git diff --check` also passed. Manual browser/screen-reader, real-host
-operations, and sensitive-environment review remain release gates.
+`git diff --check` also passed. A follow-on Firefox 152.0.6 keyboard/focus run
+passed on 2026-07-20. Screen-reader, real-host operations, and
+sensitive-environment review remain release gates.
 
 ### Shipped (kept for history)
 - [x] ~~Truthful and spreadsheet-safe transaction export~~ — WP-10. The exact

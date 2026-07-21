@@ -598,6 +598,12 @@ Every add, remove, and clear split control is at least 44×44 CSS pixels. Screen
 readers distinguish repeated controls by the one-based part number and current
 category (for example, “Remove split part 2, Groceries”).
 
+The keyboard/focus matrix for these controls and the destructive workflows
+passed in Firefox 152.0.6 on 2026-07-20 using a throwaway synthetic ledger. A
+real screen-reader announcement smoke remains required before a production
+release; the browser result does not claim what an assistive-technology runtime
+will announce.
+
 **Export CSV** — next to the "Showing …" count sits an **Export CSV** link. It
 downloads exactly the rows your current filters produce (not just the page
 you're looking at) as a spreadsheet file — handy for taxes, sharing with an
