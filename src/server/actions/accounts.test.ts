@@ -58,6 +58,7 @@ describe("account actions currency round-trip", () => {
       institution: "Local Bank",
       currency: "EUR",
       openingBalanceCents: 1234,
+      openingBalanceDate: null,
     });
     expect(mocks.revalidatePath).toHaveBeenCalled();
   });

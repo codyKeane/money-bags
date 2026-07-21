@@ -155,7 +155,10 @@ Say your checking account had **$2,500** in it on the day you started using the
 app, but your first statement only covers transactions after that. You set the
 **opening balance** to `2500.00` so the running total is correct. It can be
 negative — a credit card you already owe $250 on has an opening balance of
-`-250.00`.
+`-250.00`. You can also enter an **opening balance date**. The date is retained
+for historical balance calculations; Money Bags does not currently draw a
+net-worth-over-time chart. Leave it blank when the amount is only a current
+baseline.
 
 ### Balance
 
@@ -173,16 +176,20 @@ cards have negative balances, debts subtract automatically. If your checking is
 `+$3,000` and your credit card is `-$700`, your net worth is `+$2,300`.
 
 Net worth only makes sense when all your accounts use the **same currency**
-(for example, all USD or all EUR). If accounts use different currencies, the
-dashboard hides net worth and every other combined financial value instead of
-adding incompatible amounts. Money Bags never guesses an exchange rate. See
-the [Troubleshooting & FAQ](#11-troubleshooting--faq) note on currencies.
+(for example, all USD or all EUR). If accounts use different valid currencies,
+the dashboard hides the cross-currency scalar and shows a separate exact
+financial section for each currency instead. An invalid legacy currency remains
+a repair blocker until you fix it on Accounts. Money Bags never guesses an
+exchange rate. See the [Troubleshooting & FAQ](#11-troubleshooting--faq) note
+on currencies.
 
 ### Income vs. spending
 
-- **Income** = money that came in during a month (all the positive amounts).
-- **Spending** = money that went out during a month (all the negative amounts,
-  shown as a positive dollar figure so it's easy to read).
+- **Income** = money that came in during a month (positive amounts), except for
+  positive rows explicitly linked as refunds or rows in a transfer pair.
+- **Spending** = money that went out during a month (negative amounts, shown as
+  a positive dollar figure so it's easy to read), reduced by explicitly linked
+  refunds. A linked refund uses its own category or split allocations.
 
 (One exception — **transfers** — is explained just below.)
 
@@ -221,7 +228,9 @@ credit-card payment as "spending," your spending chart would be wrong.
 So the app has a special category called **Transfers** that is marked *"exclude
 from income/spending."* Anything in it is ignored by the income and spending
 totals and by the spending chart — but it still affects each account's balance,
-which is correct.
+which is correct. You can also open **Transfers** to review advisory pairs of
+equal-and-opposite rows from different same-currency accounts within three
+days. Pairing is always explicit; it never guesses or deletes rows.
 
 ---
 
@@ -336,10 +345,10 @@ the database file and will be there next time you start it.
 
 ## 4. A tour of every screen
 
-The app has **five pages**. On a computer, they're links down the **left
+The app has **six pages**. On a computer, they're links down the **left
 sidebar**. On a phone, they're in a **bar across the top**. The pages are:
 
-**Dashboard · Transactions · Accounts · Categories · Import**
+**Dashboard · Transactions · Transfers · Accounts · Categories · Import**
 
 The app automatically matches your system's **light or dark theme**.
 
@@ -386,12 +395,14 @@ answering "am I saving or overspending lately?"
 **Recent transactions** — your 10 most recent transactions, so you can eyeball
 the latest activity without leaving the page.
 
-If account currencies are mixed or need repair, the three summary cards,
-spending chart, trend chart, and budget progress are replaced by an explanation;
-Money Bags does not perform currency conversion. The categorization reminder,
-recent transactions, and individual valid account balances remain available. If
-an exact combined total would exceed the supported integer range, the same area
-reports that totals are unavailable instead of showing a rounded number.
+If account currencies are mixed, the dashboard replaces one combined scalar
+with one exact financial section per valid currency; Money Bags does not perform
+currency conversion. If an account currency needs repair, the dashboard keeps
+the repair warning and does not present a partial valid-currency view. The
+categorization reminder, recent transactions, and individual valid account
+balances remain available. If an exact total would exceed the supported integer
+range, the affected area reports that totals are unavailable instead of showing
+a rounded number.
 
 ### 4.2 Accounts
 
@@ -406,6 +417,7 @@ The table shows one row per account with these columns:
 | **Type** | CHECKING, SAVINGS, CREDIT_CARD, CASH, or INVESTMENT. |
 | **Institution** | The bank or company (optional). |
 | **Opening** | The opening balance you set. |
+| **Opening date** | Optional date retained for historical balance calculations; blank means current baseline. |
 | **Balance** | The current balance, computed for you. |
 | **Transactions** | How many transactions are in this account. |
 
@@ -413,7 +425,8 @@ The table shows one row per account with these columns:
 
 - **New account** — opens a form with: **Name**, **Type**, **Institution
   (optional)**, **Currency** (a three-letter code, default `USD`), and **Opening
-  balance** (signed currency units, e.g. `-250.00`).
+  balance** (signed currency units, e.g. `-250.00`), and optional **Opening
+  balance date**.
 - **Edit** (on each row) — change any of those fields.
 - **Delete** (on each row) — permanently removes the account, **all its
   transactions and split allocations**, and its import history. Data in other
@@ -466,6 +479,9 @@ even when several parts use it).
   allocations. The armed confirmation discloses how many active transactions
   and split parts become **Uncategorized**, plus any inactive parent fallback
   that cannot return if its splits are later removed.
+- **Merge into…** — choose another category to move all parent categories, split
+  allocations, and inactive fallback references into it, then delete the source
+  category in one operation. The source and target must be different.
 - **Apply rules to uncategorized** (top right) — re-runs the keyword matching
   over unsplit transactions whose single category is currently blank. It
   **never** changes a category you set by hand or the ignored parent of a split
@@ -485,10 +501,13 @@ recategorize a single row."*
 | **Account** | Which account it belongs to. |
 | **Date** | A date picker. |
 | **Description** | What it was (e.g. *Farmers market*). |
+| **Merchant (optional)** | A short merchant label used by the dashboard rollup. Leave blank to derive a stable label from the description. |
 | **Notes (optional)** | Up to 2,000 characters; line breaks are preserved. |
 | **Tags (optional)** | Up to 20 comma-separated tags, 40 characters each. Tags are saved in lowercase, de-duplicated, and sorted. |
 | **Amount** | Signed dollars. **Negative = money out.** The form literally says so, with `-12.50` as the example. |
 | **Category** | Pick one, or leave it **Uncategorized**. |
+| **Cleared / reconciled** | Mark the row after it agrees with the bank statement. |
+| **Exclude from income/spending** | Suppress this row from aggregate income, spending, budgets, merchant rollups, and trends without changing its category. |
 
 Click **Add transaction** to save.
 
@@ -499,6 +518,8 @@ Click **Add transaction** to save.
 - **All accounts** — narrow to one account.
 - **All categories** — narrow to one category, or pick **Uncategorized** to find
   transactions that still need a label.
+- **Cleared: all / Cleared only / Uncleared only** — review reconciliation work
+  without changing the ledger rows.
 - **Month picker** — narrow to one month.
 - **From / To dates** — narrow to a custom date range (either end can be left
   blank for an open-ended range). Use this instead of the month picker when you
@@ -518,8 +539,10 @@ the table or export. **Uncategorized** includes an unsplit blank category and a
 split with at least one blank part, so a split transaction can appear in both a
 named-category view and the Uncategorized view.
 
-**The table** shows Date, Description, Account, Category, and Amount. Notes and
-tag badges appear beneath the Description when present. Dates read
+**The table** shows Date, Description, Account, Category, Amount, and Status.
+When you filter to one account it also shows a deterministic **Running balance**
+from the opening balance plus rows ordered by date, creation time, and ID. Notes
+and tag badges appear beneath the Description when present. Dates read
 as **"Jul 7, 2026"** (hover to see the exact `YYYY-MM-DD`), and money coming
 **in** (a paycheck, a refund) is tinted **green** so it stands out; money going
 out stays in the normal text color, with its minus sign. (Red is saved for
@@ -538,8 +561,19 @@ true:
   to the surviving **Add transaction** control. Deleting a transaction also
   deletes its split allocations, while other transactions remain.
 
+- The **Status** controls let you mark a row **Cleared** or **Excluded**. These
+  flags are independent of category and remain attached to the transaction.
+
 The **Account** name in each row is a link that filters the table down to that
 account.
+
+**Link a transfer or refund** — open a transaction's **Edit** page. The
+**Ledger relationships** box lets you unpair an existing transfer, link a
+positive row to an eligible same-account negative original, or unlink a refund.
+Partial refunds are allowed, but the total linked refund cannot exceed the
+original outflow. A linked refund reduces spending instead of appearing as
+income. Use the **Transfers** page to review and pair advisory equal-and-
+opposite candidates across accounts.
 
 **Split a transaction across categories** — sometimes one charge is really
 several things: a single store run might be $60 groceries, $30 household, and a
@@ -592,7 +626,21 @@ transaction with the rest of its batch.
 see *"Showing 1–50 of 320"* with **← Prev** and **Next →** links. Your filters
 carry across pages.
 
-### 4.5 Import
+### 4.5 Transfers
+
+The **Transfers** page is a review queue for likely movements between your own
+accounts. It does not infer or silently change anything. A candidate appears
+only when two nonzero rows have equal-and-opposite safe cents, different
+accounts, the same valid currency, and dates no more than three calendar days
+apart.
+
+Each candidate shows both ledger rows and offers an explicit **Pair** action.
+Pairing keeps both rows in the ledger and in exports, but removes them from
+income, spending, budget, merchant, and trend aggregates. Pairing is one-to-one
+and reversible from either transaction's Edit page. A transfer-linked row
+cannot also be linked as a refund.
+
+### 4.6 Import
 
 Where you load a bank statement file. Covered in full in
 [Section 7](#7-importing-bank-statements). In short: pick the account, choose the
@@ -774,19 +822,20 @@ Categories page. It never overwrites a category you chose by hand. Split
 transactions are skipped because a whole-description keyword cannot decide how
 to allocate one blank split part safely.
 
-### How duplicate detection works (and its one limit)
+### How duplicate detection works and how to review a collision
 
 Every imported transaction gets a hidden fingerprint built from its account,
 date, amount, cleaned-up description, and its position among identical rows. If a
 new import produces a fingerprint the database already has, that row is
 **skipped** instead of added. This is what makes re-importing the same file safe.
 
-> **The one limitation to know about:** if the *exact same* transaction (same
-> account, date, amount, and description) appears in **two different statement
-> files**, the app can't tell the second one is a genuinely separate event — it
-> looks identical to the first — so it skips it as a duplicate. That's why the
-> import screen **lists every skipped row**. Scan that list; if one of them is a
-> real second transaction, add it by hand ([Recipe D](#recipe-d--add-a-cash-purchase-by-hand)).
+If the *exact same* transaction appears in two different statement files, the
+frozen hash still treats it as a duplicate. The import screen lists every
+skipped row and offers **Import separately**. That explicit action writes the
+normal transaction with a null import hash plus source-file fingerprint, source
+row, and original-hash provenance. The same source row cannot be overridden
+twice while its batch exists, and **Undo** removes the override with the batch.
+Ordinary re-imports remain idempotent; the hash formula itself never changes.
 
 ### How money is stored (no rounding errors)
 
@@ -805,11 +854,36 @@ For a given month, the app looks at every transaction and applies these rules:
   figure).
 - Transactions in a category marked **"exclude from income/spending"** (i.e.
   transfers) are **skipped** in both totals.
+- A transaction marked **Exclude from income/spending** is skipped in all
+  income, spending, budget, merchant, and trend aggregates without changing its
+  category.
+- An explicit transfer pair is skipped in those same aggregates regardless of
+  category. A positive transaction explicitly linked as a refund is not income;
+  it reduces spending in its own active category or split allocations.
 - **Uncategorized** transactions **do** count — a missing label never hides money
   from your totals.
 
 The **Spending by category** chart uses the same rules and additionally leaves
 out transfers, so the chart reflects real spending only.
+
+### How relationships and running balances work
+
+Transfers are never inferred from a description. The **Transfers** page shows
+advisory candidates only when two nonzero rows have equal opposite cents,
+different accounts, valid matching currencies, and dates within three days.
+Pairing is an explicit one-to-one action; both rows remain visible and
+exportable, but they leave aggregate income, spending, budgets, merchant
+rollups, and trends. Unpairing restores their ordinary semantics.
+
+A refund is an explicit link from a positive row to a negative original on the
+same account and currency. Partial refunds are allowed up to the original
+outflow's absolute amount. The refund's own active category or splits determine
+where the spending reduction appears. Linking never rewrites either row.
+
+When the Transactions page is filtered to one account, its running balance is
+the opening balance plus each transaction in date, creation-time, and ID order.
+An opening balance without a date is a current baseline; it is not projected
+back into historical trend points.
 
 ### How dates and months work
 
@@ -924,7 +998,11 @@ After you click **Import statement**, you get a summary like:
 - **Imported** — new transactions added.
 - **Skipped as duplicates** — already in your data; each is listed with its line
   number, date, amount, and description so you can check them (see the
-  [duplicate limitation](#how-duplicate-detection-works-and-its-one-limit)).
+  [duplicate review rules](#how-duplicate-detection-works-and-how-to-review-a-collision)).
+  If a listed row is a legitimate second occurrence, choose **Import
+  separately**. That explicit override keeps the frozen hash unchanged,
+  records the source file/row provenance, and can be removed with the import's
+  normal **Undo** action. Ordinary re-imports remain idempotent.
 - **A refused file** — if any row, CSV structure, or explicit column map is
   invalid, the app identifies safe line/field details and saves zero rows. Fix
   the source and import the full file again. Ambiguous dates are a separate
@@ -955,7 +1033,7 @@ A few things worth knowing:
   rows right back, so a mistaken undo is easy to reverse.
 
 This is the clean way to recover from the re-import edge case described under
-[duplicate detection](#how-duplicate-detection-works-and-its-one-limit): undo the
+[duplicate detection](#how-duplicate-detection-works-and-how-to-review-a-collision): undo the
 bad import, fix the file or the settings, and import again.
 
 ### Where to keep your statement files
@@ -1149,8 +1227,21 @@ newer revisions. It does not migrate the image or print ledger rows.
 
 ### Restore from a backup (manual offline procedure)
 
-There is deliberately no automated restore command. Restore changes the ledger
-and must preserve a rollback path through every step.
+Restore changes the ledger and must preserve a rollback path through every step.
+The guarded CLI is preview-only unless you explicitly provide both confirmation
+flags:
+
+```bash
+npm run db:restore -- --backup /absolute/path/to/backup.sqlite3 --target /absolute/path/to/data/finance.db
+npm run db:restore -- --backup /absolute/path/to/backup.sqlite3 --target /absolute/path/to/data/finance.db --confirm --quiesced
+```
+
+The first command validates and prints the plan without changes. The second is
+allowed only after every writer is stopped; it requires the target to be the
+configured canonical ledger, creates a validated rescue beside it, publishes a
+verified replacement with a no-clobber lock, and retains the rescue. Use the
+manual sequence below to verify service quiescence and the operator's intended
+code/runtime pairing before executing it.
 
 1. Run `npm run audit:data-path`; record the exact normalized target, backup
    root, and target-scoped backup directory. Never substitute the default path
@@ -1213,6 +1304,7 @@ Run these from the project folder in a terminal.
 | `npm run db:seed` | One-time fail-closed initializer for an existing, migrated, empty/default-only disposable ledger. |
 | `npm run db:backup [-- --keep N]` | Make a private validated WAL-safe backup in the target's isolated namespace, report platform-qualified durability, and optionally retain its newest N validated finals. |
 | `npm run db:verify-backup -- /absolute/path` | Read-only integrity, foreign-key, migration, and schema check for a standalone backup. |
+| `npm run db:restore -- --backup <path> --target <path> [--confirm --quiesced]` | Preview or execute the guarded, rescue-retaining restore workflow. |
 | `npm run import -- --file <f> --account "<name>"` | Import a statement from the terminal. |
 | `npm run db:studio` | Open a database browser to inspect the raw data. |
 | `npm test` | Run the app's automated self-checks with fresh temporary DB targets. |
@@ -1235,9 +1327,16 @@ No, that's correct. A credit-card balance is money you **owe**, so it's stored a
 a negative number. It correctly pulls your net worth down.
 
 **My spending total looks too high — it's counting my credit-card payment.**
-Label that payment (and its matching entry on the other account) as
-**Transfers**. That category is excluded from spending totals. See
+Use the **Transfers** page to pair the matching source and destination rows, or
+assign both rows to the excluded **Transfers** category. A confirmed pair is
+excluded from spending and income regardless of category. See
 [Recipe E](#recipe-e--record-a-credit-card-payment-without-inflating-your-spending).
+
+**I received money back for a purchase.**
+Open the positive transaction's **Edit** page and link it to the original
+negative outflow. The link can be partial, but linked refunds cannot exceed the
+original. The refund reduces spending in its own category or split and stops
+counting as income. An unlinked positive row remains ordinary income.
 
 **The import said "could not reach the local server."**
 The app isn't running, or you closed its terminal. Start it again with
@@ -1252,9 +1351,10 @@ rows need repair.
 
 **A transaction I know is real got "skipped as duplicate."**
 It's identical (same account, date, amount, description) to one already in your
-data, possibly from another file. If it's genuinely a separate transaction, add
-it by hand ([Recipe D](#recipe-d--add-a-cash-purchase-by-hand)). This is the
-known limitation described in [Section 6](#how-duplicate-detection-works-and-its-one-limit).
+data, possibly from another file. Review the skipped row and choose **Import
+separately** when it is genuinely a second occurrence. The override is explicit
+and provenance-tracked; it does not change the frozen hash or future ordinary
+dedupe behavior.
 
 **Some transactions are "Uncategorized."**
 That's fine — they still count in your totals. Label them one-by-one on the
@@ -1276,11 +1376,10 @@ Yes — create as many accounts as you like, of any types, from any institutions
 **Does it handle multiple currencies?**
 Each account has its own required currency code, and a database containing one
 currency is formatted in that currency—not automatically as USD. You may keep
-accounts with different currencies, but Money Bags does not convert them. In
-mixed mode it hides every combined net-worth, income, spending, trend, and
-budget value while continuing to show valid per-account values. If an old
-account code is invalid, use **Accounts → Edit** to repair it; combined values
-stay unavailable until the repair is saved.
+accounts with different valid currencies; Money Bags does not convert them, so
+the dashboard shows separate exact sections instead of one combined number. If
+an old account code is invalid, use **Accounts → Edit** to repair it; the repair
+blocker suppresses partial currency groups until the save succeeds.
 
 **How do I set a budget?**
 On the **Categories** page, edit a category and fill in **Monthly budget**. The

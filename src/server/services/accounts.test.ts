@@ -138,6 +138,36 @@ describe("accounts service (integration, temp DB)", () => {
     });
   });
 
+  it("accepts a valid opening balance date and rejects malformed dates", async () => {
+    const created = await createAccount(
+      {
+        name: "Dated opening",
+        type: "CHECKING",
+        currency: "USD",
+        openingBalanceCents: 5000,
+        openingBalanceDate: "2026-01-15",
+      },
+      db,
+    );
+    expect(created.status).toBe("created");
+    if (created.status !== "created") return;
+    expect(created.account.openingBalanceDate).toBe("2026-01-15");
+    await expect(
+      updateAccount(
+        created.account.id,
+        {
+          name: "Dated opening",
+          type: "CHECKING",
+          institution: null,
+          currency: "USD",
+          openingBalanceCents: 5000,
+          openingBalanceDate: "2026-02-30",
+        },
+        db,
+      ),
+    ).resolves.toMatchObject({ status: "invalid-input", field: "openingBalanceDate" });
+  });
+
   it("deleting an account cascades to its transactions only", async () => {
     await updateAccount(
       checkingId,
@@ -344,6 +374,14 @@ describe("getNetWorthOverview (integration, temp DB)", () => {
       currencyState: { kind: "single", currency: "USD" },
       aggregateState: { kind: "ready" },
       netWorthCents: 15000,
+      currencyGroups: expect.arrayContaining([
+        expect.objectContaining({
+          currency: "USD",
+          accountNames: ["USD A", "USD B"],
+          netWorthCents: 15000,
+          aggregateState: { kind: "ready" },
+        }),
+      ]),
     });
     expect(await getNetWorth(ctx.db)).toBe(15000);
   });
@@ -360,6 +398,14 @@ describe("getNetWorthOverview (integration, temp DB)", () => {
       currencyState: { kind: "single", currency: "EUR" },
       aggregateState: { kind: "ready" },
       netWorthCents: 15000,
+      currencyGroups: expect.arrayContaining([
+        expect.objectContaining({
+          currency: "EUR",
+          accountNames: ["Euro A", "Euro B"],
+          netWorthCents: 15000,
+          aggregateState: { kind: "ready" },
+        }),
+      ]),
     });
     const persisted = await ctx.db
       .select({ name: accounts.name, currency: accounts.currency })
@@ -380,6 +426,11 @@ describe("getNetWorthOverview (integration, temp DB)", () => {
       currencyState: { kind: "mixed", currencies: ["EUR", "JPY", "USD"] },
       aggregateState: { kind: "unavailable" },
       netWorthCents: null,
+      currencyGroups: expect.arrayContaining([
+        expect.objectContaining({ currency: "EUR", netWorthCents: -20000 }),
+        expect.objectContaining({ currency: "JPY", netWorthCents: 0 }),
+        expect.objectContaining({ currency: "USD", netWorthCents: 15000 }),
+      ]),
     });
     expect(await getNetWorth(ctx.db)).toBeNull();
   });
@@ -401,6 +452,7 @@ describe("getNetWorthOverview (integration, temp DB)", () => {
       },
       aggregateState: { kind: "unavailable" },
       netWorthCents: null,
+      currencyGroups: [],
     });
     expect(JSON.stringify(overview)).not.toContain("not-a-code");
   });
@@ -435,6 +487,13 @@ describe("getNetWorthOverview (integration, temp DB)", () => {
       currencyState: { kind: "single", currency: "USD" },
       aggregateState: { kind: "unsafe" },
       netWorthCents: null,
+      currencyGroups: [
+        expect.objectContaining({
+          currency: "USD",
+          netWorthCents: null,
+          aggregateState: { kind: "unsafe" },
+        }),
+      ],
     });
     expect(await getNetWorth(ctx.db)).toBeNull();
   });
@@ -467,6 +526,13 @@ describe("getNetWorthOverview (integration, temp DB)", () => {
       currencyState: { kind: "single", currency: "USD" },
       aggregateState: { kind: "unsafe" },
       netWorthCents: null,
+      currencyGroups: [
+        expect.objectContaining({
+          currency: "USD",
+          netWorthCents: null,
+          aggregateState: { kind: "unsafe" },
+        }),
+      ],
     });
   });
 
@@ -477,6 +543,7 @@ describe("getNetWorthOverview (integration, temp DB)", () => {
       currencyState: { kind: "empty" },
       aggregateState: { kind: "unavailable" },
       netWorthCents: null,
+      currencyGroups: [],
     });
     expect(await getNetWorth(ctx.db)).toBeNull();
   });

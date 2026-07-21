@@ -70,7 +70,7 @@ export default async function TransactionsPage({
   // so the empty state can point the user at the right next step. categoryId is
   // null when filtering for uncategorized — still an active filter.
   const hasActiveFilters = Boolean(
-    query.q || query.tag || accountId || categoryId !== undefined || query.month || query.from || query.to,
+    query.q || query.tag || accountId || categoryId !== undefined || query.month || query.from || query.to || query.cleared !== undefined,
   );
 
   const rowFrom = totalCount === 0 ? 0 : (page - 1) * TRANSACTIONS_PAGE_SIZE + 1;
@@ -124,7 +124,12 @@ export default async function TransactionsPage({
           )}
         </div>
       ) : (
-        <TransactionTable transactions={items} categories={categoryOptions} editable />
+        <TransactionTable
+          transactions={items}
+          categories={categoryOptions}
+          editable
+          showRunningBalance={Boolean(accountId)}
+        />
       )}
 
       {totalCount > 0 ? (

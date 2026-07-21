@@ -6,12 +6,14 @@ telemetry, no CDN assets, no remote fonts. The only network access this
 project ever performs is `npm install` at development time.
 
 - **Ledger**: SQLite (WAL mode) via Drizzle ORM — signed integer cents,
-  date-only ISO transaction dates, optional notes, and canonical tags
+  date-only ISO transaction dates, merchant/notes/tags, cleared and
+  row-exclusion controls, splits, and explicit transfer/refund relationships
 - **Ingestion**: file-atomic CSV bank-statement import (CLI + web UI) with
-  occurrence-aware hash dedupe and keyword auto-categorization
-- **Dashboard**: net worth, monthly spending by category, income-vs-spending
-  trend, recent transactions, and an uncategorized-review count — light/dark,
-  built on Next.js + Recharts
+  occurrence-aware hash dedupe, source-row duplicate review, and keyword
+  auto-categorization
+- **Dashboard**: net worth, exact per-currency groups, monthly spending by
+  category, merchant rollups, income-vs-spending trend, recent transactions,
+  and an uncategorized-review count — light/dark, built on Next.js + Recharts
 
 ## Getting started
 
@@ -100,7 +102,21 @@ schemas, and prints only validity plus schema revision. Do not copy a backup
 over a live target or delete sidecars. Follow the stopped-service, verified
 rescue, same-directory restore-ready, and quarantine/rollback procedure in
 [the user manual](USER_MANUAL.md#restore-from-a-backup-manual-offline-procedure).
-Automated restore is intentionally not provided.
+
+The guarded restore CLI is preview-only by default and never runs through an
+application route. Preview an explicit operation with:
+
+```bash
+npm run db:restore -- --backup /absolute/path/to/backup.sqlite3 --target /absolute/path/to/data/finance.db
+```
+
+It makes no changes. To execute, stop every writer and add both confirmation
+flags; the target must be the configured canonical ledger, and the command
+retains a validated rescue copy instead of deleting it:
+
+```bash
+npm run db:restore -- --backup /absolute/path/to/backup.sqlite3 --target /absolute/path/to/data/finance.db --confirm --quiesced
+```
 
 **Database path policy**: when `DB_FILE_NAME` is relative, it is resolved from
 the repository root and must stay below `data/` (for example,
@@ -335,12 +351,30 @@ formats are accepted only by the statement parser where documented above.
 Every account has a required three-letter currency code (for example `USD`,
 `EUR`, or `JPY`). Codes are normalized on explicit save and must be renderable
 by the installed JavaScript runtime. One-currency dashboards format every
-combined value in that currency. If accounts are mixed, have an invalid legacy
-code, or produce a total outside the exact safe-integer range, the app hides
-combined net-worth, income, spending, chart, and budget values instead of
-relabeling or adding incompatible amounts. Individual valid account and
-transaction values remain available; repair invalid codes on the Accounts
-page. Money Bags does not convert currencies or fetch exchange rates.
+combined value in that currency. If accounts are mixed, the app hides the
+cross-currency scalar and renders separate exact dashboard groups instead of
+converting or adding incompatible amounts. An invalid legacy code remains a
+repair blocker and suppresses partial groups until it is repaired. Individual
+valid account and transaction values remain available; repair invalid codes on
+the Accounts page. Money Bags does not convert currencies or fetch exchange
+rates.
+
+Transfers and refunds are explicit relationships, not description guesses. The
+Transfers page offers advisory equal-and-opposite candidates within three days;
+pairing is one-to-one and removes both rows from income, spending, budgets, and
+trend aggregates while keeping them in the ledger/export. A positive transaction
+can be linked to a same-account negative original as a partial refund; linked
+refunds reduce spending in their own active category/splits and no longer count
+as income. Unlinked positive rows retain normal income semantics.
+
+The Transactions page supports a cleared filter and per-row cleared/spending
+controls. Selecting an account shows a deterministic running balance using the
+opening balance plus rows ordered by date, creation time, and ID. Accounts may
+date their opening balance; an undated opening amount remains a current
+baseline. The date is retained for historical balance consumers; there is no
+net-worth-over-time chart yet. Manual transactions may include an optional
+merchant label, and the dashboard groups spending by that label with a
+deterministic description fallback.
 
 Split allocations are enforced inside the transaction service: a nonempty split
 needs at least two safe, nonzero parts whose exact sum equals the current parent
@@ -439,7 +473,7 @@ Run the fake release matrix without a configured ledger:
 
 ```bash
 npm test
-npm test -- --sequence.shuffle --sequence.seed 171717
+npm test -- --sequence.shuffle --sequence.seed 20260716
 npm run lint
 node node_modules/typescript/bin/tsc --noEmit
 npm run validate:build-privacy
@@ -459,11 +493,13 @@ Retain the rescue/quarantine until that older revision passes health and ledger
 validation. Code rollback and database rollback are related decisions, not one
 blind file copy.
 
-Migration `0005_annotations` only appends defaulted transaction
-columns, but the supported rollback remains the validated backup paired with the
-prior code. There is no down migration. If transactions were added or edited
-after the upgrade, restoring that backup discards those later ledger changes;
-prefer a reviewed roll-forward fix unless an offline restore is truly required.
+Migrations `0005_annotations` and `0006_ledger_options` are additive: they add
+defaulted/nullable fields and relationship tables without changing the frozen
+import hash. The supported rollback remains the validated backup paired with
+the prior code; there is no down migration. If transactions were added or
+edited after the upgrade, restoring that backup discards those later ledger
+changes. Prefer a reviewed roll-forward fix unless an offline restore is truly
+required.
 
 ## Commands
 
@@ -475,6 +511,7 @@ prefer a reviewed roll-forward fix unless an offline restore is truly required.
 | `npm run audit:data-path` | Read-only configured target, Git-boundary, backup-location, and mode audit |
 | `npm run db:backup [-- --keep N]` | Private, validated WAL-safe backup in the active target's isolated namespace (durability is platform-qualified) |
 | `npm run db:verify-backup -- /absolute/path` | Read-only standalone backup integrity/FK/schema verification |
+| `npm run db:restore -- --backup <path> --target <path> [--confirm --quiesced]` | Preview or execute the guarded, rescue-retaining restore workflow |
 | `npm test` | Vitest suite (parser, categorizer, dedupe, DB integration) |
 | `npm run lint` | ESLint |
 | `npm run db:generate` / `db:migrate` | create / apply schema migrations |

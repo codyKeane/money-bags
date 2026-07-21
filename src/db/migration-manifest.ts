@@ -58,6 +58,14 @@ export const REVIEWED_MIGRATIONS: readonly ReviewedMigration[] = Object.freeze([
     breakpoints: true,
     sha256: "1a259e7d6f3d70fb1a52ec59ea6202224f950feab72237ac3c7f6121c6981bab",
   }),
+  Object.freeze({
+    idx: 6,
+    version: "6",
+    when: 1784342938168,
+    tag: "0006_ledger_options",
+    breakpoints: true,
+    sha256: "e81ddd9d35372c6f67a4f223b5176e900eb5a1b592242f7c9a220a11127e0e11",
+  }),
 ]);
 
 export const REVIEWED_MIGRATION_JOURNAL = Object.freeze({

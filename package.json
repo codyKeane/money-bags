@@ -26,6 +26,7 @@
     "start:lan": "node scripts/run-next.mjs start:lan",
     "db:backup": "tsx scripts/backup-db.ts",
     "db:verify-backup": "tsx scripts/verify-backup.ts",
+    "db:restore": "tsx scripts/restore-db.ts",
     "audit:data-path": "node --import ./scripts/disable-tsx-cache.mjs --import tsx scripts/audit-data-path.ts"
   },
   "dependencies": {

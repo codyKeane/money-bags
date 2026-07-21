@@ -7,6 +7,7 @@ import { revalidateAfterMutation } from "@/server/revalidation";
 import { assertTrustedActionOrigin } from "@/server/security/trusted-origin";
 import {
   MAX_SPLIT_PARTS,
+  normalizeMerchant,
   normalizeTransactionNotes,
   normalizeTransactionTags,
   WRITE_LIMITS,
@@ -16,8 +17,16 @@ import {
   deleteTransaction,
   replaceSplits,
   setTransactionCategory,
+  setTransactionCleared,
+  setTransactionSpendingExclusion,
   updateTransaction,
 } from "@/server/services/transactions";
+import {
+  linkRefund,
+  pairTransferTransactions,
+  unlinkRefund,
+  unpairTransferTransaction,
+} from "@/server/services/transaction-links";
 import {
   firstError,
   firstFormError,
@@ -29,6 +38,7 @@ import {
 
 const TRANSACTION_FIELD_ALIASES = {
   amountCents: "amount",
+  excludeFromSpending: "excludeFromSpending",
 } as const;
 
 const EXISTING_SPLIT_MISMATCH_MESSAGE =
@@ -72,6 +82,17 @@ const TransactionSchema = z.object({
     .transform((v) => v || null),
   date: z.string().refine(isValidIsoDate, "Date must be a valid YYYY-MM-DD"),
   description: z.string().trim().min(1, "Description is required").max(500),
+  merchant: z.string().transform((value, ctx) => {
+    const merchant = normalizeMerchant(value);
+    if (merchant === null) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Merchant must contain only safe text and be at most 160 characters",
+      });
+      return z.NEVER;
+    }
+    return merchant;
+  }),
   notes: z.string().transform((value, ctx) => {
     const notes = normalizeTransactionNotes(value);
     if (notes === null) {
@@ -106,6 +127,8 @@ const TransactionSchema = z.object({
       }
       return cents;
     }),
+  cleared: z.boolean(),
+  excludeFromSpending: z.boolean(),
 });
 
 function parseTransactionForm(formData: FormData) {
@@ -114,9 +137,12 @@ function parseTransactionForm(formData: FormData) {
     categoryId: formData.get("categoryId") ?? "",
     date: formData.get("date"),
     description: formData.get("description"),
+    merchant: formData.get("merchant") ?? "",
     notes: formData.get("notes") ?? "",
     tags: formData.get("tags") ?? "",
     amount: formData.get("amount"),
+    cleared: formData.get("cleared") === "on",
+    excludeFromSpending: formData.get("excludeFromSpending") === "on",
   });
   if (!parsed.success) return { error: firstFormError(parsed.error) } as const;
   return {
@@ -125,9 +151,12 @@ function parseTransactionForm(formData: FormData) {
       categoryId: parsed.data.categoryId,
       date: parsed.data.date,
       description: parsed.data.description,
+      merchant: parsed.data.merchant,
       notes: parsed.data.notes,
       tags: parsed.data.tags,
       amountCents: parsed.data.amount,
+      cleared: parsed.data.cleared,
+      excludeFromSpending: parsed.data.excludeFromSpending,
     },
   } as const;
 }
@@ -193,6 +222,85 @@ export async function deleteTransactionAction(
   if (!transactionId) return { ok: false, error: "Missing transaction id" };
   const deleted = await deleteTransaction(transactionId);
   if (!deleted) return { ok: false, error: "Transaction not found" };
+  revalidateAfterMutation();
+  return { ok: true };
+}
+
+export async function setTransactionClearedAction(
+  transactionId: string,
+  cleared: boolean,
+): Promise<ActionResult> {
+  const originFailure = await assertTrustedActionOrigin();
+  if (originFailure) return originFailure;
+  const result = await setTransactionCleared(transactionId, cleared);
+  if (result.status === "not-found") return { ok: false, error: "Transaction not found" };
+  if (result.status === "invalid-input") return { ok: false, error: result.message };
+  revalidateAfterMutation();
+  return { ok: true };
+}
+
+export async function setTransactionSpendingExclusionAction(
+  transactionId: string,
+  excludeFromSpending: boolean,
+): Promise<ActionResult> {
+  const originFailure = await assertTrustedActionOrigin();
+  if (originFailure) return originFailure;
+  const result = await setTransactionSpendingExclusion(transactionId, excludeFromSpending);
+  if (result.status === "not-found") return { ok: false, error: "Transaction not found" };
+  if (result.status === "invalid-input") return { ok: false, error: result.message };
+  revalidateAfterMutation();
+  return { ok: true };
+}
+
+export async function pairTransferAction(
+  firstTransactionId: string,
+  secondTransactionId: string,
+): Promise<ActionResult> {
+  const originFailure = await assertTrustedActionOrigin();
+  if (originFailure) return originFailure;
+  const result = await pairTransferTransactions(firstTransactionId, secondTransactionId);
+  if (result.status === "not-found") return { ok: false, error: "Transaction not found" };
+  if (result.status === "already-linked") return { ok: false, error: "A transaction is already paired" };
+  if (result.status === "conflict") return { ok: false, error: "A transfer-linked row cannot also be a refund" };
+  if (result.status === "invalid-candidate") return { ok: false, error: result.message };
+  if (result.status === "invalid-input") return { ok: false, error: result.message };
+  revalidateAfterMutation();
+  return { ok: true };
+}
+
+export async function unpairTransferAction(transactionId: string): Promise<ActionResult> {
+  const originFailure = await assertTrustedActionOrigin();
+  if (originFailure) return originFailure;
+  const result = await unpairTransferTransaction(transactionId);
+  if (result.status === "not-found") return { ok: false, error: "Transaction not found" };
+  if (result.status === "not-linked") return { ok: false, error: "Transaction is not transfer-paired" };
+  if (result.status === "invalid-input") return { ok: false, error: result.message };
+  revalidateAfterMutation();
+  return { ok: true };
+}
+
+export async function linkRefundAction(
+  refundTransactionId: string,
+  originalTransactionId: string,
+): Promise<ActionResult> {
+  const originFailure = await assertTrustedActionOrigin();
+  if (originFailure) return originFailure;
+  const result = await linkRefund(refundTransactionId, originalTransactionId);
+  if (result.status === "not-found") return { ok: false, error: "Transaction not found" };
+  if (result.status === "already-linked") return { ok: false, error: "This refund is already linked" };
+  if (result.status === "invalid-candidate") return { ok: false, error: result.message };
+  if (result.status === "invalid-input") return { ok: false, error: result.message };
+  revalidateAfterMutation();
+  return { ok: true };
+}
+
+export async function unlinkRefundAction(refundTransactionId: string): Promise<ActionResult> {
+  const originFailure = await assertTrustedActionOrigin();
+  if (originFailure) return originFailure;
+  const result = await unlinkRefund(refundTransactionId);
+  if (result.status === "not-found") return { ok: false, error: "Transaction not found" };
+  if (result.status === "not-linked") return { ok: false, error: "Refund is not linked" };
+  if (result.status === "invalid-input") return { ok: false, error: result.message };
   revalidateAfterMutation();
   return { ok: true };
 }

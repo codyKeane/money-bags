@@ -41,6 +41,7 @@ const traceExcludes = [
   "scripts/smoke-server.mjs",
   "scripts/temporary-db.mjs",
   "scripts/validate-build-privacy.mjs",
+  "scripts/restore-db.ts",
   "scripts/verify-backup.ts",
 ] as const;
 

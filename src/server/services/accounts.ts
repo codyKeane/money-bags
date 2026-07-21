@@ -11,6 +11,7 @@ import {
 import {
   invalidWriteInput,
   isSafeCents,
+  isValidLedgerDate,
   normalizeAccountName,
   normalizeAccountType,
   normalizeCurrencyCode,
@@ -29,6 +30,7 @@ export interface AccountWithBalance {
   normalizedCurrency: string | null;
   currencyState: AccountCurrencyState;
   openingBalanceCents: number;
+  openingBalanceDate: string | null;
   balanceCents: number | null;
   balanceState: { kind: "ready" } | { kind: "unsafe" };
   transactionCount: number;
@@ -43,6 +45,7 @@ export async function getAccountsWithBalances(db: Db = getDb()): Promise<Account
       institution: accounts.institution,
       rawCurrency: accounts.currency,
       openingBalanceCents: accounts.openingBalanceCents,
+      openingBalanceDate: accounts.openingBalanceDate,
       rawBalanceCents: sql<number>`${accounts.openingBalanceCents} + coalesce(sum(${transactions.amountCents}), 0)`,
       transactionCount: sql<number>`count(${transactions.id})`,
     })
@@ -90,6 +93,48 @@ export interface NetWorthOverview {
   netWorthCents: number | null;
   currencyState: CurrencyState;
   aggregateState: { kind: "ready" } | { kind: "unavailable" } | { kind: "unsafe" };
+  currencyGroups: readonly NetWorthCurrencyGroup[];
+}
+
+export interface NetWorthCurrencyGroup {
+  currency: string;
+  accountIds: string[];
+  accountNames: string[];
+  netWorthCents: number | null;
+  aggregateState: { kind: "ready" } | { kind: "unsafe" };
+}
+
+function buildNetWorthCurrencyGroups(rows: AccountWithBalance[]): NetWorthCurrencyGroup[] {
+  const grouped = new Map<string, AccountWithBalance[]>();
+  for (const row of rows) {
+    if (row.currencyState.kind !== "valid") continue;
+    const current = grouped.get(row.currencyState.currency);
+    if (current) current.push(row);
+    else grouped.set(row.currencyState.currency, [row]);
+  }
+  return [...grouped.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([currency, accountsInGroup]) => {
+      let total = BigInt(0);
+      let safe = true;
+      for (const account of accountsInGroup) {
+        if (account.balanceCents === null || account.balanceState.kind !== "ready") {
+          safe = false;
+          break;
+        }
+        total += BigInt(account.balanceCents);
+      }
+      const netWorthCents = safe && Number.isSafeInteger(Number(total)) ? Number(total) : null;
+      return {
+        currency,
+        accountIds: accountsInGroup.map((account) => account.id).sort(),
+        accountNames: accountsInGroup
+          .map((account) => account.name)
+          .sort((left, right) => left.localeCompare(right)),
+        netWorthCents,
+        aggregateState: netWorthCents === null ? { kind: "unsafe" as const } : { kind: "ready" as const },
+      };
+    });
 }
 
 // A combined total is meaningful only when every account has one valid shared
@@ -99,12 +144,30 @@ export function buildNetWorthOverview(rows: AccountWithBalance[]): NetWorthOverv
     rows.map((row) => ({ id: row.id, name: row.name, rawCurrency: row.rawCurrency })),
   );
   if (currencyState.kind !== "single") {
-    return { netWorthCents: null, currencyState, aggregateState: { kind: "unavailable" } };
+    return {
+      netWorthCents: null,
+      currencyState,
+      aggregateState: { kind: "unavailable" },
+      // An invalid persisted currency is a repair blocker. Do not make the
+      // valid subset look like a complete dashboard by grouping it separately.
+      currencyGroups:
+        currencyState.kind === "invalid" ? [] : buildNetWorthCurrencyGroups(rows),
+    };
   }
   const netWorthCents = sumAccountBalances(rows);
   return netWorthCents === null
-    ? { netWorthCents: null, currencyState, aggregateState: { kind: "unsafe" } }
-    : { netWorthCents, currencyState, aggregateState: { kind: "ready" } };
+    ? {
+        netWorthCents: null,
+        currencyState,
+        aggregateState: { kind: "unsafe" },
+        currencyGroups: buildNetWorthCurrencyGroups(rows),
+      }
+    : {
+        netWorthCents,
+        currencyState,
+        aggregateState: { kind: "ready" },
+        currencyGroups: buildNetWorthCurrencyGroups(rows),
+      };
 }
 
 export async function getNetWorthOverview(db: Db = getDb()): Promise<NetWorthOverview> {
@@ -150,6 +213,7 @@ export interface CreateAccountInput {
   institution?: string | null;
   currency: string;
   openingBalanceCents?: number;
+  openingBalanceDate?: string | null;
 }
 
 export interface NormalizedAccountInput {
@@ -158,6 +222,7 @@ export interface NormalizedAccountInput {
   institution: string | null;
   currency: string;
   openingBalanceCents: number;
+  openingBalanceDate: string | null;
 }
 
 export type CreateAccountResult =
@@ -191,9 +256,16 @@ export function normalizeCreateAccountInput(
       result: invalidWriteInput("openingBalanceCents", "Opening balance must be exact cents"),
     };
   }
+  const openingBalanceDate = input.openingBalanceDate ?? null;
+  if (openingBalanceDate !== null && !isValidLedgerDate(openingBalanceDate)) {
+    return {
+      ok: false,
+      result: invalidWriteInput("openingBalanceDate", "Opening balance date must be YYYY-MM-DD"),
+    };
+  }
   return {
     ok: true,
-    value: { name, type, institution, currency, openingBalanceCents },
+    value: { name, type, institution, currency, openingBalanceCents, openingBalanceDate },
   };
 }
 
@@ -266,6 +338,7 @@ export interface UpdateAccountInput {
   institution: string | null;
   currency: string;
   openingBalanceCents: number;
+  openingBalanceDate?: string | null;
 }
 
 export type UpdateAccountResult =

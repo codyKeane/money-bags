@@ -94,6 +94,14 @@ const EXPECTED_MIGRATIONS = [
     breakpoints: true,
     sha256: "1a259e7d6f3d70fb1a52ec59ea6202224f950feab72237ac3c7f6121c6981bab",
   },
+  {
+    idx: 6,
+    version: "6",
+    when: 1784342938168,
+    tag: "0006_ledger_options",
+    breakpoints: true,
+    sha256: "e81ddd9d35372c6f67a4f223b5176e900eb5a1b592242f7c9a220a11127e0e11",
+  },
 ] as const;
 
 function getAppliedMigrations(sqlite: Database.Database): AppliedMigration[] {
@@ -375,8 +383,11 @@ function assertCurrentSchema(sqlite: Database.Database): void {
     "accounts",
     "categories",
     "import_batches",
+    "import_duplicate_overrides",
+    "refund_links",
     "transaction_splits",
     "transactions",
+    "transfer_pairs",
   ]);
 
   const transactionColumns = sqlite.pragma("table_info('transactions')") as Array<{
@@ -392,6 +403,16 @@ function assertCurrentSchema(sqlite: Database.Database): void {
     notnull: 1,
     dflt_value: "'[]'",
   });
+  expect(transactionColumns.find((column) => column.name === "merchant")).toMatchObject({
+    notnull: 1,
+    dflt_value: "''",
+  });
+  expect(transactionColumns.find((column) => column.name === "cleared")).toMatchObject({
+    notnull: 1,
+  });
+  expect(transactionColumns.find((column) => column.name === "exclude_from_spending")).toMatchObject({
+    notnull: 1,
+  });
 
   const expectedIndexes: Record<string, { unique: number; columns: string[] }> = {
     accounts_name_unique: { unique: 1, columns: ["name"] },
@@ -402,15 +423,31 @@ function assertCurrentSchema(sqlite: Database.Database): void {
     transactions_date_idx: { unique: 0, columns: ["date"] },
     transactions_batch_idx: { unique: 0, columns: ["batch_id"] },
     transaction_splits_transaction_idx: { unique: 0, columns: ["transaction_id"] },
+    import_duplicate_overrides_transaction_id_unique: { unique: 1, columns: ["transaction_id"] },
+    import_duplicate_source_unique: {
+      unique: 1,
+      columns: ["account_id", "source_fingerprint", "source_row_number"],
+    },
+    import_duplicate_hash_idx: { unique: 0, columns: ["account_id", "import_hash"] },
+    refund_links_refund_transaction_id_unique: { unique: 1, columns: ["refund_transaction_id"] },
+    refund_links_original_idx: { unique: 0, columns: ["original_transaction_id"] },
+    transfer_pairs_source_unique: { unique: 1, columns: ["source_transaction_id"] },
+    transfer_pairs_destination_unique: { unique: 1, columns: ["destination_transaction_id"] },
   };
   for (const [name, expected] of Object.entries(expectedIndexes)) {
     const table = name.startsWith("accounts_")
       ? "accounts"
       : name.startsWith("categories_")
         ? "categories"
-        : name.startsWith("transaction_splits_")
-          ? "transaction_splits"
-          : "transactions";
+      : name.startsWith("transaction_splits_")
+        ? "transaction_splits"
+        : name.startsWith("import_duplicate_")
+          ? "import_duplicate_overrides"
+          : name.startsWith("refund_links_")
+            ? "refund_links"
+            : name.startsWith("transfer_pairs_")
+              ? "transfer_pairs"
+        : "transactions";
     const index = (
       sqlite.pragma(`index_list('${table}')`) as Array<{ name: string; unique: number }>
     ).find((candidate) => candidate.name === name);

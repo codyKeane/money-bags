@@ -4,6 +4,7 @@ import { useId, useState } from "react";
 import {
   createCategoryAction,
   deleteCategoryAction,
+  mergeCategoryAction,
   updateCategoryAction,
   type CategoryFormState,
 } from "@/server/actions";
@@ -214,6 +215,50 @@ function categoryDeletionPrompt(category: CategoryWithStats): string {
   ].join(" ");
 }
 
+function MergeCategoryControl({
+  source,
+  categories,
+}: {
+  source: CategoryWithStats;
+  categories: CategoryWithStats[];
+}) {
+  const [targetId, setTargetId] = useState("");
+  const target = categories.find((category) => category.id === targetId);
+  return (
+    <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
+      <select
+        value={targetId}
+        onChange={(event) => setTargetId(event.target.value)}
+        className={`${inputClass} min-h-11 w-44 text-xs`}
+        aria-label={`Merge ${source.name} into category`}
+      >
+        <option value="">Merge into…</option>
+        {categories
+          .filter((category) => category.id !== source.id)
+          .map((category) => (
+            <option key={category.id} value={category.id}>
+              {category.name}
+            </option>
+          ))}
+      </select>
+      {target ? (
+        <ConfirmButton
+          label="Merge"
+          prompt={`Merge “${source.name}” into “${target.name}”? All parent categories, split allocations, and inactive fallbacks move to ${target.name}; ${source.name} is then deleted.`}
+          title={`Merge ${source.name} into ${target.name}`}
+          confirmLabel="Merge category"
+          pendingLabel="Merging…"
+          successFocusId={NEW_CATEGORY_FOCUS_ID}
+          onConfirm={async () => {
+            const result = await mergeCategoryAction(source.id, target.id);
+            if (!result.ok) return result.error ?? "Merge failed";
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 export function CategoryManager({
   categories,
   currencyState,
@@ -338,6 +383,7 @@ export function CategoryManager({
                         }}
                       />
                     </span>
+                    <MergeCategoryControl source={c} categories={categories} />
                   </td>
                 </>
               )}

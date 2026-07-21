@@ -89,6 +89,16 @@ export function TransactionFilters({
           </option>
         ))}
       </select>
+      <select
+        value={params.get("cleared") ?? ""}
+        onChange={(e) => apply({ cleared: e.target.value })}
+        aria-label="Cleared state"
+        className={inputClass}
+      >
+        <option value="">Cleared: all</option>
+        <option value="yes">Cleared only</option>
+        <option value="no">Uncleared only</option>
+      </select>
       <input
         type="month"
         value={params.get("month") ?? ""}

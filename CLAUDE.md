@@ -62,7 +62,7 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
   inside the write transaction;
   actions/routes are transport decoders and friendly error adapters, not the
   invariant boundary.
-- `src/app/` — RSC pages (`/`, `/transactions`, `/accounts`,
+- `src/app/` — RSC pages (`/`, `/transactions`, `/transfers`, `/accounts`,
   `/categories`, `/import`), Server Actions for mutations, thin GET JSON
   routes under `/api` for local scripting. Every page is `force-dynamic`, so a
   `loading.tsx` (root + a table-shaped one for `/transactions`) shows a
@@ -86,8 +86,9 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
   errors, over-budget. Both delta tokens are refined (softer emerald / muted
   brick), not the raw categorical hues.
 - `src/server/actions/` — every UI mutation (accounts, categories,
-  transactions, apply-rules) as `"use server"` modules split by domain
-  (`accounts.ts`, `categories.ts`, `transactions.ts`), sharing helpers/types
+  transactions, imports, relationship controls, apply-rules) as `"use server"`
+  modules split by domain (`accounts.ts`, `categories.ts`, `transactions.ts`,
+  `imports.ts`), sharing helpers/types
   from `shared.ts` and re-exported by a barrel `index.ts` so components keep
   importing from `@/server/actions`. Each exported action first awaits
   `assertTrustedActionOrigin()` before inspecting decoded arguments, then
@@ -181,15 +182,21 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
   The `batch_id` FK's `ON DELETE set null` is hand-added to migration 0003
   (drizzle-kit omits it from `ALTER TABLE ADD`). Migrations 0000–0005 are
   historical and byte-locked by `src/db/migrations.test.ts`; never regenerate
-  or edit them. Append a reviewed migration for future schema work.
+  or edit them. Migration 0006 is the append-only ledger-options migration for
+  merchant/status fields, opening-balance dates, and explicit transfer/refund/
+  duplicate-override provenance. Append a reviewed migration for future schema
+  work.
 - **Category colors**: constrained to the validated `CATEGORICAL_SLOTS` in
   `src/lib/palette.ts` (the Server Action rejects any other value). Only the
   first 8 categories get a hue; the rest render as neutral badges — never
   invent a 9th color.
 - **Spending math** (`server/services/summary.ts`, `countsTowardSpending`):
-  a category flagged `excludeFromSpending` (e.g. Transfers) is left out of
-  spending, income, and the trend chart; uncategorized rows always count.
-  Spending = negative `amountCents`, income = positive.
+  a category flagged `excludeFromSpending` (e.g. Transfers), a transaction
+  flagged `excludeFromSpending`, or a transfer-paired row is left out of
+  spending, income, budget actuals, merchant rollups, and the trend chart;
+  uncategorized rows otherwise count. Spending is negative `amountCents`
+  rendered as a positive total; a linked positive refund is a spending
+  reduction in its own active category/splits and is not income.
 - **Transaction splits**: a transaction can be divided across categories in
   `transaction_splits` (migration 0004). When a transaction has ≥1 split rows the
   splits define its categorization for **every** spending aggregate and its own
@@ -226,6 +233,17 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
   searches description/note/tag text with escaped LIKE literals; `tag` uses a
   bound exact canonical match through guarded `json_each`. Imports leave both
   empty and the frozen import-hash formula is unchanged.
+- **Ledger options and relationships**: migration 0006 adds bounded merchant
+  text, cleared state, row-level spending exclusion, and optional opening-balance
+  dates. Transfer candidates are advisory until an explicit one-to-one pair is
+  saved; refund links are explicit, same-account/same-currency, partial-safe,
+  and never rewrite either transaction. Duplicate overrides preserve the frozen
+  import hash by writing null-hash provenance rows keyed to source fingerprint
+  and source row.
+- **Running balance and currency groups**: account-filtered transaction lists
+  show the opening balance plus rows ordered by date, creation time, and ID.
+  Mixed valid currencies render separate exact dashboard groups; invalid account
+  currencies remain a repair blocker and render no partial group.
 - **Transaction export**: `/api/export` delegates all SQLite work to the
   dedicated `server/services/transaction-export.ts` service. It opens a
   read-only `fileMustExist` connection, starts a deferred transaction to retain
@@ -243,9 +261,9 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
 - **Budgets**: `categories.monthlyBudgetCents` is a nullable positive-cents
   target (null = no budget). `getBudgetVsActual(month)` LEFT-JOINs each budgeted
   included category to its month outflow, computing spend the same way as
-  spending math (negative-only, refunds don't reduce it) so an included
-  zero-spend budget still shows. Excluded categories retain their stored budget
-  but remain absent from progress until re-included.
+  spending math (negative outflows minus explicitly linked refunds) so an
+  included zero-spend budget still shows. Excluded categories retain their
+  stored budget but remain absent from progress until re-included.
 - **Currency**: account writes require one renderable, normalized three-ASCII-
   letter code; create forms default to `USD`. Reads preserve `rawCurrency` and
   attach a value-free valid/invalid state so legacy bad values remain repairable
@@ -336,25 +354,30 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
 - `npm run lint` — ESLint through a temporary lease that fails if lint opens DB
   artifacts
 - `npm run db:generate` — generate a new append-only migration from schema
-  changes; never regenerate or edit migrations 0000–0005
+  changes; never regenerate or edit migrations 0000–0005; migration 0006 is
+  the current append-only ledger-options revision
 - `npm run db:migrate` — apply migrations (also auto-applied on startup;
   default categories install automatically when the table is empty). Historical
   migrations 0000–0005 are byte-locked compatibility assets.
 - `npm run db:seed` — one-time fail-closed demo initializer; requires an
   existing current schema with no ledger rows and either no categories or the
   exact untouched defaults, refuses repeat/custom targets, and has no force flag
+- `npm run db:restore -- --backup <absolute-path> --target <absolute-path>` —
+  preview a guarded restore without changes; add `--confirm --quiesced` only
+  after stopping every writer. The target must be the configured canonical
+  ledger, the backup must be a validated standalone image, and the retained
+  rescue is never removed automatically.
 - `npm run db:studio` — Drizzle Studio DB browser
 - `npm run import -- --file <csv> --account "<name>" [--type CHECKING] [--currency USD] [--date-format MDY] [--col-date "<header>"] [--col-amount "<header>"] …` — file-atomic CLI import; ambiguous auto dates and malformed rows/maps refuse before DB access, while a ready by-name account and all import rows share one immediate transaction. `--col-*` flags use the same strict mapping contract as `/api/import` and the Advanced UI.
 
 ## Other docs
 
 - `IMPLEMENTATION_GUIDE.md` — audit-remediation north star: immutable contracts,
-  decision gates, dependency-ordered work packages, rollback, and acceptance
-  tests. The selected WP-00 through WP-18 remediation packages are implemented;
-  the guide records the pending browser/assistive-technology and real-host
-  release gates plus the decision-dependent RFCs. Read it before changing a
-  remediation contract or selecting any deferred correctness/privacy/operations
-  work.
+  decision records, dependency-ordered work packages, rollback, and acceptance
+  tests. The selected WP-00 through WP-18 packages and the 2026-07 product
+  decision checkpoint are implemented; the guide records the pending
+  browser/assistive-technology and real-host release gates. Read it before
+  changing a remediation contract or selecting deferred work.
 - `TODO.md` — historical/product backlog and shipped milestones. Its IDs
   (P1–P7 perf, Q1–Q9 code quality, O1/O2 ops, F#/… features) are the same tags
   used in commit-message prefixes; `IMPLEMENTATION_GUIDE.md`, not backlog rank,

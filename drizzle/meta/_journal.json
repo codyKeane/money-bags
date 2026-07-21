@@ -43,6 +43,13 @@
       "when": 1784189434031,
       "tag": "0005_annotations",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1784342938168,
+      "tag": "0006_ledger_options",
+      "breakpoints": true
     }
   ]
 }

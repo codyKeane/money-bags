@@ -65,7 +65,10 @@ describe("transaction annotation actions", () => {
       categoryId: null,
       date: "2026-07-16",
       description: "Team lunch",
+      merchant: "",
       amountCents: -1234,
+      cleared: false,
+      excludeFromSpending: false,
       notes: "",
       tags: [],
     });

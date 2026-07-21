@@ -1,13 +1,14 @@
 # Money Bags Implementation Guide
 
-> Status: selected remediation implementation complete; manual release gates and decision-dependent RFCs remain
-> Code baseline: clean historical snapshot `main` at `3d967baf8d7451f8c8202f3f9489401771bcc3b7` (`3d967ba`)
-> Implementation checkpoint: WP-00 and WP-01A/B/C completed 2026-07-13; WP-12A completed 2026-07-14; WP-01D, WP-12B, WP-02A/B, WP-03, WP-06, WP-07, WP-08, WP-09, WP-10, WP-11, WP-04, WP-05, WP-14A/B/C, WP-15, WP-16A, WP-13A, WP-16B, WP-17, and WP-18 completed 2026-07-15; WP-17's real-browser/screen-reader release gate, real-host operational gates, and deferred RFC decisions remain open
-> Product checkpoint: the decision-free dashboard uncategorized-review count was implemented 2026-07-15 using the canonical active split-category semantics and transaction filter; bounded transaction notes/canonical tags, exact tag filtering, and compatibility-preserving annotated export were implemented 2026-07-16 in additive migration 0005
-> Checkpoint verification: the current default and seed-`20260716` shuffled suites passed 63 files / 845 tests; focused notes/tags migration, validation, action, list/search/filter, import, API, export, and backup suites passed after the migration-name privacy regression was corrected; the uncategorized-count active-category/transaction focus passed 2 files / 40 tests; WP-17's form/confirmation/navigation/action focus passed 8 files / 59 tests; WP-16B's direct-renderer/preflight/runtime/backup/trace focus passed 7 files / 81 tests with installed systemd 261 verification; WP-16A's renderer/unit/privacy-policy focus passed 2 files / 25 tests; WP-15's lint-boundary/health/import-race focus passed 5 files / 86 tests; WP-14C's action/import/split/revalidation focus passed 5 files / 128 tests; WP-14B's no-store/metadata/stream/multipart/filename/route/service/CLI focus passed 12 files / 142 tests; WP-14A's parser/config/runtime/action/import/header/launcher focus passed 7 files / 131 tests during final security re-review; WP-04/WP-05's path-policy/trace/standalone/wrapper focus passed 3 files / 65 tests; WP-10's serializer/service/route/active-category focus passed 4 files / 38 tests; WP-11's currency/account/action/API/summary/transaction/import/export focus passed 16 files / 163 tests; ESLint, TypeScript, the protected-layer DB-import search, staged/unstaged `git diff --check`, exact-money/split/service/seed/import focused tests, cross-CWD synthetic seed/import CLIs, injected rollback, wrapper-owned seed smoke, two-real-connection split serialization, Git-ignore/re-inclusion checks, sanitized audit-CLI checks, warning-sensitive rendered-unit verification, and the sanitized direct service preflight passed
+> Status: selected remediation and scoped product-decision implementation complete; manual release gates remain
+> Code baseline: current worktree is `main` at `333cea8`; the scoped implementation/documentation checkpoint is staged for the authorized commit, and the follow-on `CODEX_HANDOFF.md` is intentionally untracked
+> Implementation checkpoint: WP-00 and WP-01A/B/C completed 2026-07-13; WP-12A completed 2026-07-14; WP-01D, WP-12B, WP-02A/B, WP-03, WP-06, WP-07, WP-08, WP-09, WP-10, WP-11, WP-04, WP-05, WP-14A/B/C, WP-15, WP-16A, WP-13A, WP-16B, WP-17, and WP-18 completed 2026-07-15; the 2026-07-17 autonomous checkpoint resolves the scoped RFC-01/02/03/04/06 decisions in additive migration 0006
+> Product checkpoint: the decision-free dashboard uncategorized-review count was implemented 2026-07-15 using the canonical active split-category semantics and transaction filter; bounded transaction notes/canonical tags, exact tag filtering, and compatibility-preserving annotated export were implemented 2026-07-16 in additive migration 0005; merchant/status/opening-date fields, duplicate provenance, transfer/refund links, and guarded restore were implemented 2026-07-17 in additive migration 0006
+> Checkpoint verification: the current default and seed-`20260716` shuffled suites passed 65 files / 880 tests; focused notes/tags migration, validation, action, list/search/filter, import, API, export, and backup suites passed after the migration-name privacy regression was corrected; the uncategorized-count active-category/transaction focus passed 2 files / 40 tests; WP-17's form/confirmation/navigation/action focus passed 8 files / 59 tests; WP-16B's direct-renderer/preflight/runtime/backup/trace focus passed 7 files / 81 tests with installed systemd 261 verification; WP-16A's renderer/unit/privacy-policy focus passed 2 files / 25 tests; WP-15's lint-boundary/health/import-race focus passed 5 files / 86 tests; WP-14C's action/import/split/revalidation focus passed 5 files / 128 tests; WP-14B's no-store/metadata/stream/multipart/filename/route/service/CLI focus passed 12 files / 142 tests; WP-14A's parser/config/runtime/action/import/header/launcher focus passed 7 files / 131 tests during final security re-review; WP-04/WP-05's path-policy/trace/standalone/wrapper focus passed 3 files / 65 tests; WP-10's serializer/service/route/active-category focus passed 4 files / 38 tests; WP-11's currency/account/action/API/summary/transaction/import/export focus passed 16 files / 163 tests; ESLint, TypeScript, the protected-layer DB-import search, staged/unstaged `git diff --check`, exact-money/split/service/seed/import focused tests, cross-CWD synthetic seed/import CLIs, injected rollback, wrapper-owned seed smoke, two-real-connection split serialization, Git-ignore/re-inclusion checks, sanitized audit-CLI checks, warning-sensitive rendered-unit verification, and the sanitized direct service preflight passed
 > Additional gates: the allowlisted sanitized-copy validator passed ordinary and standalone builds, every-NFT and complete copied-tree/symlink scans, exact no-store/global-header checks across every financial response class, a synthetic external-DB mutation/fresh-response check, clean-HOME telemetry-debug suppression, unchanged synthetic DB/sidecar/import/backup sentinels, and loopback health smokes against fresh external temporary databases; independent review reproduced four trace/standalone bypasses, verified their regression fixes, and returned READY; migration integrity, cross-cwd and bundled-launcher root resolution, direct-Vitest fallback, zero-artifact guards, hostile Git-environment refusal, terminal-safe audit output, and documentation checks passed; the disclosed native-Windows validation-wrapper limitation remains
-> Safety gate: no Next build ran in the working repository. WP-04's first ordinary and standalone output evidence came only from an allowlisted temporary copy with clean HOME/TMP/XDG roots and synthetic runtime sentinels. Ordinary builds are now guarded by the temporary-DB owner plus every-manifest privacy scan; standalone remains a validation-only copied-workspace mode and is not enabled in product configuration
-> Prepared: 2026-07-15
+> Safety gate: no unguarded Next build ran against the working repository's configured ledger. The current `npm run build` used the temporary-DB owner and every-manifest privacy scan; WP-04's first ordinary and standalone output evidence came from an allowlisted temporary copy with clean HOME/TMP/XDG roots and synthetic runtime sentinels. Standalone remains a validation-only copied-workspace mode and is not enabled in product configuration
+> Current autonomous checkpoint verification: 65 files / 880 synthetic tests passed; ESLint, TypeScript, `git diff --check`, guarded ordinary build, and copied-workspace ordinary/standalone build, preflight, smoke, complete-tree, symlink, and trace privacy checks passed. The guarded build traced 20 manifests / 5,607 entries. The nonfatal Turbopack whole-project-trace warning remains disclosed; the repository privacy checker passed.
+> Prepared: 2026-07-17
 > Scope: correctness, data integrity, privacy, operational safety, architecture, and accessibility
 > Dependency policy: use the existing Node.js 20+, Next.js, Drizzle, better-sqlite3, Zod, and Vitest stack; do not add a package unless a later decision record explicitly justifies it
 
@@ -36,7 +37,11 @@ Treat this file as the default plan until repository evidence disproves an assum
 7. Preserve frozen compatibility contracts, especially the import hash. Never edit an already-applied migration.
 8. Update the user and architecture documentation in the same work package when behavior changes.
 9. Run the work package's focused checks, then the repository-wide release gates.
-10. Stop and ask only when a deferred RFC is deliberately brought into scope or new repository evidence invalidates a selected contract. The selected remediation packages below do not contain unresolved implementation choices.
+10. Stop and ask only when a retained non-goal is deliberately brought into
+    scope, a real-host/destructive operation needs authorization, or new
+    repository evidence invalidates a selected contract. The scoped decision
+    records below are now implemented; browser/assistive and real-host release
+    gates remain environment-owned.
 
 The guide uses “must” for a product or safety invariant, “should” for the recommended implementation, and “may” for an optional refinement. Suggested file and symbol names are review aids, not permission for speculative abstraction.
 
@@ -263,13 +268,16 @@ Create these only when their work package needs them:
 | `scripts/next-telemetry-disabled.cjs` | Preload that sets `NEXT_TELEMETRY_DISABLED=1` and removes Next's debug override before the CLI loads. |
 | `scripts/run-with-temp-db.mjs` | Cross-platform safe-command harness that supplies and cleans a unique absolute temporary DB. |
 | `scripts/audit-data-path.ts` | Read-only DB path, Git-ignore, and POSIX-mode diagnostics. |
-| `scripts/verify-backup.ts` | Read-only validation for a standalone backup used by the manual restore runbook. Automated restore remains RFC-06. |
+| `scripts/verify-backup.ts` | Read-only validation for a standalone backup used by the manual or guarded CLI restore workflow. |
 
 Do not create a general repository layer, event bus, plugin system, or currency-conversion abstraction. The current local single-user scope does not justify them.
 
 ## 7. Decision register
 
-The decisions below are part of the north star. D-11 through D-16 remain deferred product RFC inputs and are not unresolved choices inside the selected remediation packages.
+The decisions below are part of the north star. D-11, D-12, D-13, D-15, and
+D-16 are resolved by the 2026-07-17 product checkpoint; D-14 remains the
+intentional no-auth boundary. Historical package sections retain their original
+pre-decision evidence and are not current-state claims.
 
 | ID | Decision | Recommended default | Reason and guardrail |
 | --- | --- | --- | --- |
@@ -283,12 +291,12 @@ The decisions below are part of the north star. D-11 through D-16 remain deferre
 | D-08 | Mixed currencies | For exactly one currency, format all combined values in that currency. For more than one, expose a discriminated mixed state and suppress every combined net-worth, income, spending, trend, and budget scalar. No conversion. | Warning beside a false sum is insufficient. External exchange rates would violate local/no-egress scope. |
 | D-09 | Demo seed eligibility | One-time, fail-closed initialization only: no accounts, transactions, batches, or splits; categories must be empty or exactly the untouched defaults. Refuse re-seeding and custom/nonempty ledgers; provide no `--force`. | There is no reliable way to distinguish coincident personal rows from demo rows in the current schema. Repeatable demo cleanup needs a future marker design. |
 | D-10 | Relative DB paths | Require in-repository relative paths to resolve under `data/`; allow a canonical absolute external path. Preflight and reject every other target before directory creation or SQLite open. Never relocate a file automatically. | Keeps Git, backup, restore, permissions, and trace policy aligned. A legacy external target can be expressed as its canonical absolute path; an unsafe in-repository target needs an explicit operator move procedure. |
-| D-11 | Cross-file hash collision | **Decision gate / defer.** Preserve the hash. Prefer explicit review/override recorded outside the hash if this is implemented. | Changing the digest breaks compatibility with every stored import hash. |
-| D-12 | Refunds | **Decision gate / defer.** Preserve current negative-only gross-spend behavior until a written product model is approved. | Netting by category/date/merchant is a financial policy decision, not a parser fix. |
-| D-13 | Transfers | **Decision gate / defer.** Add advisory candidate detection and explicit user confirmation; do not auto-pair or delete. | Similar amounts and dates are evidence, not proof of a transfer. |
+| D-11 | Cross-file hash collision | Preserve the hash and offer an explicit source-file/row override with separate provenance and batch undo. | Changing the digest breaks compatibility with every stored import hash; ordinary imports remain idempotent. |
+| D-12 | Refunds | Link a positive row explicitly to a same-account/same-currency negative original; allow partial links up to the original and reduce spending/budget actuals in the refund's active category/splits. | Positive rows are not inferred as refunds; unlinked positives retain income behavior. |
+| D-13 | Transfers | Show advisory equal-and-opposite same-currency candidates within three days and require an explicit one-to-one pair; preserve both rows and exclude paired rows from financial aggregates. | Similar amounts and dates are evidence, not proof; pairing is reversible and never deletes data. |
 | D-14 | Authentication | Do not add it in this remediation program. Preserve loopback default and documented trusted-network opt-ins. | No-auth is an intentional product boundary; origin/framing fixes harden browser mutations without changing product scope. |
-| D-15 | Mixed-sign splits | **Decision gate / defer.** Do not change current accepted semantics until refunds and transfer behavior are defined. | A negative parent containing positive and negative parts has policy implications across spending and refunds. |
-| D-16 | Automated restore | Deferred as RFC-06. Selected remediation ends with validated private backups, a read-only verifier, and an offline manual restore runbook. | Restore is destructive and requires separate approval, independent review, and an enforceable quiescence design. |
+| D-15 | Mixed-sign splits | Allow safe nonzero signed parts whose exact sum matches the parent; preserve signed aggregate behavior and warn in the editor. | The UI must not infer a refund or transfer from a mixed-sign allocation. |
+| D-16 | Automated restore | Preview by default; execute only with `--confirm --quiesced` against the canonical target after standalone validation, rescue capture, no-clobber lock, durable swap, and post-verification. | Restore is destructive; the rescue is retained and the command never pretends quiescence is implicit. |
 | D-17 | Tailscale/custom browser origins | Accept only exact comma-separated HTTPS origins. Derive exact host/port strings for Next's build-time Server Action allowlist; enforce exact scheme/host/port at runtime for import and at the start of every action. No `*.ts.net` or suffix wildcard. | Next's framework comparison drops the scheme and permits a missing Origin, so it is defense in depth rather than the complete policy. Configuration changes require rebuilding. |
 | D-18 | Malformed statement files | Any malformed row fails the complete file. Ambiguous dates and invalid column maps remain distinct typed preflight results. | Partial import makes correction and hash behavior difficult to reason about; refusal before mutation is deterministic. |
 | D-19 | Upload resource bound | Cap the raw multipart body at `5 MiB + 64 KiB`. Reject an oversized declared length early, then read/cancel the stream at the hard cap and call `formData()` only on a reconstructed in-memory bounded request. Keep the 5 MiB file check authoritative. | Covers absent, chunked, malformed, or understated lengths without another dependency. |
@@ -324,7 +332,8 @@ Stage 6  WP-04 trace/standalone privacy + WP-05 telemetry
 Stage 7  WP-13 private backup/manual restore + WP-16 runtime hardening
          WP-17 accessibility + WP-18 final documentation/release
 
-RFC-01..06 remain outside remediation until explicitly approved.
+RFC-01..04 and RFC-06 are resolved in the 2026-07-17 product checkpoint;
+RFC-05 remains the intentional no-conversion multi-currency non-goal.
 ```
 
 ### Package summary
@@ -1058,7 +1067,8 @@ Also cover currency symbols, parentheses, trailing minus, decimal comma, unsafe 
 1. Update `getBudgetVsActual()` to require both a non-null budget and `excludeFromSpending = false` while retaining its LEFT JOIN behavior for zero-spend budget categories.
 2. Preserve the stored budget when exclusion is enabled. Do not clear it in `updateCategory()`.
 3. Add concise category-form help: excluded categories do not count as income/spending and do not appear in budget progress; a saved budget returns if the category is included later.
-4. Keep existing refund behavior—positive lines do not reduce gross budget spend—until D-12 is resolved.
+4. Keep unlinked positive rows as income; explicitly linked refunds reduce gross
+   budget spend according to the resolved D-12 contract.
 5. Add a cross-aggregate contract fixture containing:
    - included and excluded unsplit outflows/inflows;
    - included and excluded split parts;
@@ -1417,9 +1427,13 @@ This slice is a prerequisite for safe tests/builds, seed, import, backup, and ru
 
 ### WP-13 — Private storage, validated backup, and safe restore documentation
 
-**Delivery stage:** 7, after WP-12B; automated restore remains outside this stage.
+**Delivery stage:** 7, after WP-12B; the guarded restore extension is recorded
+in the 2026-07-17 product checkpoint below.
 
-Private storage, validated backup publication, and a correct manual restore runbook are required remediation. Automated restore is a new destructive feature and is deferred as RFC-06 unless separately approved.
+Private storage, validated backup publication, and a correct manual restore
+runbook are required remediation. The separately approved guarded restore
+extension is implemented as a preview-first CLI and remains subject to the
+same operator-owned real-host gate as every ledger mutation.
 
 #### WP-13A — Private modes and validated backups
 
@@ -1467,9 +1481,12 @@ Private storage, validated backup publication, and a correct manual restore runb
 
 **Rollback:** if private modes break an undocumented group-shared workflow, stop and obtain an explicit product/operations decision. The single-user privacy contract takes precedence over silently restoring world-readable modes.
 
-#### RFC-06 preview — Path-aware guarded automated restore (deferred)
+#### RFC-06 design record — Path-aware guarded automated restore (implemented)
 
-This preview records safety requirements so a later design does not repeat the audit's hazards. It is not required for remediation completion. Prerequisites are WP-12B and WP-13A, explicit approval of D-16, a fake failure-injection harness, and independent review.
+This design record captures the safety requirements that were implemented after
+WP-12B and WP-13A. It remains a destructive operator command, not an
+application route. Synthetic failure coverage is required before any real-host
+use.
 
 **Immediate documentation fix before code**
 
@@ -1837,7 +1854,7 @@ Documentation changes belong with each behavior package. WP-18 is the final cons
 | `README.md` | Safe setup, loopback/no-auth boundary, telemetry guarantee, seed refusal, build privacy, custom DB path, validated backup/restore, Node/systemd choice, and concise import date behavior. |
 | `CLAUDE.md` | Actual module boundaries, typed service invariants, active-category semantics, currency discriminator, standard/focused/shuffled validation, operational scripts, and immutable hash/migration rules. |
 | `USER_MANUAL.md` | User-visible blocked ambiguous-date flow, Debit/Credit behavior, split edit refusal, excluded budgets, truthful mixed-currency state, split export schema/formula safety, accessible confirmations, safe seed/backup/restore walkthrough. |
-| `TODO.md` | `3d967ba` milestone correctly shipped; remediated findings marked with commits; transfer/refund/cross-file duplicate remain decision-dependent; no snapshot state presented as current fact. |
+| `TODO.md` | Historical milestones remain traceable; the 2026-07-17 duplicate/transfer/refund/ledger-options checkpoint is marked shipped; no snapshot state is presented as current fact. |
 | `.env.example` | Default DB, telemetry defense in depth, and allowed-origin syntax aligned with implementation; no secret/example that encourages committing `.env`. |
 | `deploy/*` comments | Exact Node selection, loopback binding, private umask, fake validation, backup retention, and service-stop restore rule. |
 | API/code comments | Match route cache/origin/export behavior and do not claim caller-owned invariants that services now own. |
@@ -1850,8 +1867,8 @@ Documentation changes belong with each behavior package. WP-18 is the final cons
    - no authentication is intentional;
    - loopback/Tailscale trust remains critical;
    - no multi-currency conversion is intentional;
-   - gross refund treatment remains pending until resolved;
-   - cross-file identical-row collision remains a known frozen-hash limitation.
+   - linked refund treatment is explicit while unlinked positives remain income;
+   - cross-file identical-row collisions remain reviewable under the frozen hash.
 4. Include a release/update runbook and paired code/database rollback guidance.
 5. Link this guide as historical/implementation context after the program; mark completed packages and unresolved RFCs instead of deleting the reasoning.
 
@@ -1862,47 +1879,70 @@ Documentation changes belong with each behavior package. WP-18 is the final cons
 - Known limitations remain visible and accurately scoped.
 - A new maintainer can execute the fake release matrix without needing audit context from another session.
 
-## 10. Deferred RFCs and explicit non-goals
+## 10. Resolved RFCs and explicit non-goals
 
-Do not fold these into a remediation diff. Each changes financial policy, compatibility, or product scope and needs a short design record with examples before implementation.
+RFC-01 through RFC-04 and RFC-06 were resolved by the 2026-07-17 product
+decision record and implemented in the current worktree. Their design rationale
+and exact contracts live in `docs/PRODUCT_DECISIONS.md`; the summaries below
+remain for guide navigation. RFC-05 is intentionally a non-goal.
 
-### RFC-01 — Cross-file identical-row review/override
+### RFC-01 — Cross-file identical-row review/override — RESOLVED
 
 **Problem:** occurrence indexing distinguishes identical rows within one file, but two files each containing one identical row produce the same hash. One may be a legitimate repeated transaction.
 
 **Constraints:** the existing hash cannot change. A safe design should show skipped-row detail and allow an explicit import decision without destroying re-import idempotency.
 
-**Candidate direction:** store a separately identified manual duplicate override/provenance record or insert a manual transaction with explicit source metadata. Never salt/change a stored hash invisibly. Define how undo, export, and repeated override attempts behave.
+**Implemented contract:** migration 0006 stores source fingerprint/row
+provenance for an explicit override transaction with a null import hash. The
+frozen hash is never salted or changed; undo removes the transaction and
+provenance with its import batch, and duplicate override attempts are refused.
 
 **Required examples:** identical subscription on two statement files; overlapping statement periods; same-day same-amount coffee purchases; user retries; batch undo.
 
-### RFC-02 — Transfer candidates and explicit pairing
+### RFC-02 — Transfer candidates and explicit pairing — RESOLVED
 
 **Problem:** transfers are currently excluded by category/keywords, not linked across accounts.
 
 **Candidate direction:** generate advisory candidate pairs with opposite safe-integer amounts, different accounts, compatible currencies, and a narrow date window. Require explicit confirmation, preserve both ledger rows, and record linkage. Never auto-delete, auto-category, or silently pair.
 
-**Required decisions:** same-currency only, acceptable date window, one-to-many cases, card payments, unpair behavior, how linked pairs affect income/spending and export.
+**Implemented contract:** same valid currency, different accounts, equal
+opposite safe cents, and a three-day inclusive date window; explicit one-to-one
+pairing, reversible unpairing, no auto-pairing, and no deletion. Paired rows
+remain in the ledger/export and leave income, spending, budget, merchant, and
+trend aggregates.
 
-### RFC-03 — Refund model
+### RFC-03 — Refund model — RESOLVED
 
-**Problem:** positive values in spending categories count as income in monthly summary and do not reduce budget/category gross spend under current negative-only logic.
+**Historical problem:** before this checkpoint, positive values in spending
+categories counted as income in monthly summary and did not reduce
+budget/category gross spend under negative-only logic.
 
-**Possible explicit model:** an `is_refund` or linkage field introduced by an additive migration, with rules for original purchase link, partial/multi-month refund, split refund, and unlinked credit. Do not infer every positive categorized row as a refund; it may be income or reversal.
+**Implemented contract:** migration 0006 links a positive row explicitly to a
+same-account/same-currency negative original. Partial links are allowed up to
+the original absolute cents. The refund's active category/splits determine the
+reduction in its own month; it is not income. Unlinked positives retain the
+existing income behavior, and linking never rewrites either row.
 
-**Required decisions:** gross versus net dashboard views, budget treatment, date/month allocation, split categories, and migration defaults for existing positives.
+### RFC-04 — Mixed-sign split semantics — RESOLVED
 
-### RFC-04 — Mixed-sign split semantics
-
-Define whether a single transaction may allocate both negative and positive parts, how those parts count toward gross/net spend, and how the UI explains them. Until then, preserve existing behavior and do not “normalize” signs automatically.
+Safe nonzero signed parts are accepted when their exact sum matches the parent.
+Negative parts count as spending and positive parts as income unless the parent
+is explicitly linked as a transfer/refund. The editor warns about mixed signs
+and never normalizes or infers their meaning.
 
 ### RFC-05 — Multi-currency features
 
 Per-currency grouped dashboards may be useful later. Exchange-rate conversion, rate history, gains/losses, and remote rate fetching are explicitly outside this remediation program. Any future design must remain local-first or make egress/credentials an explicit product change.
 
-### RFC-06 — Guarded automated restore
+### RFC-06 — Guarded automated restore — RESOLVED
 
-Required remediation ends with validated backups and a path-aware, offline manual restore runbook. An automated restore command is a separately approved destructive feature. If approved, use the detailed RFC-06 preview under WP-13: accept only schema-compatible standalone backup images, hold enforceable service quiescence, create a validated rescue, coordinate sidecars and the main-file swap without a stale-WAL window, publish durably with no-clobber semantics, and prove every failure point against fake data under independent review.
+`npm run db:restore` accepts absolute backup and target paths, previews without
+mutation by default, and requires `--confirm --quiesced` to execute. It accepts
+only the canonical configured target and a validated standalone backup, creates
+and retains a validated rescue, uses a no-clobber lock, stages/fsyncs the
+replacement, performs the swap and post-verification, and attempts automatic
+rollback from the rescue if post-verification fails. Real-host quiescence and
+operator code/runtime pairing remain release gates.
 
 ### Other non-goals
 
@@ -2015,7 +2055,7 @@ No migration should be introduced for WP-02A/B, WP-03, WP-06, WP-07, WP-08, WP-1
 | WP-10 | Both exact header schemas, legacy mixed-currency refusal, split JSON schema, filter/order/snapshot meaning, and spreadsheet apostrophe behavior. |
 | WP-11 | Account create/edit/repair currency, single/mixed/invalid aggregate states, and no-conversion limitation. |
 | WP-12 | Strict DB path and pre-open migration policy, explicit legacy move procedure, Git privacy, and strict environment errors. |
-| WP-13 | Private modes, validated backup, path-aware offline manual restore, paired rollback; automation remains RFC-06. |
+| WP-13 | Private modes, validated backup, path-aware manual restore, paired rollback, and the guarded restore CLI. |
 | WP-14A/B/C | Exact trusted-Origin/rebuild behavior, proxy assumptions, global framing/no-store headers, measured multipart/file caps, filename rules, and root-layout revalidation. |
 | WP-15 | Service-boundary enforcement and explicit operational/test exceptions. |
 | WP-16 | Node selection, unit install placeholders, loopback and permission checks. |
@@ -2364,12 +2404,12 @@ lockfile, or live-workspace build was touched.
 WP-08 brings budget progress under the same exclusion contract as category
 spending, monthly summary, and trends. `getBudgetVsActual()` now filters the
 base category row by both a saved budget and `excludeFromSpending = false`,
-while keeping the line-item LEFT JOIN and negative-only aggregate intact. An
+while keeping the line-item LEFT JOIN and zero-spend budget behavior intact. An
 included zero-spend budget therefore still appears; an excluded budget is
 absent rather than shown as zero. Exclusion does not clear the stored target,
-so re-inclusion restores the budget with its split-aware gross actual. Positive
-refund lines retain the decision-gated existing behavior and do not reduce
-gross spend.
+so re-inclusion restores the budget with its split-aware gross actual. Explicitly
+linked positive refund lines reduce the actual in their active category/splits;
+unlinked positive lines retain income behavior.
 
 A per-test cross-aggregate fixture covers included and excluded unsplit inflows
 and outflows, included and excluded split parts, uncategorized activity, an
@@ -2671,7 +2711,8 @@ working/quarantine images, divergent migrations, and mismatched schemas. The
 manual restore runbook requires a verified rescue, confirmed stopped service,
 same-directory restore-ready inode, sidecar quarantine, and rollback. Native
 Windows output explicitly limits durability to platform best effort and reports
-ACL privacy as unverified; automated restore remains deferred RFC-06.
+ACL privacy as unverified. The later RFC-06 checkpoint adds the guarded restore
+CLI; this manual WP-13A record remains the backup/verifier foundation.
 
 Focused backup/audit/verifier/systemd coverage passed 8 files / 85 tests.
 Default and seed-`131313` shuffled suites passed 56 files / 790 tests before the
@@ -2778,9 +2819,10 @@ accessibility, service, backup, restore, update, and rollback behavior across th
 maintainer and user documentation. The release runbook now pairs a recorded
 code/runtime/rendered-unit set with a validated backup and explicitly forbids
 starting older code against a newer migrated schema. The historical product
-backlog no longer controls remediation order, and transfer/refund/cross-file
-duplicate policy, automated restore, and other deferred work remain visible as
-decision-dependent RFCs rather than implied implementation work.
+backlog no longer controls remediation order. At the 2026-07-15 WP-18 boundary,
+transfer/refund/cross-file duplicate policy and automated restore were still
+visible as decision-dependent RFCs; the 2026-07-17 product checkpoint below
+subsequently resolves the scoped choices.
 
 The final release matrix passed the default and fixed-seed shuffled suites (62
 files / 816 tests), the WP-17 focus (8 files / 59 tests), full ESLint, TypeScript,
@@ -2792,8 +2834,7 @@ migration, dependency, or lockfile change was used for this closeout.
 This is an implementation closeout, not a production-release claim. A release
 still requires the recorded real-browser/screen-reader matrix, operator-owned
 real-host socket/reboot/SIGTERM/restart/timer checks, and an authorized review of
-the sensitive environment template. No decision-gated RFC was selected by
-WP-18.
+the sensitive environment template.
 
 ### Completed product checkpoint: dashboard uncategorized review
 
@@ -2812,6 +2853,33 @@ transaction rows. The focused active-category/transaction matrix passed 2 files
 and standalone build/preflight/smoke validator passed. No configured ledger,
 live-workspace build, dependency, lockfile, schema, migration, API, action,
 import-hash, money, date, or financial-policy contract changed.
+
+### Completed product checkpoint: scoped decisions and ledger options
+
+The 2026-07-17 autonomous checkpoint resolves the scoped product decisions in
+`docs/PRODUCT_DECISIONS.md` and implements them in additive migration 0006.
+The frozen import hash remains byte-for-byte compatible; duplicate review now
+offers a source-file/row override with null-hash provenance and batch undo.
+Transfer candidates are advisory and explicit one-to-one pairs. Refund links
+are same-account/same-currency, partial-safe, and reduce spending/budget actuals
+in the refund's active category or splits without rewriting either row. Mixed-
+sign splits remain signed and receive an editor warning.
+
+The ledger now supports merchant labels, deterministic merchant fallback and
+recurring rollups, optional opening-balance dates, cleared filtering/toggles,
+row-level spending exclusion, and account-scoped running balances. Valid mixed
+currencies render separate exact dashboard groups; invalid currencies remain a
+repair blocker and produce no partial group. Category merge moves parent, split,
+and inactive fallback references in one transaction. `npm run db:restore` is a
+preview-first, rescue-retaining guarded CLI requiring explicit quiescence for
+execution.
+
+Verification for this checkpoint uses only synthetic/temp databases. The full
+65-file/880-test suite, ESLint, TypeScript, guarded build, copied-workspace
+ordinary/standalone build and privacy validator, and `git diff --check` passed.
+The manual browser/screen-reader, real-host operations, and
+sensitive-environment review gates remain pending and are not implied by the
+synthetic checks.
 
 ## 17. Handoff template for every completed package
 

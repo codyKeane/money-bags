@@ -61,6 +61,7 @@ describe("Next origin and response configuration", () => {
         expect.arrayContaining([
           "scripts/render-systemd-units.mjs",
           "scripts/service-preflight.ts",
+          "scripts/restore-db.ts",
           "scripts/verify-backup.ts",
         ]),
       );

@@ -76,6 +76,9 @@ export function SplitEditor({
   const remainder = amountCents - allocated;
   if (!Number.isSafeInteger(remainder)) arithmeticOverflow = true;
   const nonEmpty = rows.filter((r) => r.amount.trim() !== "");
+  const hasNegativePart = parsed.some((c) => c !== null && c < 0);
+  const hasPositivePart = parsed.some((c) => c !== null && c > 0);
+  const mixedSign = hasNegativePart && hasPositivePart;
   const canSave =
     !anyInvalid &&
     !arithmeticOverflow &&
@@ -221,6 +224,12 @@ export function SplitEditor({
                 : `Remainder: ${formatCents(remainder, currency)}`}
         </span>
       </div>
+      {mixedSign ? (
+        <p role="status" className="text-xs text-ink-muted">
+          Mixed-sign split: negative parts count as outflows and positive parts as inflows. Money Bags
+          keeps these signed allocations exactly and does not infer a refund or transfer.
+        </p>
+      ) : null}
 
       <div className="flex items-center gap-3">
         <button

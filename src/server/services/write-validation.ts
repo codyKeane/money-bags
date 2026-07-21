@@ -8,6 +8,7 @@ export const WRITE_LIMITS = {
   accountName: 120,
   categoryName: 60,
   description: 500,
+  merchant: 160,
   filename: 255,
   institution: 120,
   keyword: 120,
@@ -67,6 +68,18 @@ export function normalizeCategoryName(value: unknown): string | null {
 
 export function normalizeDescription(value: unknown): string | null {
   return normalizeRequiredText(value, WRITE_LIMITS.description);
+}
+
+export function normalizeMerchant(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.normalize("NFC").replace(/\s+/gu, " ").trim();
+  if (
+    normalized.length > WRITE_LIMITS.merchant ||
+    hasUnsafeCodePoint(normalized, NO_CONTROLS)
+  ) {
+    return null;
+  }
+  return normalized;
 }
 
 function hasUnsafeCodePoint(value: string, allowedControls: ReadonlySet<number>): boolean {
@@ -216,8 +229,11 @@ export interface TransactionInput {
   date: string;
   description: string;
   amountCents: number;
+  merchant?: string;
   notes?: string;
   tags?: readonly string[];
+  cleared?: boolean;
+  excludeFromSpending?: boolean;
 }
 
 export interface NormalizedTransactionInput {
@@ -226,8 +242,11 @@ export interface NormalizedTransactionInput {
   date: string;
   description: string;
   amountCents: number;
+  merchant?: string;
   notes?: string;
   tagsJson?: string;
+  cleared?: boolean;
+  excludeFromSpending?: boolean;
 }
 
 export function normalizeTransactionInput(
@@ -262,6 +281,16 @@ export function normalizeTransactionInput(
       result: invalidWriteInput("amountCents", "Transaction amount must be exact cents"),
     };
   }
+  const merchant = input.merchant === undefined ? undefined : normalizeMerchant(input.merchant);
+  if (merchant === null) {
+    return {
+      ok: false,
+      result: invalidWriteInput(
+        "merchant",
+        `Merchant must be at most ${WRITE_LIMITS.merchant} characters and contain only safe text`,
+      ),
+    };
+  }
   const notes =
     input.notes === undefined ? undefined : normalizeTransactionNotes(input.notes);
   if (notes === null) {
@@ -283,6 +312,15 @@ export function normalizeTransactionInput(
       ),
     };
   }
+  if (input.cleared !== undefined && !isBoolean(input.cleared)) {
+    return { ok: false, result: invalidWriteInput("cleared", "Invalid cleared state") };
+  }
+  if (input.excludeFromSpending !== undefined && !isBoolean(input.excludeFromSpending)) {
+    return {
+      ok: false,
+      result: invalidWriteInput("excludeFromSpending", "Invalid spending exclusion"),
+    };
+  }
   return {
     ok: true,
     value: {
@@ -291,8 +329,13 @@ export function normalizeTransactionInput(
       date: input.date,
       description,
       amountCents: input.amountCents,
+      ...(merchant === undefined ? {} : { merchant }),
       ...(notes === undefined ? {} : { notes }),
       ...(tags === undefined ? {} : { tagsJson: JSON.stringify(tags) }),
+      ...(input.cleared === undefined ? {} : { cleared: input.cleared }),
+      ...(input.excludeFromSpending === undefined
+        ? {}
+        : { excludeFromSpending: input.excludeFromSpending }),
     },
   };
 }

@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 const id = () =>
   text("id")
@@ -23,6 +23,9 @@ export const accounts = sqliteTable("accounts", {
   institution: text("institution"),
   currency: text("currency").notNull().default("USD"),
   openingBalanceCents: integer("opening_balance_cents").notNull().default(0),
+  // Null means the opening amount is a current baseline rather than a point
+  // that can be placed on a historical balance timeline.
+  openingBalanceDate: text("opening_balance_date"),
   ...timestamps,
 });
 
@@ -66,11 +69,18 @@ export const transactions = sqliteTable(
     id: id(),
     date: text("date").notNull(), // YYYY-MM-DD (statement dates are date-only)
     description: text("description").notNull(),
+    merchant: text("merchant").notNull().default(""),
     notes: text("notes").notNull().default(""),
     // Canonical JSON string[]; service reads tolerate malformed historical
     // values while every supported write stores bounded normalized tags.
     tagsJson: text("tags").notNull().default("[]"),
     amountCents: integer("amount_cents").notNull(), // signed: negative = outflow
+    cleared: integer("cleared", { mode: "boolean" }).notNull().default(false),
+    // Row-level override for category-based spending inclusion. This never
+    // changes the category or its stored budget.
+    excludeFromSpending: integer("exclude_from_spending", { mode: "boolean" })
+      .notNull()
+      .default(false),
     accountId: text("account_id")
       .notNull()
       .references(() => accounts.id, { onDelete: "cascade" }),
@@ -125,3 +135,86 @@ export type ImportBatch = typeof importBatches.$inferSelect;
 export type NewImportBatch = typeof importBatches.$inferInsert;
 export type TransactionSplit = typeof transactionSplits.$inferSelect;
 export type NewTransactionSplit = typeof transactionSplits.$inferInsert;
+
+// A duplicate import override is deliberately separate from the frozen
+// importHash. The overridden transaction keeps importHash null, while this row
+// preserves exactly which source row the user chose to import a second time.
+export const importDuplicateOverrides = sqliteTable(
+  "import_duplicate_overrides",
+  {
+    id: id(),
+    batchId: text("batch_id")
+      .notNull()
+      .references(() => importBatches.id, { onDelete: "cascade" }),
+    transactionId: text("transaction_id")
+      .notNull()
+      .unique()
+      .references(() => transactions.id, { onDelete: "cascade" }),
+    accountId: text("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    sourceFingerprint: text("source_fingerprint").notNull(),
+    sourceRowNumber: integer("source_row_number").notNull(),
+    importHash: text("import_hash").notNull(),
+    createdAt: integer("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (t) => [
+    uniqueIndex("import_duplicate_source_unique").on(
+      t.accountId,
+      t.sourceFingerprint,
+      t.sourceRowNumber,
+    ),
+    index("import_duplicate_hash_idx").on(t.accountId, t.importHash),
+  ],
+);
+
+// One-to-one explicit transfer pair. Both rows stay in the ledger and export;
+// aggregate services suppress them through a NOT EXISTS predicate.
+export const transferPairs = sqliteTable(
+  "transfer_pairs",
+  {
+    id: id(),
+    sourceTransactionId: text("source_transaction_id")
+      .notNull()
+      .references(() => transactions.id, { onDelete: "cascade" }),
+    destinationTransactionId: text("destination_transaction_id")
+      .notNull()
+      .references(() => transactions.id, { onDelete: "cascade" }),
+    createdAt: integer("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (t) => [
+    uniqueIndex("transfer_pairs_source_unique").on(t.sourceTransactionId),
+    uniqueIndex("transfer_pairs_destination_unique").on(t.destinationTransactionId),
+  ],
+);
+
+// A refund may be partial and several refunds may point to one original. The
+// refund row itself owns its category/splits so no historical row is rewritten.
+export const refundLinks = sqliteTable(
+  "refund_links",
+  {
+    id: id(),
+    refundTransactionId: text("refund_transaction_id")
+      .notNull()
+      .unique()
+      .references(() => transactions.id, { onDelete: "cascade" }),
+    originalTransactionId: text("original_transaction_id")
+      .notNull()
+      .references(() => transactions.id, { onDelete: "cascade" }),
+    createdAt: integer("created_at")
+      .notNull()
+      .$defaultFn(() => Date.now()),
+  },
+  (t) => [index("refund_links_original_idx").on(t.originalTransactionId)],
+);
+
+export type ImportDuplicateOverride = typeof importDuplicateOverrides.$inferSelect;
+export type NewImportDuplicateOverride = typeof importDuplicateOverrides.$inferInsert;
+export type TransferPair = typeof transferPairs.$inferSelect;
+export type NewTransferPair = typeof transferPairs.$inferInsert;
+export type RefundLink = typeof refundLinks.$inferSelect;
+export type NewRefundLink = typeof refundLinks.$inferInsert;

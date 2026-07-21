@@ -118,6 +118,19 @@ function AccountFields({
           </span>
         ) : null}
       </Field>
+      <Field label="Opening balance date (optional)">
+        <input
+          type="date"
+          name="openingBalanceDate"
+          defaultValue={initial?.openingBalanceDate ?? ""}
+          className={inputClass}
+          {...fieldErrorAttributes(errorId, errorField, "openingBalanceDate")}
+        />
+        <span className="text-xs text-ink-muted">
+          Leave blank when the opening amount is only a current baseline. The date is retained for
+          historical balance calculations; no net-worth-over-time chart is shown yet.
+        </span>
+      </Field>
     </>
   );
 }
@@ -325,6 +338,7 @@ export function AccountsManager({ accounts }: { accounts: AccountWithBalance[] }
             <th className={thClass}>Type</th>
             <th className={thClass}>Institution</th>
             <th className={`${thClass} text-right`}>Opening</th>
+            <th className={thClass}>Opening date</th>
             <th className={`${thClass} text-right`}>Balance</th>
             <th className={`${thClass} text-right`}>Transactions</th>
             <th className={thClass} />
@@ -334,7 +348,7 @@ export function AccountsManager({ accounts }: { accounts: AccountWithBalance[] }
           {accounts.map((a) => (
             <tr key={a.id} className={`${bodyRowClass} align-top`}>
               {editingId === a.id || deletingId === a.id ? (
-                <td colSpan={7} className="px-3 py-3">
+                <td colSpan={8} className="px-3 py-3">
                   {editingId === a.id ? (
                     <EditRow account={a} onDone={() => setEditingId(null)} />
                   ) : (
@@ -362,6 +376,7 @@ export function AccountsManager({ accounts }: { accounts: AccountWithBalance[] }
                       ? formatCents(a.openingBalanceCents, a.currencyState.currency)
                       : "Unavailable"}
                   </td>
+                  <td className="px-3 py-2 text-ink-2">{a.openingBalanceDate ?? "Current baseline"}</td>
                   <td className="px-3 py-2 text-right tabular-nums">
                     {a.currencyState.kind === "valid" && a.balanceCents !== null
                       ? formatCents(a.balanceCents, a.currencyState.currency)

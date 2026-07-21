@@ -1,7 +1,14 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
+import { createHash } from "node:crypto";
 import { getDb, type Db } from "../../db/client";
 import { ensureDefaultCategoriesInTransaction } from "../../db/default-categories";
-import { accounts, categories, importBatches, transactions } from "../../db/schema";
+import {
+  accounts,
+  categories,
+  importBatches,
+  importDuplicateOverrides,
+  transactions,
+} from "../../db/schema";
 import { categorize, parseKeywords } from "../../lib/categorize";
 import { computeImportHashes } from "../../lib/import-hash";
 import {
@@ -27,6 +34,8 @@ export interface SkippedRow {
   date: string;
   description: string;
   amountCents: number;
+  importHash: string;
+  sourceFingerprint: string;
 }
 
 interface ImportResultData {
@@ -41,6 +50,8 @@ interface ImportResultData {
   // duplicates / empty file) — nothing to undo, so no batch is created.
   batchId: string | null;
   account: ImportedAccountTarget | null;
+  sourceFingerprint?: string;
+  filename?: string | null;
 }
 
 export interface ImportedAccountTarget {
@@ -91,6 +102,8 @@ function emptyImportData(): ImportResultData {
     warnings: [],
     batchId: null,
     account: null,
+    sourceFingerprint: undefined,
+    filename: null,
   };
 }
 
@@ -280,6 +293,7 @@ export async function importStatement(
   const normalizedRows = normalizeParsedRows(parsed.rows);
   if (normalizedRows.errors.length > 0) return invalidFileResult(normalizedRows.errors);
   const rows = normalizedRows.rows;
+  const sourceFingerprint = sha256(input.csvText);
   const database = db ?? getDb({ installDefaults: false });
 
   // All hashes within one file are unique (occurrence indexing), so the set of
@@ -375,6 +389,8 @@ export async function importStatement(
           date: row.date,
           description: row.description,
           amountCents: row.amountCents,
+          importHash: hash,
+          sourceFingerprint,
         });
       }
     }
@@ -386,7 +402,153 @@ export async function importStatement(
       warnings: [],
       batchId: imported > 0 ? batchId : null,
       account: resolution.account,
+      sourceFingerprint,
+      filename,
     };
+  }, { behavior: "immediate" });
+}
+
+function sha256(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function isSha256(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
+}
+
+export interface DuplicateImportOverrideInput {
+  accountId: string;
+  sourceFingerprint: string;
+  sourceRowNumber: number;
+  importHash: string;
+  date: string;
+  description: string;
+  amountCents: number;
+  filename?: string | null;
+}
+
+export type DuplicateImportOverrideResult =
+  | { status: "overridden"; batchId: string; transactionId: string }
+  | { status: "already-overridden" }
+  | { status: "source-not-found" }
+  | { status: "invalid-input"; field: string; message: string };
+
+// Explicit duplicate overrides are deliberately separate from the frozen
+// import-hash contract: the new row has no importHash, while this provenance
+// row records exactly which source file/row the user chose to keep.
+export async function overrideDuplicateImport(
+  input: DuplicateImportOverrideInput,
+  db: Db = getDb(),
+): Promise<DuplicateImportOverrideResult> {
+  const accountId = normalizeId(input.accountId);
+  const sourceFingerprint = input.sourceFingerprint.trim().toLowerCase();
+  const importHash = input.importHash.trim().toLowerCase();
+  const description = typeof input.description === "string" ? input.description : "";
+  const normalized = normalizeTransactionInput({
+    accountId: accountId ?? "",
+    categoryId: null,
+    date: input.date,
+    description,
+    amountCents: input.amountCents,
+  });
+  const filename = input.filename == null ? null : normalizeFilename(input.filename);
+  if (!accountId) return { status: "invalid-input", field: "accountId", message: "Invalid account id" };
+  if (!isSha256(sourceFingerprint)) {
+    return { status: "invalid-input", field: "sourceFingerprint", message: "Invalid source fingerprint" };
+  }
+  if (!isSha256(importHash)) {
+    return { status: "invalid-input", field: "importHash", message: "Invalid import hash" };
+  }
+  if (!Number.isSafeInteger(input.sourceRowNumber) || input.sourceRowNumber < 1) {
+    return { status: "invalid-input", field: "sourceRowNumber", message: "Invalid source row number" };
+  }
+  if (!normalized.ok) return normalized.result;
+  if (input.filename !== undefined && input.filename !== null && !filename) {
+    return { status: "invalid-input", field: "filename", message: "Invalid import filename" };
+  }
+
+  return db.transaction((tx) => {
+    const source = tx
+      .select({
+        id: transactions.id,
+        date: transactions.date,
+        description: transactions.description,
+        amountCents: transactions.amountCents,
+      })
+      .from(transactions)
+      .where(
+        and(eq(transactions.accountId, accountId), eq(transactions.importHash, importHash)),
+      )
+      .limit(1)
+      .get();
+    if (!source) return { status: "source-not-found" };
+    if (
+      source.date !== normalized.value.date ||
+      source.description !== normalized.value.description ||
+      source.amountCents !== normalized.value.amountCents
+    ) {
+      return {
+        status: "invalid-input",
+        field: "sourceRowNumber",
+        message: "Duplicate override data does not match the existing imported row.",
+      };
+    }
+
+    const existingOverride = tx
+      .select({ id: importDuplicateOverrides.id })
+      .from(importDuplicateOverrides)
+      .where(
+        and(
+          eq(importDuplicateOverrides.accountId, accountId),
+          eq(importDuplicateOverrides.sourceFingerprint, sourceFingerprint),
+          eq(importDuplicateOverrides.sourceRowNumber, input.sourceRowNumber),
+        ),
+      )
+      .limit(1)
+      .get();
+    if (existingOverride) return { status: "already-overridden" };
+
+    ensureDefaultCategoriesInTransaction(tx);
+    const categoryRows = tx.select().from(categories).all();
+    const categoryId = categorize(source.description, categoryRows.map((category) => ({
+      id: category.id,
+      name: category.name,
+      keywords: parseKeywords(category.keywords),
+    })));
+    const batchId = crypto.randomUUID();
+    const transactionId = crypto.randomUUID();
+    tx.insert(importBatches).values({
+      id: batchId,
+      accountId,
+      filename,
+      importedCount: 1,
+      skippedCount: 1,
+    }).run();
+    tx.insert(transactions).values({
+      id: transactionId,
+      accountId,
+      categoryId,
+      date: source.date,
+      description: source.description,
+      amountCents: source.amountCents,
+      notes: normalized.value.notes,
+      tagsJson: normalized.value.tagsJson,
+      importHash: null,
+      batchId,
+      merchant: normalized.value.merchant,
+      cleared: normalized.value.cleared,
+      excludeFromSpending: normalized.value.excludeFromSpending,
+    }).run();
+    tx.insert(importDuplicateOverrides).values({
+      id: crypto.randomUUID(),
+      batchId,
+      transactionId,
+      accountId,
+      sourceFingerprint,
+      sourceRowNumber: input.sourceRowNumber,
+      importHash,
+    }).run();
+    return { status: "overridden", batchId, transactionId };
   }, { behavior: "immediate" });
 }
 

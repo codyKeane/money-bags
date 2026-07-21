@@ -1,8 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useId, useRef, useState } from "react";
-import { createAccountAction, type CreateAccountState } from "@/server/actions";
+import { useId, useRef, useState, useTransition } from "react";
+import {
+  createAccountAction,
+  overrideDuplicateImportAction,
+  type CreateAccountState,
+} from "@/server/actions";
 import { ACCOUNT_TYPES } from "@/lib/account-types";
 import { inspectCurrencyCode, type AccountCurrencyState } from "@/lib/currency";
 import { formatCents } from "@/lib/money";
@@ -27,7 +31,9 @@ export interface AccountOption {
 interface ImportResponse {
   imported: number;
   skipped: SkippedRow[];
-  account: { currency: string } | null;
+  account: { id: string; currency: string } | null;
+  sourceFingerprint?: string;
+  filename?: string | null;
 }
 
 interface ImportErrorResponse {
@@ -42,6 +48,53 @@ function importFormField(field: string | undefined): string | undefined {
   if (field === "account" || field === "accountId") return "accountId";
   if (field === "csvText" || field === "filename") return "file";
   return field;
+}
+
+function DuplicateOverrideButton({
+  accountId,
+  filename,
+  row,
+}: {
+  accountId: string;
+  filename?: string | null;
+  row: SkippedRow;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function override() {
+    setError(null);
+    startTransition(async () => {
+      const response = await overrideDuplicateImportAction({
+        accountId,
+        sourceFingerprint: row.sourceFingerprint,
+        sourceRowNumber: row.rowNumber,
+        importHash: row.importHash,
+        date: row.date,
+        description: row.description,
+        amountCents: row.amountCents,
+        filename,
+      });
+      if (response.ok) setDone(true);
+      else setError(response.error ?? "Could not import this duplicate.");
+    });
+  }
+
+  if (done) return <span className="text-delta-good">Imported separately</span>;
+  return (
+    <span className="inline-flex flex-col items-start gap-1">
+      <button
+        type="button"
+        onClick={override}
+        disabled={pending}
+        className="min-h-9 rounded border border-hairline px-2 text-xs underline-offset-2 hover:underline disabled:opacity-50"
+      >
+        {pending ? "Importing…" : "Import separately"}
+      </button>
+      {error ? <span className="text-xs text-delta-bad">{error}</span> : null}
+    </span>
+  );
 }
 
 // Canonical field -> the label shown in the Advanced column-mapping section.
@@ -364,9 +417,9 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
           {result.skipped.length > 0 ? (
             <div className="mt-3">
               <p className="text-xs text-ink-muted">
-                Skipped rows (already imported). If one of these is a real
-                transaction that also appears in another file, add it manually —
-                identical rows split across files dedupe as one.
+                Skipped rows matched an existing frozen import hash. If one is a
+                real transaction that also appears in another file, you can keep
+                it as a separate row with its source-file provenance.
               </p>
               <table className="mt-2 text-xs">
                 <tbody>
@@ -384,6 +437,15 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
                         )}
                       </td>
                       <td>{row.description}</td>
+                      <td className="pl-3">
+                        {result.account && row.sourceFingerprint ? (
+                          <DuplicateOverrideButton
+                            accountId={result.account.id}
+                            filename={result.filename}
+                            row={row}
+                          />
+                        ) : null}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

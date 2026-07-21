@@ -2,10 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { SplitEditor } from "@/components/SplitEditor";
 import { TransactionForm } from "@/components/TransactionForm";
+import { TransactionLinkControls } from "@/components/TransactionLinkControls";
 import { formatCents } from "@/lib/money";
 import { getAccountById, getAccountOptions } from "@/server/services/accounts";
 import { getAllCategories } from "@/server/services/categories";
 import { getSplitsForTransaction, getTransactionById } from "@/server/services/transactions";
+import { getRefundCandidates, getTransactionLinkState } from "@/server/services/transaction-links";
 
 export const dynamic = "force-dynamic";
 
@@ -40,11 +42,13 @@ export default async function EditTransactionPage({
   const transaction = await getTransactionById(id);
   if (!transaction) notFound();
 
-  const [accounts, categories, splits, account] = await Promise.all([
+  const [accounts, categories, splits, account, linkState, refundCandidates] = await Promise.all([
     getAccountOptions(),
     getAllCategories(),
     getSplitsForTransaction(transaction.id),
     getAccountById(transaction.accountId),
+    getTransactionLinkState(transaction.id),
+    transaction.amountCents > 0 ? getRefundCandidates(transaction.id) : Promise.resolve([]),
   ]);
   const splitIntegrity = storedSplitTotal(transaction.amountCents, splits);
   const transactionAmountIsSafe = Number.isSafeInteger(transaction.amountCents);
@@ -105,9 +109,12 @@ export default async function EditTransactionPage({
             categoryId: transaction.categoryId,
             date: transaction.date,
             description: transaction.description,
+            merchant: transaction.merchant,
             notes: transaction.notes,
             tags: transaction.tags,
             amountCents: transaction.amountCents,
+            cleared: transaction.cleared,
+            excludeFromSpending: transaction.excludeFromSpending,
           }}
         />
       )}
@@ -131,6 +138,15 @@ export default async function EditTransactionPage({
           .
         </div>
       )}
+      {currency ? (
+        <TransactionLinkControls
+          transactionId={transaction.id}
+          amountCents={transaction.amountCents}
+          currency={currency}
+          state={linkState}
+          refundCandidates={refundCandidates}
+        />
+      ) : null}
     </div>
   );
 }

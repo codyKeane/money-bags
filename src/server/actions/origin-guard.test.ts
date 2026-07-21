@@ -10,13 +10,21 @@ const mocks = vi.hoisted(() => ({
   createCategory: vi.fn(),
   updateCategory: vi.fn(),
   deleteCategory: vi.fn(),
+  mergeCategory: vi.fn(),
   applyRulesToUncategorized: vi.fn(),
   undoImport: vi.fn(),
+  overrideDuplicateImport: vi.fn(),
   createTransaction: vi.fn(),
   updateTransaction: vi.fn(),
   deleteTransaction: vi.fn(),
   setTransactionCategory: vi.fn(),
   replaceSplits: vi.fn(),
+  setTransactionCleared: vi.fn(),
+  setTransactionSpendingExclusion: vi.fn(),
+  pairTransferTransactions: vi.fn(),
+  unpairTransferTransaction: vi.fn(),
+  linkRefund: vi.fn(),
+  unlinkRefund: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
@@ -33,15 +41,27 @@ vi.mock("@/server/services/categories", () => ({
   createCategory: mocks.createCategory,
   updateCategory: mocks.updateCategory,
   deleteCategory: mocks.deleteCategory,
+  mergeCategory: mocks.mergeCategory,
   applyRulesToUncategorized: mocks.applyRulesToUncategorized,
 }));
-vi.mock("@/server/services/import", () => ({ undoImport: mocks.undoImport }));
+vi.mock("@/server/services/import", () => ({
+  undoImport: mocks.undoImport,
+  overrideDuplicateImport: mocks.overrideDuplicateImport,
+}));
 vi.mock("@/server/services/transactions", () => ({
   createTransaction: mocks.createTransaction,
   updateTransaction: mocks.updateTransaction,
   deleteTransaction: mocks.deleteTransaction,
   setTransactionCategory: mocks.setTransactionCategory,
   replaceSplits: mocks.replaceSplits,
+  setTransactionCleared: mocks.setTransactionCleared,
+  setTransactionSpendingExclusion: mocks.setTransactionSpendingExclusion,
+}));
+vi.mock("@/server/services/transaction-links", () => ({
+  pairTransferTransactions: mocks.pairTransferTransactions,
+  unpairTransferTransaction: mocks.unpairTransferTransaction,
+  linkRefund: mocks.linkRefund,
+  unlinkRefund: mocks.unlinkRefund,
 }));
 
 import * as actions from "./index";
@@ -71,6 +91,8 @@ const invocations: Record<keyof typeof actions, () => Promise<unknown>> = {
   deleteAccountAction: () =>
     actions.deleteAccountAction(poison as string, poison as string),
   deleteCategoryAction: () => actions.deleteCategoryAction(poison as string),
+  mergeCategoryAction: () =>
+    actions.mergeCategoryAction(poison as string, poison as string),
   deleteTransactionAction: () =>
     actions.deleteTransactionAction(poison as string),
   recategorizeAction: () =>
@@ -78,12 +100,24 @@ const invocations: Record<keyof typeof actions, () => Promise<unknown>> = {
   splitTransactionAction: () =>
     actions.splitTransactionAction(poison as string, poison as never),
   undoImportAction: () => actions.undoImportAction(poison as string),
+  overrideDuplicateImportAction: () =>
+    actions.overrideDuplicateImportAction(poison as never),
   updateAccountAction: () =>
     actions.updateAccountAction(poison as never, poison as FormData),
   updateCategoryAction: () =>
     actions.updateCategoryAction(poison as never, poison as FormData),
   updateTransactionAction: () =>
     actions.updateTransactionAction(poison as never, poison as FormData),
+  setTransactionClearedAction: () =>
+    actions.setTransactionClearedAction(poison as string, poison as boolean),
+  setTransactionSpendingExclusionAction: () =>
+    actions.setTransactionSpendingExclusionAction(poison as string, poison as boolean),
+  pairTransferAction: () =>
+    actions.pairTransferAction(poison as string, poison as string),
+  unpairTransferAction: () => actions.unpairTransferAction(poison as string),
+  linkRefundAction: () =>
+    actions.linkRefundAction(poison as string, poison as string),
+  unlinkRefundAction: () => actions.unlinkRefundAction(poison as string),
 };
 
 const serviceMocks = [
@@ -94,13 +128,21 @@ const serviceMocks = [
   mocks.createCategory,
   mocks.updateCategory,
   mocks.deleteCategory,
+  mocks.mergeCategory,
   mocks.applyRulesToUncategorized,
   mocks.undoImport,
+  mocks.overrideDuplicateImport,
   mocks.createTransaction,
   mocks.updateTransaction,
   mocks.deleteTransaction,
   mocks.setTransactionCategory,
   mocks.replaceSplits,
+  mocks.setTransactionCleared,
+  mocks.setTransactionSpendingExclusion,
+  mocks.pairTransferTransactions,
+  mocks.unpairTransferTransaction,
+  mocks.linkRefund,
+  mocks.unlinkRefund,
 ];
 
 describe("first-operation Server Action origin guard", () => {

@@ -6,12 +6,14 @@ import {
   accounts,
   categories,
   importBatches,
+  importDuplicateOverrides,
   transactions,
   transactionSplits,
 } from "@/db/schema";
 import {
   getRecentImportBatches,
   importStatement,
+  overrideDuplicateImport,
   undoImport,
 } from "./import";
 import { getAccountsWithBalances, getNetWorth, getOrCreateAccountByName } from "./accounts";
@@ -96,6 +98,83 @@ describe("importStatement (integration, temp DB)", () => {
     expect(result.imported).toBe(0);
     expect(result.skipped).toHaveLength(5);
     expect(result.skipped[0]).toMatchObject({ description: "ACME PAYROLL" });
+  });
+
+  it("keeps duplicate overrides separate from the frozen hash and makes them undoable", async () => {
+    const first = await importStatement(
+      { account: existingAccount(accountId), csvText: CSV, filename: "june.csv" },
+      db,
+    );
+    expect(first.imported).toBe(5);
+    const duplicate = await importStatement(
+      { account: existingAccount(accountId), csvText: CSV, filename: "july.csv" },
+      db,
+    );
+    const skipped = duplicate.skipped.find((row) => row.description === "ACME PAYROLL");
+    if (!skipped || !duplicate.sourceFingerprint) throw new Error("duplicate fixture failed");
+    await expect(
+      overrideDuplicateImport(
+        {
+          accountId,
+          sourceFingerprint: duplicate.sourceFingerprint,
+          sourceRowNumber: skipped.rowNumber,
+          importHash: skipped.importHash,
+          date: skipped.date,
+          description: "TAMPERED SOURCE ROW",
+          amountCents: skipped.amountCents,
+          filename: "july.csv",
+        },
+        db,
+      ),
+    ).resolves.toEqual({
+      status: "invalid-input",
+      field: "sourceRowNumber",
+      message: "Duplicate override data does not match the existing imported row.",
+    });
+    const overridden = await overrideDuplicateImport(
+      {
+        accountId,
+        sourceFingerprint: duplicate.sourceFingerprint,
+        sourceRowNumber: skipped.rowNumber,
+        importHash: skipped.importHash,
+        date: skipped.date,
+        description: skipped.description,
+        amountCents: skipped.amountCents,
+        filename: "july.csv",
+      },
+      db,
+    );
+    expect(overridden).toMatchObject({ status: "overridden" });
+    if (overridden.status !== "overridden") return;
+    const [extra] = await db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, overridden.transactionId));
+    expect(extra).toMatchObject({
+      importHash: null,
+      batchId: overridden.batchId,
+      description: "ACME PAYROLL",
+      amountCents: 260000,
+    });
+    expect(await db.select().from(importDuplicateOverrides)).toHaveLength(1);
+    await expect(
+      overrideDuplicateImport(
+        {
+          accountId,
+          sourceFingerprint: duplicate.sourceFingerprint,
+          sourceRowNumber: skipped.rowNumber,
+          importHash: skipped.importHash,
+          date: skipped.date,
+          description: skipped.description,
+          amountCents: skipped.amountCents,
+          filename: "july.csv",
+        },
+        db,
+      ),
+    ).resolves.toEqual({ status: "already-overridden" });
+    await expect(undoImport(overridden.batchId, db)).resolves.toMatchObject({ deletedCount: 1 });
+    expect(await db.select().from(importDuplicateOverrides)).toHaveLength(0);
+    expect(await db.select().from(transactions)).toHaveLength(5);
   });
 
   it("keeps imported annotations and the frozen hash when the source is re-imported", async () => {

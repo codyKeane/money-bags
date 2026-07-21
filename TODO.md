@@ -141,12 +141,16 @@ plan for current correctness, privacy, and operational work. WP-00 and
 WP-01A/B/C completed on 2026-07-13; WP-12A completed on 2026-07-14; WP-01D,
 WP-12B, WP-02A/B, WP-03, WP-06, WP-07, WP-08, WP-09, WP-10, WP-11, WP-04, and
 WP-05, WP-14A/B/C, WP-15, WP-16A, WP-13A, and WP-16B completed on 2026-07-15.
-WP-17 and WP-18 are implemented in the current worktree. This is not a production
+WP-17 and WP-18 are implemented in the current checkpoint. This is not a production
 release: the real-browser/screen-reader matrix remains an explicit manual gate
 because no assistive-technology runtime was available in the implementation
-environment, and the operator-owned real-host service checks remain pending. Do
-not proceed to automated restore or the decision-gated
-transfer/refund/deduplication RFCs without a separate decision and scope.
+environment, and the operator-owned real-host service checks remain pending.
+The 2026-07-17 autonomous checkpoint resolves and implements the scoped
+duplicate-review, transfer, refund, mixed-sign split, currency-group,
+reconciliation, merchant, category-merge, opening-date, and guarded-restore
+decisions. Those implementations are still synthetic-data verified only; they
+do not close the manual browser, screen-reader, real-host, or sensitive-env
+release gates.
 
 The product backlog below is retained as historical product context. Its rank
 does not override the guide, and an unchecked item is not implementation
@@ -164,44 +168,57 @@ UX7–UX18 landed in `3d967ba` (`feat(UX7-UX18): UX-polish round 2`); the stale
 pre-commit task is retained only by this resolution note, not as live work.
 
 ### P1 — data integrity & correctness of the headline numbers
-- [ ] **Transfer pairing/detection (M; decision-gated RFC-02).** Transfers are
-  excluded only by keyword match (`Transfers` category,
-  `excludeFromSpending`, `lib/default-categories.ts`).
-  A transfer whose description misses `transfer`/`payment received`/`payment to
-  rewards card` is **double-counted** — outflow on the source account *and*
-  inflow on the destination — inflating both Spending and Income. Detect matched
-  +/− pairs (same amount, near date, different accounts) only after the pairing
-  policy is explicitly approved.
-- [ ] **Near-duplicate import detection + cross-file gap (S–M; decision-gated
-  RFC-01).** The frozen dedupe contract silently skips a *legitimately*
-  identical transaction when it arrives in a different CSV file (both hash
-  `occurrenceIndex 0`) — real data loss. Add a **running-balance import guard
-  (S)** when the statement carries a balance column, without changing the
-  frozen hash or adding an override unless approved.
-- [ ] **Refund semantics (M; decision-gated RFC-03).** Refunds (positive amounts
-  in a spend category) don't reduce category spend (see `getBudgetVsActual`,
-  `summary.ts`). A fully refunded $200 purchase still reads as $200 spent.
-  Decide the policy before implementing netting.
+- [x] ~~Transfer pairing/detection~~ — advisory same-currency equal-and-opposite
+  candidates within three days are explicitly paired one-to-one. Paired rows
+  remain in the ledger/export but leave income, spending, budgets, and trend
+  aggregates. See `docs/PRODUCT_DECISIONS.md`.
+- [x] ~~Cross-file duplicate review~~ — migration 0006 adds source-file/row
+  provenance for an explicit “Import separately” override. The frozen hash and
+  ordinary idempotent dedupe remain unchanged; undo removes the override with
+  its batch. A running-balance import guard remains outside this checkpoint.
+- [x] ~~Refund semantics~~ — explicit same-account/same-currency links allow
+  partial refunds up to the original outflow. Linked refunds reduce spending
+  and budget actuals in their own active category/splits and do not count as
+  income; unlinked positive rows retain income behavior.
 
 ### P2 — high-value functionality gaps (value-per-effort order)
 - [x] ~~Uncategorized count on the dashboard (S)~~ — the dashboard now shows a
   decision-free data-quality reminder when active uncategorized transactions
   exist and links to the canonical Uncategorized transaction filter. Split
   transactions count once when any active split part is blank.
-- [ ] **Per-transaction exclude-from-spending override (M).** Exclusion is
-  category-only today (`countsTowardSpending`, `summary.ts`); add a row-level
-  flag wired into `spendingLineItems`.
-- [ ] **Reconciliation / cleared flag + running balance (M).** No `cleared`
-  column on `transactions`; blocks statement reconciliation + running balance.
+- [x] ~~Per-transaction exclude-from-spending override~~ — migration 0006 adds
+  a row-level flag, edit/list controls, and aggregate exclusion without
+  changing category configuration.
+- [x] ~~Reconciliation / cleared flag + running balance~~ — migration 0006 adds
+  `cleared`; the list filters/toggles it and account-filtered views show the
+  opening-balance running balance in deterministic order.
 - [x] ~~Notes / tags on transactions (M)~~ — migration 0005 adds bounded notes
   and canonical tags across create/edit, list/API, search/exact filtering, and
   annotated CSV while preserving import hashes and existing export contracts.
-- [ ] **Merge two categories (S).** Reassign `categoryId` (+ splits) then delete
-  the emptied category — no merge path today.
-- [ ] **Merchant / recurring rollup (M).** Group by normalized merchant to spot
-  recurring charges/subscriptions.
-- [ ] **Opening-balance dating (S/M).** `accounts.openingBalanceCents` has no
-  date, so net-worth-over-time can't place it on the timeline.
+- [x] ~~Merge two categories~~ — one explicit action moves parent, split, and
+  inactive fallback references before deleting the source category.
+- [x] ~~Merchant / recurring rollup~~ — bounded merchant labels with a
+  deterministic description fallback drive a six-month dashboard rollup and
+  recurring marker.
+- [x] ~~Opening-balance dating~~ — accounts accept an optional valid ISO date;
+  an undated opening amount remains a current baseline and is not projected
+  into historical trend points.
+
+### 2026-07-17 autonomous product checkpoint — IMPLEMENTED (migration 0006)
+
+The decision record in `docs/PRODUCT_DECISIONS.md` is now the source of truth
+for the completed product choices. The implementation includes explicit
+transfer/refund relationship services and UI, duplicate override provenance,
+mixed-sign split warning, exact valid-currency dashboard groups, cleared and
+row-level spending controls, deterministic running balances, merchant rollups,
+category merge, opening-balance dates, and a preview-first guarded restore CLI.
+Focused service/action/restore tests and TypeScript passed during this
+checkpoint. No configured ledger, real statement, real backup, service, or
+deployment was touched.
+The final default and fixed-seed shuffled suites each passed 65 files / 880
+tests; ESLint, the guarded build, copied-workspace privacy validation, and
+`git diff --check` also passed. Manual browser/screen-reader, real-host
+operations, and sensitive-environment review remain release gates.
 
 ### Shipped (kept for history)
 - [x] ~~Truthful and spreadsheet-safe transaction export~~ — WP-10. The exact

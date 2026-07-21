@@ -16,6 +16,8 @@ import {
   parseTransactionQuery,
   parseTransactionPage,
   replaceSplits,
+  setTransactionCleared,
+  setTransactionSpendingExclusion,
   setTransactionCategory,
   transactionPageHref,
   transactionQuerySearchParams,
@@ -118,6 +120,61 @@ describe("transactions service (integration, temp DB)", () => {
     expect(row.amountCents).toBe(-750);
     expect(row.notes).toBe("Met Sam\noutside");
     expect(row.tagsJson).toBe('["cash","personal"]');
+  });
+
+  it("stores merchant and row flags, filters cleared rows, and computes account running balances", async () => {
+    const balanceAccount = await mustCreateAccount(
+      {
+        name: "Balance Account",
+        type: "CHECKING",
+        currency: "USD",
+        openingBalanceCents: 1000,
+      },
+      db,
+    );
+    await db.insert(transactions).values([
+      {
+        id: "balance-early",
+        accountId: balanceAccount.id,
+        date: "2026-06-01",
+        description: "EARLY",
+        merchant: "Shop",
+        amountCents: 200,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "balance-late",
+        accountId: balanceAccount.id,
+        date: "2026-06-02",
+        description: "LATE",
+        amountCents: -50,
+        cleared: true,
+        excludeFromSpending: true,
+        createdAt: 2,
+        updatedAt: 2,
+      },
+    ]);
+    const page = await getTransactionsPage({ accountId: balanceAccount.id, requestedPage: 1 }, db);
+    expect(page.items.map((row) => [row.description, row.runningBalanceCents])).toEqual([
+      ["LATE", 1150],
+      ["EARLY", 1200],
+    ]);
+    expect(page.items.find((row) => row.description === "EARLY")).toMatchObject({
+      merchant: "Shop",
+      cleared: false,
+      excludeFromSpending: false,
+    });
+    expect((await getTransactionsPage({ accountId: balanceAccount.id, cleared: true, requestedPage: 1 }, db)).items)
+      .toMatchObject([{ description: "LATE", cleared: true }]);
+    expect(await setTransactionCleared("balance-early", true, db)).toMatchObject({ status: "updated" });
+    expect(await setTransactionSpendingExclusion("balance-early", true, db)).toMatchObject({ status: "updated" });
+    expect((await getTransactionsPage({ accountId: balanceAccount.id, cleared: true, requestedPage: 1 }, db)).totalCount)
+      .toBe(2);
+    expect(await getMonthlySummary("2026-06", db, [balanceAccount.id])).toMatchObject({
+      incomeCents: 0,
+      spendingCents: 0,
+    });
   });
 
   it("keeps a top-level normalized-or-null currency on money-rendering rows", async () => {

@@ -8,8 +8,9 @@
 > **Historical planning record:** this analysis describes the pre-implementation
 > `3d967ba` baseline and the guide-revision task. It is intentionally not updated
 > to make those observations read like current implementation results. Current
-> package completion, verification, and the next-session handoff live at the top
-> of `IMPLEMENTATION_GUIDE.md` and in its Section 16.
+> package completion and verification live at the top of `IMPLEMENTATION_GUIDE.md`;
+> the current next-session handoff is maintained in `CODEX_HANDOFF.md`, while
+> the guide's Section 16 retains the reusable handoff template.
 
 ## Executive conclusion
 

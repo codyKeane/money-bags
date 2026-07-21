@@ -20,9 +20,12 @@ export interface TransactionFormInitial {
   categoryId: string | null;
   date: string;
   description: string;
+  merchant: string;
   notes: string;
   tags: string[];
   amountCents: number;
+  cleared: boolean;
+  excludeFromSpending: boolean;
 }
 
 export function TransactionForm({
@@ -99,6 +102,19 @@ export function TransactionForm({
           {...fieldErrorAttributes(errorId, errorField, "description")}
         />
       </Field>
+      <Field label="Merchant (optional)">
+        <input
+          name="merchant"
+          maxLength={160}
+          defaultValue={initial?.merchant ?? ""}
+          placeholder="Normalized merchant label"
+          className={inputClass}
+          {...fieldErrorAttributes(errorId, errorField, "merchant")}
+        />
+        <span className="text-xs text-ink-muted">
+          Used by merchant rollups; imports leave this blank and use a deterministic description fallback.
+        </span>
+      </Field>
       <Field label="Notes (optional)">
         <textarea
           name="notes"
@@ -149,6 +165,24 @@ export function TransactionForm({
           ))}
         </select>
       </Field>
+      <label className="inline-flex items-center gap-2 text-sm text-ink-2">
+        <input
+          type="checkbox"
+          name="cleared"
+          defaultChecked={initial?.cleared ?? false}
+          {...fieldErrorAttributes(errorId, errorField, "cleared")}
+        />
+        Cleared / reconciled
+      </label>
+      <label className="inline-flex items-center gap-2 text-sm text-ink-2">
+        <input
+          type="checkbox"
+          name="excludeFromSpending"
+          defaultChecked={initial?.excludeFromSpending ?? false}
+          {...fieldErrorAttributes(errorId, errorField, "excludeFromSpending")}
+        />
+        Exclude this transaction from income/spending
+      </label>
       <div className="flex items-center gap-3">
         <button
           type="submit"

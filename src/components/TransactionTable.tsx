@@ -2,6 +2,7 @@ import Link from "next/link";
 import { CategoryBadge } from "@/components/CategoryBadge";
 import { CategorySelect, type CategoryOption } from "@/components/CategorySelect";
 import { DeleteTransactionButton } from "@/components/DeleteTransactionButton";
+import { TransactionStatusControls } from "@/components/TransactionStatusControls";
 import { rowActionClass } from "@/components/ui/form";
 import { TableCard, bodyRowClass, headRowClass, thClass } from "@/components/ui/table";
 import { formatCents } from "@/lib/money";
@@ -23,10 +24,12 @@ export function TransactionTable({
   transactions,
   categories,
   editable = false,
+  showRunningBalance = false,
 }: {
   transactions: TransactionListItem[];
   categories?: CategoryOption[];
   editable?: boolean;
+  showRunningBalance?: boolean;
 }) {
   if (transactions.length === 0) {
     return <p className="text-sm text-ink-muted">No transactions found.</p>;
@@ -40,6 +43,8 @@ export function TransactionTable({
             <th className={thClass}>Account</th>
             <th className={thClass}>Category</th>
             <th className={`${thClass} text-right`}>Amount</th>
+            {showRunningBalance ? <th className={`${thClass} text-right`}>Running balance</th> : null}
+            <th className={`${thClass} text-right`}>Status</th>
             {editable ? <th className={thClass} /> : null}
           </tr>
         </thead>
@@ -51,6 +56,7 @@ export function TransactionTable({
               </td>
               <td className="max-w-md px-3 py-2">
                 <div>{t.description}</div>
+                {t.merchant ? <p className="mt-1 text-xs text-ink-muted">Merchant: {t.merchant}</p> : null}
                 {t.notes ? (
                   <p
                     className="mt-1 line-clamp-2 whitespace-pre-line break-words text-xs text-ink-muted"
@@ -119,6 +125,29 @@ export function TransactionTable({
                         Repair currency
                       </Link>
                     ) : null}
+                  </span>
+                )}
+              </td>
+              {showRunningBalance ? (
+                <td className="px-3 py-2 text-right whitespace-nowrap tabular-nums text-ink-2">
+                  {t.currencyState.kind === "valid" && t.runningBalanceCents !== null ? (
+                    formatCents(t.runningBalanceCents, t.currencyState.currency)
+                  ) : (
+                    <span className="text-ink-muted">Unavailable</span>
+                  )}
+                </td>
+              ) : null}
+              <td className="px-3 py-2 whitespace-nowrap text-right">
+                {editable ? (
+                  <TransactionStatusControls
+                    transactionId={t.id}
+                    cleared={t.cleared}
+                    excludeFromSpending={t.excludeFromSpending}
+                  />
+                ) : (
+                  <span className="text-xs text-ink-muted">
+                    {t.isTransfer ? "Transfer" : t.isRefund ? "Refund" : t.cleared ? "Cleared" : "Uncleared"}
+                    {t.excludeFromSpending ? " · Excluded" : ""}
                   </span>
                 )}
               </td>

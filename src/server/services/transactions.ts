@@ -3,8 +3,10 @@ import { getDb, type Db } from "@/db/client";
 import {
   accounts,
   categories,
+  refundLinks,
   transactions,
   transactionSplits,
+  transferPairs,
   type Transaction,
   type TransactionSplit,
 } from "@/db/schema";
@@ -31,9 +33,13 @@ export interface TransactionListItem {
   id: string;
   date: string;
   description: string;
+  merchant: string;
   notes: string;
   tags: string[];
   amountCents: number;
+  runningBalanceCents: number | null;
+  cleared: boolean;
+  excludeFromSpending: boolean;
   accountId: string;
   accountName: string;
   rawCurrency: string;
@@ -44,6 +50,8 @@ export interface TransactionListItem {
   categoryName: string | null;
   categoryColor: string | null;
   isSplit: boolean; // has rows in transaction_splits — categoryId is then ignored
+  isRefund: boolean;
+  isTransfer: boolean;
 }
 
 // Single source of the list projection + joins, shared by the paged query and
@@ -53,9 +61,24 @@ const transactionListColumns = {
   id: transactions.id,
   date: transactions.date,
   description: transactions.description,
+  merchant: transactions.merchant,
   notes: transactions.notes,
   tagsJson: transactions.tagsJson,
   amountCents: transactions.amountCents,
+  runningBalanceCents: sql<number>`(
+    ${accounts.openingBalanceCents} + coalesce((
+      select sum(running_tx.amount_cents)
+      from ${transactions} as running_tx
+      where running_tx.account_id = ${transactions.accountId}
+        and (
+          running_tx.date < ${transactions.date}
+          or (running_tx.date = ${transactions.date} and running_tx.created_at < ${transactions.createdAt})
+          or (running_tx.date = ${transactions.date} and running_tx.created_at = ${transactions.createdAt} and running_tx.id <= ${transactions.id})
+        )
+    ), 0)
+  )`,
+  cleared: transactions.cleared,
+  excludeFromSpending: transactions.excludeFromSpending,
   accountId: transactions.accountId,
   accountName: accounts.name,
   rawCurrency: accounts.currency,
@@ -63,13 +86,17 @@ const transactionListColumns = {
   categoryName: categories.name,
   categoryColor: categories.color,
   isSplit: sql<number>`(exists (select 1 from ${transactionSplits} where ${transactionSplits.transactionId} = ${transactions.id}))`,
+  isRefund: sql<number>`(exists (select 1 from ${refundLinks} where ${refundLinks.refundTransactionId} = ${transactions.id}))`,
+  isTransfer: sql<number>`(exists (select 1 from ${transferPairs} where ${transferPairs.sourceTransactionId} = ${transactions.id} or ${transferPairs.destinationTransactionId} = ${transactions.id}))`,
 } as const;
 
 type TransactionListRow = Omit<
   TransactionListItem,
-  "currency" | "normalizedCurrency" | "currencyState" | "isSplit" | "tags"
+  | "currency" | "normalizedCurrency" | "currencyState" | "isSplit" | "isRefund" | "isTransfer" | "tags"
 > & {
   isSplit: number;
+  isRefund: number;
+  isTransfer: number;
   tagsJson: string;
 };
 
@@ -83,6 +110,11 @@ function toTransactionListItem(row: TransactionListRow): TransactionListItem {
     normalizedCurrency: currencyState.kind === "valid" ? currencyState.currency : null,
     currencyState,
     isSplit: row.isSplit > 0,
+    isRefund: row.isRefund > 0,
+    isTransfer: row.isTransfer > 0,
+    runningBalanceCents: Number.isSafeInteger(row.runningBalanceCents)
+      ? row.runningBalanceCents
+      : null,
   };
 }
 
@@ -98,7 +130,7 @@ export async function getRecentTransactions(
     .from(transactions)
     .innerJoin(accounts, eq(transactions.accountId, accounts.id))
     .leftJoin(categories, eq(transactions.categoryId, categories.id))
-    .orderBy(desc(transactions.date), desc(transactions.createdAt))
+    .orderBy(desc(transactions.date), desc(transactions.createdAt), desc(transactions.id))
     .limit(limit);
   return rows.map(toTransactionListItem);
 }
@@ -112,6 +144,7 @@ export interface TransactionQuery {
   month?: string; // YYYY-MM
   from?: string; // YYYY-MM-DD inclusive lower bound (F7)
   to?: string; // YYYY-MM-DD inclusive upper bound (F7)
+  cleared?: boolean;
 }
 
 export const TRANSACTIONS_PAGE_SIZE = 50;
@@ -141,6 +174,7 @@ export function parseTransactionQuery(
     month: rawMonth && isValidMonth(rawMonth) ? rawMonth : undefined,
     from: validDate(get("from")),
     to: validDate(get("to")),
+    cleared: get("cleared") === "yes" ? true : get("cleared") === "no" ? false : undefined,
   };
 }
 
@@ -154,6 +188,7 @@ export function transactionQuerySearchParams(query: TransactionQuery): URLSearch
   if (query.month) params.set("month", query.month);
   if (query.from) params.set("from", query.from);
   if (query.to) params.set("to", query.to);
+  if (query.cleared !== undefined) params.set("cleared", query.cleared ? "yes" : "no");
   return params;
 }
 
@@ -257,6 +292,7 @@ export function buildTransactionWhere(filter: TransactionQuery): SQL | undefined
   // AND with `month` if a caller passes both — an intentional intersection.
   if (filter.from) conditions.push(gte(transactions.date, filter.from));
   if (filter.to) conditions.push(lte(transactions.date, filter.to));
+  if (filter.cleared !== undefined) conditions.push(eq(transactions.cleared, filter.cleared));
   return conditions.length > 0 ? and(...conditions) : undefined;
 }
 
@@ -297,7 +333,7 @@ export async function getTransactionsPage(
     .innerJoin(accounts, eq(transactions.accountId, accounts.id))
     .leftJoin(categories, eq(transactions.categoryId, categories.id))
     .where(where)
-    .orderBy(desc(transactions.date), desc(transactions.createdAt))
+    .orderBy(desc(transactions.date), desc(transactions.createdAt), desc(transactions.id))
     .limit(TRANSACTIONS_PAGE_SIZE)
     .offset(offset);
   const items = rows.map(toTransactionListItem);
@@ -512,6 +548,47 @@ export async function setTransactionCategory(
     },
     { behavior: "immediate" },
   );
+}
+
+export type SetTransactionFlagResult =
+  | { status: "updated"; id: string }
+  | { status: "not-found" }
+  | InvalidWriteInput;
+
+export async function setTransactionCleared(
+  transactionId: string,
+  cleared: boolean,
+  db: Db = getDb(),
+): Promise<SetTransactionFlagResult> {
+  const normalizedId = normalizeId(transactionId);
+  if (!normalizedId) return invalidWriteInput("transactionId", "Invalid transaction id");
+  if (typeof cleared !== "boolean") return invalidWriteInput("cleared", "Invalid cleared state");
+  const row = await db
+    .update(transactions)
+    .set({ cleared })
+    .where(eq(transactions.id, normalizedId))
+    .returning({ id: transactions.id })
+    .get();
+  return row ? { status: "updated", id: row.id } : { status: "not-found" };
+}
+
+export async function setTransactionSpendingExclusion(
+  transactionId: string,
+  excludeFromSpending: boolean,
+  db: Db = getDb(),
+): Promise<SetTransactionFlagResult> {
+  const normalizedId = normalizeId(transactionId);
+  if (!normalizedId) return invalidWriteInput("transactionId", "Invalid transaction id");
+  if (typeof excludeFromSpending !== "boolean") {
+    return invalidWriteInput("excludeFromSpending", "Invalid spending exclusion");
+  }
+  const row = await db
+    .update(transactions)
+    .set({ excludeFromSpending })
+    .where(eq(transactions.id, normalizedId))
+    .returning({ id: transactions.id })
+    .get();
+  return row ? { status: "updated", id: row.id } : { status: "not-found" };
 }
 
 // ---------- manual transaction CRUD (importHash stays null) ----------

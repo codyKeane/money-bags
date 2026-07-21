@@ -309,6 +309,53 @@ export async function deleteCategory(id: string, db: Db = getDb()): Promise<stri
   return row?.id ?? null;
 }
 
+export type MergeCategoryResult =
+  | { status: "merged"; sourceId: string; targetId: string; transactionCount: number; splitPartCount: number }
+  | { status: "not-found" }
+  | { status: "same-category" }
+  | InvalidWriteInput;
+
+export async function mergeCategory(
+  sourceId: string,
+  targetId: string,
+  db: Db = getDb(),
+): Promise<MergeCategoryResult> {
+  const source = normalizeId(sourceId);
+  const target = normalizeId(targetId);
+  if (!source || !target) return invalidWriteInput("categoryId", "Invalid category id");
+  if (source === target) return { status: "same-category" };
+  return db.transaction(
+    (tx) => {
+      const categoriesFound = tx
+        .select({ id: categories.id })
+        .from(categories)
+        .where(inArray(categories.id, [source, target]))
+        .all();
+      if (categoriesFound.length !== 2) return { status: "not-found" as const };
+      const transactionResult = tx
+        .update(transactions)
+        .set({ categoryId: target })
+        .where(eq(transactions.categoryId, source))
+        .run();
+      const splitResult = tx
+        .update(transactionSplits)
+        .set({ categoryId: target })
+        .where(eq(transactionSplits.categoryId, source))
+        .run();
+      const deleted = tx.delete(categories).where(eq(categories.id, source)).run();
+      if (deleted.changes !== 1) throw new Error("Source category disappeared during merge");
+      return {
+        status: "merged" as const,
+        sourceId: source,
+        targetId: target,
+        transactionCount: transactionResult.changes,
+        splitPartCount: splitResult.changes,
+      };
+    },
+    { behavior: "immediate" },
+  );
+}
+
 export async function getCategoryByName(name: string, db: Db = getDb()): Promise<Category | null> {
   const [row] = await db.select().from(categories).where(eq(categories.name, name)).limit(1);
   return row ?? null;

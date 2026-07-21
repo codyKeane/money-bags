@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { ACCOUNT_TYPES } from "@/lib/account-types";
 import { decimalTextToCents } from "@/lib/money";
+import { isValidIsoDate } from "@/lib/month";
 import { revalidateAfterMutation } from "@/server/revalidation";
 import { assertTrustedActionOrigin } from "@/server/security/trusted-origin";
 import {
@@ -21,6 +22,7 @@ import {
 
 const ACCOUNT_FIELD_ALIASES = {
   openingBalanceCents: "openingBalance",
+  openingBalanceDate: "openingBalanceDate",
 } as const;
 
 // Signed dollars string -> cents; empty/missing -> 0; unparseable -> null.
@@ -38,6 +40,19 @@ const openingBalanceField = z
     return cents;
   });
 
+const openingBalanceDateField = z
+  .string()
+  .default("")
+  .transform((value, ctx) => {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (!isValidIsoDate(trimmed)) {
+      ctx.addIssue({ code: "custom", message: "Opening balance date must be YYYY-MM-DD" });
+      return z.NEVER;
+    }
+    return trimmed;
+  });
+
 const AccountSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(120),
   type: z.enum(ACCOUNT_TYPES),
@@ -53,6 +68,7 @@ const AccountSchema = z.object({
     .regex(/^[A-Za-z]{3}$/, "Currency must be a three-letter code")
     .transform((v) => v.toUpperCase()),
   openingBalance: openingBalanceField,
+  openingBalanceDate: openingBalanceDateField,
 });
 
 function accountFormInput(formData: FormData) {
@@ -62,6 +78,7 @@ function accountFormInput(formData: FormData) {
     institution: formData.get("institution") ?? "",
     currency: formData.get("currency"),
     openingBalance: formData.get("openingBalance") ?? "",
+    openingBalanceDate: formData.get("openingBalanceDate") ?? "",
   };
 }
 
@@ -79,6 +96,7 @@ export async function createAccountAction(
     institution: parsed.data.institution,
     currency: parsed.data.currency,
     openingBalanceCents: parsed.data.openingBalance,
+    openingBalanceDate: parsed.data.openingBalanceDate,
   });
   if (result.status === "duplicate-name") {
     return { ok: false, error: "An account with that name already exists", field: "name" };
@@ -106,6 +124,7 @@ export async function updateAccountAction(
     institution: parsed.data.institution,
     currency: parsed.data.currency,
     openingBalanceCents: parsed.data.openingBalance,
+    openingBalanceDate: parsed.data.openingBalanceDate,
   });
   if (result.status === "not-found") return { ok: false, error: "Account not found" };
   if (result.status === "duplicate-name") {

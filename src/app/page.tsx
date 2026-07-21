@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { BudgetProgress } from "@/components/BudgetProgress";
 import { MonthNav } from "@/components/MonthNav";
+import { MerchantRollup } from "@/components/MerchantRollup";
 import { StatCard } from "@/components/StatCard";
 import { TransactionTable } from "@/components/TransactionTable";
 import { SpendingByCategoryChart } from "@/components/charts/SpendingByCategoryChart";
@@ -10,6 +11,7 @@ import { currentUtcMonth, formatMonth, isValidMonth } from "@/lib/month";
 import { getNetWorthOverview } from "@/server/services/accounts";
 import {
   getDashboardAggregateOverview,
+  getDashboardCurrencyGroups,
 } from "@/server/services/summary";
 import {
   getLatestTransactionMonth,
@@ -18,6 +20,7 @@ import {
   transactionPageHref,
 } from "@/server/services/transactions";
 import type { NetWorthOverview } from "@/server/services/accounts";
+import type { DashboardAggregateOverview } from "@/server/services/summary";
 
 // Synchronous SQLite reads must never bake into a prerender.
 export const dynamic = "force-dynamic";
@@ -50,8 +53,8 @@ function CurrencyUnavailableNotice({
         <p className="font-medium">Combined financial totals are unavailable.</p>
         <p className="mt-1 text-ink-2">
           Accounts use {overview.currencyState.currencies.join(", ")}. Money Bags does not convert
-          currencies, so net worth, income, spending, charts, and budgets are hidden.{" "}
-          <Link href="/accounts" className="underline">View individual account balances</Link>.
+          currencies, so no cross-currency total is shown. Each exact currency group is displayed
+          below. <Link href="/accounts" className="underline">View account balances</Link>.
         </p>
       </div>
     );
@@ -75,6 +78,86 @@ function CurrencyUnavailableNotice({
     );
   }
   return null;
+}
+
+function DashboardFinancials({
+  financials,
+  month,
+  netWorthCents,
+}: {
+  financials: DashboardAggregateOverview;
+  month: string;
+  netWorthCents: number | null;
+}) {
+  if (
+    financials.aggregateState.kind !== "ready" ||
+    financials.currencyState.kind !== "single" ||
+    financials.summary.incomeCents === null ||
+    financials.summary.spendingCents === null ||
+    netWorthCents === null
+  ) {
+    return (
+      <div role="alert" className="rounded-lg border border-delta-bad/40 bg-delta-bad/5 px-5 py-4 text-sm">
+        <p className="font-medium text-delta-bad">This currency group is unavailable.</p>
+        <p className="mt-1 text-ink-2">
+          One or more values is outside the exact supported cents range. Review the individual
+          accounts before relying on this group&apos;s totals.
+        </p>
+      </div>
+    );
+  }
+
+  const categoryData = financials.byCategory.map((category) => ({
+    name: category.categoryName ?? "Uncategorized",
+    spentCents: category.spentCents,
+  }));
+  const currency = financials.currencyState.currency;
+  return (
+    <>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard href="/accounts" label="Net worth" value={formatCents(netWorthCents, currency)} />
+        <StatCard
+          label={`Income · ${formatMonth(month)}`}
+          value={formatCents(financials.summary.incomeCents, currency)}
+        />
+        <StatCard
+          label={`Spending · ${formatMonth(month)}`}
+          value={formatCents(financials.summary.spendingCents, currency)}
+        />
+      </div>
+
+      <section className="rounded-lg border border-hairline bg-surface px-5 py-4">
+        <h2 className="text-sm font-medium">Spending by category · {formatMonth(month)}</h2>
+        <div className="mt-3">
+          {categoryData.length > 0 ? (
+            <SpendingByCategoryChart data={categoryData} currency={currency} />
+          ) : (
+            <p className="py-8 text-center text-sm text-ink-muted">
+              No spending recorded for this month.
+            </p>
+          )}
+        </div>
+      </section>
+
+      {financials.budgets.length > 0 ? (
+        <section className="rounded-lg border border-hairline bg-surface px-5 py-4">
+          <h2 className="text-sm font-medium">Budget vs actual · {formatMonth(month)}</h2>
+          <div className="mt-4">
+            <BudgetProgress items={financials.budgets} currency={currency} />
+          </div>
+        </section>
+      ) : null}
+
+      <MerchantRollup items={financials.merchants} currency={currency} />
+
+      <section className="rounded-lg border border-hairline bg-surface px-5 py-4">
+        <h2 className="text-sm font-medium">Income vs spending · last 6 months</h2>
+        <div className="mt-3">
+          <SpendingTrendChart data={financials.trend} currency={currency} />
+        </div>
+      </section>
+    </>
+  );
 }
 
 export default async function DashboardPage({
@@ -106,19 +189,19 @@ export default async function DashboardPage({
   const month = requested && isValidMonth(requested) ? requested : latest;
 
   const netWorth = await getNetWorthOverview();
-  const [financials, recent, uncategorizedCount] = await Promise.all([
+  const trendEndMonth = month >= currentUtcMonth() ? currentUtcMonth() : month;
+  const [financials, recent, uncategorizedCount, currencyGroups] = await Promise.all([
     getDashboardAggregateOverview(
       month,
-      month >= currentUtcMonth() ? currentUtcMonth() : month,
+      trendEndMonth,
       netWorth,
     ),
     getRecentTransactions(10),
     getUncategorizedTransactionCount(),
+    netWorth.currencyState.kind === "single"
+      ? Promise.resolve([])
+      : getDashboardCurrencyGroups(month, trendEndMonth, netWorth),
   ]);
-  const categoryData = financials.byCategory.map((c) => ({
-    name: c.categoryName ?? "Uncategorized",
-    spentCents: c.spentCents,
-  }));
 
   return (
     <div className="flex flex-col gap-6">
@@ -142,66 +225,35 @@ export default async function DashboardPage({
         </section>
       ) : null}
 
-      {financials.aggregateState.kind === "ready" &&
-      financials.currencyState.kind === "single" &&
-      financials.summary.incomeCents !== null &&
-      financials.summary.spendingCents !== null &&
-      netWorth.netWorthCents !== null ? (
-        <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <StatCard
-              href="/accounts"
-              label="Net worth"
-              value={formatCents(netWorth.netWorthCents, financials.currencyState.currency)}
-            />
-            <StatCard
-              label={`Income · ${formatMonth(month)}`}
-              value={formatCents(financials.summary.incomeCents, financials.currencyState.currency)}
-            />
-            <StatCard
-              label={`Spending · ${formatMonth(month)}`}
-              value={formatCents(financials.summary.spendingCents, financials.currencyState.currency)}
-            />
-          </div>
+      {netWorth.currencyState.kind === "mixed" ? (
+        <CurrencyUnavailableNotice
+          overview={netWorth}
+          unsafeAggregate={financials.aggregateState.kind === "unsafe"}
+        />
+      ) : null}
 
-          <section className="rounded-lg border border-hairline bg-surface px-5 py-4">
-            <h2 className="text-sm font-medium">Spending by category · {formatMonth(month)}</h2>
-            <div className="mt-3">
-              {categoryData.length > 0 ? (
-                <SpendingByCategoryChart
-                  data={categoryData}
-                  currency={financials.currencyState.currency}
-                />
-              ) : (
-                <p className="py-8 text-center text-sm text-ink-muted">
-                  No spending recorded for this month.
-                </p>
-              )}
-            </div>
-          </section>
-
-          {financials.budgets.length > 0 ? (
-            <section className="rounded-lg border border-hairline bg-surface px-5 py-4">
-              <h2 className="text-sm font-medium">Budget vs actual · {formatMonth(month)}</h2>
-              <div className="mt-4">
-                <BudgetProgress
-                  items={financials.budgets}
-                  currency={financials.currencyState.currency}
-                />
-              </div>
-            </section>
-          ) : null}
-
-          <section className="rounded-lg border border-hairline bg-surface px-5 py-4">
-            <h2 className="text-sm font-medium">Income vs spending · last 6 months</h2>
-            <div className="mt-3">
-              <SpendingTrendChart
-                data={financials.trend}
-                currency={financials.currencyState.currency}
+      {financials.aggregateState.kind === "ready" && netWorth.currencyState.kind === "single" ? (
+        <DashboardFinancials
+          financials={financials}
+          month={month}
+          netWorthCents={netWorth.netWorthCents}
+        />
+      ) : currencyGroups.length > 0 ? (
+        <div className="flex flex-col gap-5">
+          {currencyGroups.map((group) => (
+            <section key={group.currency} className="flex flex-col gap-4">
+              <h2 className="text-base font-semibold">{group.currency} accounts</h2>
+              <p className="text-sm text-ink-muted">
+                {group.accountNames.join(", ")}
+              </p>
+              <DashboardFinancials
+                financials={group.financials}
+                month={month}
+                netWorthCents={group.netWorthCents}
               />
-            </div>
-          </section>
-        </>
+            </section>
+          ))}
+        </div>
       ) : (
         <CurrencyUnavailableNotice
           overview={netWorth}

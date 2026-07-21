@@ -2,6 +2,7 @@
 export const NAV_LINKS = [
   { href: "/", label: "Dashboard" },
   { href: "/transactions", label: "Transactions" },
+  { href: "/transfers", label: "Transfers" },
   { href: "/accounts", label: "Accounts" },
   { href: "/categories", label: "Categories" },
   { href: "/import", label: "Import" },

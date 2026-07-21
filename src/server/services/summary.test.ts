@@ -7,9 +7,11 @@ import { createCategory, updateCategory, type CategoryInput } from "./categories
 import {
   getBudgetVsActual,
   getDashboardAggregateOverview,
+  getDashboardCurrencyGroups,
   getMonthlySpendingByCategory,
   getMonthlySpendingOverview,
   getMonthlySummary,
+  getMerchantRollup,
   getSpendingTrend,
 } from "./summary";
 
@@ -75,6 +77,33 @@ describe("currency-aware combined spending DTOs", () => {
     });
   });
 
+  it("returns exact scoped dashboards for each valid currency group without conversion", async () => {
+    const inserted = await ctx.db
+      .insert(accounts)
+      .values([
+        { name: "Dollar group", type: "CHECKING", currency: "USD", openingBalanceCents: 5000 },
+        { name: "Euro group", type: "SAVINGS", currency: "EUR", openingBalanceCents: 7000 },
+      ])
+      .returning({ id: accounts.id });
+    await ctx.db.insert(transactions).values([
+      { accountId: inserted[0]?.id ?? "", date: "2026-06-01", description: "USD SPEND", amountCents: -1000 },
+      { accountId: inserted[1]?.id ?? "", date: "2026-06-01", description: "EUR SPEND", amountCents: -2000 },
+    ]);
+    const netWorth = await getNetWorthOverview(ctx.db);
+    const groups = await getDashboardCurrencyGroups("2026-06", "2026-06", netWorth, ctx.db);
+    expect(groups.map((group) => group.currency)).toEqual(["EUR", "USD"]);
+    expect(groups.find((group) => group.currency === "EUR")?.financials.summary).toEqual({
+      incomeCents: 0,
+      spendingCents: 2000,
+    });
+    expect(groups.find((group) => group.currency === "USD")?.financials.summary).toEqual({
+      incomeCents: 0,
+      spendingCents: 1000,
+    });
+    expect(groups.find((group) => group.currency === "EUR")?.netWorthCents).toBe(5000);
+    expect(groups.find((group) => group.currency === "USD")?.netWorthCents).toBe(4000);
+  });
+
   it("returns an explicit unsafe state when a persisted combined sum is not exact-safe", async () => {
     const [account] = await ctx.db
       .insert(accounts)
@@ -92,6 +121,7 @@ describe("currency-aware combined spending DTOs", () => {
       currencyState: { kind: "single", currency: "USD" },
       aggregateState: { kind: "ready" },
       netWorthCents: 0,
+      currencyGroups: [],
     } as const;
     await expect(getMonthlySpendingOverview("2026-06", netWorth, ctx.db)).resolves.toEqual({
       currencyState: { kind: "single", currency: "USD" },
@@ -99,6 +129,43 @@ describe("currency-aware combined spending DTOs", () => {
       summary: { incomeCents: null, spendingCents: null },
       byCategory: [],
     });
+  });
+});
+
+describe("deterministic merchant rollups", () => {
+  const ctx = setupTestDbPerTest("finance-merchant-rollup-");
+
+  it("uses explicit/fallback labels, counts distinct transactions, and marks recurring merchants", async () => {
+    const [account] = await ctx.db
+      .insert(accounts)
+      .values({ name: "Merchant Account", type: "CHECKING", currency: "USD" })
+      .returning({ id: accounts.id });
+    if (!account) throw new Error("account fixture failed");
+    await ctx.db.insert(transactions).values([
+      { accountId: account.id, date: "2026-01-05", description: "COFFEE SHOP #1", amountCents: -100 },
+      { accountId: account.id, date: "2026-02-05", description: "COFFEE SHOP #2", amountCents: -200 },
+      { accountId: account.id, date: "2026-03-05", description: "COFFEE SHOP #3", amountCents: -300 },
+      { accountId: account.id, date: "2026-06-05", description: "COFFEE SHOP #4", merchant: "Preferred Coffee", amountCents: -400 },
+      { accountId: account.id, date: "2026-06-06", description: "PAYROLL", amountCents: 100000 },
+    ]);
+    await expect(getMerchantRollup("2026-06", 6, 10, ctx.db)).resolves.toEqual([
+      {
+        key: "coffee shop",
+        merchant: "COFFEE SHOP",
+        spentCents: 600,
+        transactionCount: 3,
+        monthCount: 3,
+        recurring: true,
+      },
+      {
+        key: "preferred coffee",
+        merchant: "Preferred Coffee",
+        spentCents: 400,
+        transactionCount: 1,
+        monthCount: 1,
+        recurring: false,
+      },
+    ]);
   });
 });
 
@@ -352,6 +419,14 @@ describe("excluded categories share one spending and budget contract", () => {
         amountCents: 200,
         accountId: account.id,
         categoryId: included.id,
+      },
+      {
+        date: "2026-06-02",
+        description: "MANUALLY EXCLUDED OUTFLOW",
+        amountCents: -600,
+        accountId: account.id,
+        categoryId: included.id,
+        excludeFromSpending: true,
       },
       {
         date: "2026-06-03",

@@ -8,7 +8,10 @@ const preflight = preflightDatabaseOpen();
 
 export default defineConfig({
   schema: path.join(preflight.repositoryRoot, "src", "db", "schema.ts"),
-  out: preflight.migrationsFolder,
+  // drizzle-kit resolves `out` relative to its process cwd and otherwise
+  // prepends `.` to an absolute preflight path during generation. Runtime
+  // migration consumers continue to use the fully preflighted absolute path.
+  out: path.relative(preflight.repositoryRoot, preflight.migrationsFolder),
   dialect: "sqlite",
   dbCredentials: {
     url: preflight.databasePath,

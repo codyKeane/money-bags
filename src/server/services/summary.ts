@@ -1,8 +1,9 @@
-import { and, eq, gte, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { unionAll } from "drizzle-orm/sqlite-core";
 import { getDb, type Db } from "@/db/client";
-import { categories, transactions, transactionSplits } from "@/db/schema";
+import { accounts, categories, refundLinks, transactions, transactionSplits, transferPairs } from "@/db/schema";
 import { addMonths, monthRange, monthStart } from "@/lib/month";
+import { merchantLabel } from "@/lib/merchant";
 import type { CurrencyState } from "@/lib/currency";
 import type { NetWorthOverview } from "./accounts";
 
@@ -26,30 +27,68 @@ function assertSafeAggregate(label: string, ...values: number[]): void {
 // category (e.g. a gift inside a store run) without pulling the whole
 // transaction in or out of spending. The date filter is pushed into BOTH union
 // branches so the transactions_date_idx range scan is preserved (P1).
-function spendingLineItems(db: Db, start: string, endExclusive: string) {
+function spendingLineItems(
+  db: Db,
+  start: string,
+  endExclusive: string,
+  accountIds?: readonly string[],
+) {
   const inRange = and(
     gte(transactions.date, start),
     lt(transactions.date, endExclusive),
   );
+  const accountScope =
+    accountIds === undefined
+      ? undefined
+      : accountIds.length > 0
+        ? inArray(accounts.id, [...accountIds])
+        : sql`0 = 1`;
   const splitLines = db
     .select({
+      transactionId: transactions.id,
       date: transactions.date,
+      description: transactions.description,
+      merchant: transactions.merchant,
       categoryId: transactionSplits.categoryId,
       amountCents: transactionSplits.amountCents,
+      isRefund: sql<number>`case when exists (
+        select 1 from ${refundLinks}
+        where ${refundLinks.refundTransactionId} = ${transactions.id}
+      ) then 1 else 0 end`.as("is_refund"),
+      excluded: sql<number>`case when ${transactions.excludeFromSpending} or exists (
+        select 1 from ${transferPairs}
+        where ${transferPairs.sourceTransactionId} = ${transactions.id}
+           or ${transferPairs.destinationTransactionId} = ${transactions.id}
+      ) then 1 else 0 end`.as("excluded"),
     })
     .from(transactionSplits)
     .innerJoin(transactions, eq(transactionSplits.transactionId, transactions.id))
-    .where(inRange);
+    .innerJoin(accounts, eq(transactions.accountId, accounts.id))
+    .where(and(inRange, accountScope));
   const wholeLines = db
     .select({
+      transactionId: transactions.id,
       date: transactions.date,
+      description: transactions.description,
+      merchant: transactions.merchant,
       categoryId: transactions.categoryId,
       amountCents: transactions.amountCents,
+      isRefund: sql<number>`case when exists (
+        select 1 from ${refundLinks}
+        where ${refundLinks.refundTransactionId} = ${transactions.id}
+      ) then 1 else 0 end`.as("is_refund"),
+      excluded: sql<number>`case when ${transactions.excludeFromSpending} or exists (
+        select 1 from ${transferPairs}
+        where ${transferPairs.sourceTransactionId} = ${transactions.id}
+           or ${transferPairs.destinationTransactionId} = ${transactions.id}
+      ) then 1 else 0 end`.as("excluded"),
     })
     .from(transactions)
+    .innerJoin(accounts, eq(transactions.accountId, accounts.id))
     .where(
       and(
         inRange,
+        accountScope,
         sql`not exists (select 1 from ${transactionSplits} where ${transactionSplits.transactionId} = ${transactions.id})`,
       ),
     );
@@ -62,7 +101,10 @@ type LineItems = ReturnType<typeof spendingLineItems>;
 // income nor spending; uncategorized lines always count. Built per query because
 // it references the current line-items subquery's category column.
 function countsTowardSpending(li: LineItems) {
-  return or(isNull(li.categoryId), eq(categories.excludeFromSpending, false));
+  return and(
+    eq(li.excluded, 0),
+    or(isNull(li.categoryId), eq(categories.excludeFromSpending, false)),
+  );
 }
 
 export interface CategorySpending {
@@ -75,9 +117,10 @@ export interface CategorySpending {
 export async function getMonthlySpendingByCategory(
   month: string,
   db: Db = getDb(),
+  accountIds?: readonly string[],
 ): Promise<CategorySpending[]> {
   const { start, endExclusive } = monthRange(month);
-  const li = spendingLineItems(db, start, endExclusive);
+  const li = spendingLineItems(db, start, endExclusive, accountIds);
   const rows = await db
     .select({
       categoryId: li.categoryId,
@@ -87,7 +130,7 @@ export async function getMonthlySpendingByCategory(
     })
     .from(li)
     .leftJoin(categories, eq(li.categoryId, categories.id))
-    .where(and(lt(li.amountCents, 0), countsTowardSpending(li)))
+    .where(and(or(lt(li.amountCents, 0), eq(li.isRefund, 1)), countsTowardSpending(li)))
     .groupBy(li.categoryId)
     .orderBy(sql`sum(${li.amountCents})`); // biggest spend first
   for (const row of rows) assertSafeAggregate("category spending", row.spentCents);
@@ -107,22 +150,24 @@ export interface BudgetVsActual {
 // Every included category that has a monthlyBudgetCents set, paired with its
 // actual outflow for the month. LEFT JOIN so a budgeted category with zero spend
 // still appears; the negative-only filter lives INSIDE the aggregate (not WHERE)
-// so it can't drop those zero-spend rows. Refunds (positive amounts) don't
-// reduce the number. Spend counts split parts assigned to the category,
-// mirroring getMonthlySpendingByCategory.
+// so it can't drop those zero-spend rows. Unlinked positive rows do not reduce
+// gross spend; an explicitly linked refund is included as a positive reduction
+// using its own active category/splits. Spend counts split parts assigned to the
+// category, mirroring getMonthlySpendingByCategory.
 export async function getBudgetVsActual(
   month: string,
   db: Db = getDb(),
+  accountIds?: readonly string[],
 ): Promise<BudgetVsActual[]> {
   const { start, endExclusive } = monthRange(month);
-  const li = spendingLineItems(db, start, endExclusive);
+  const li = spendingLineItems(db, start, endExclusive, accountIds);
   const rows = await db
     .select({
       categoryId: categories.id,
       categoryName: categories.name,
       color: categories.color,
       budgetCents: categories.monthlyBudgetCents,
-      spentCents: sql<number>`coalesce(-sum(case when ${li.amountCents} < 0 then ${li.amountCents} else 0 end), 0)`,
+      spentCents: sql<number>`coalesce(-sum(case when ${li.excluded} = 0 and (${li.amountCents} < 0 or ${li.isRefund} = 1) then ${li.amountCents} else 0 end), 0)`,
     })
     .from(categories)
     .leftJoin(li, eq(li.categoryId, categories.id))
@@ -157,13 +202,17 @@ export interface MonthlySummary {
   spendingCents: number; // positive
 }
 
-export async function getMonthlySummary(month: string, db: Db = getDb()): Promise<MonthlySummary> {
+export async function getMonthlySummary(
+  month: string,
+  db: Db = getDb(),
+  accountIds?: readonly string[],
+): Promise<MonthlySummary> {
   const { start, endExclusive } = monthRange(month);
-  const li = spendingLineItems(db, start, endExclusive);
+  const li = spendingLineItems(db, start, endExclusive, accountIds);
   const [row] = await db
     .select({
-      incomeCents: sql<number>`coalesce(sum(case when ${li.amountCents} > 0 then ${li.amountCents} else 0 end), 0)`,
-      spendingCents: sql<number>`coalesce(-sum(case when ${li.amountCents} < 0 then ${li.amountCents} else 0 end), 0)`,
+      incomeCents: sql<number>`coalesce(sum(case when ${li.amountCents} > 0 and ${li.isRefund} = 0 then ${li.amountCents} else 0 end), 0)`,
+      spendingCents: sql<number>`coalesce(-sum(case when ${li.amountCents} < 0 or ${li.isRefund} = 1 then ${li.amountCents} else 0 end), 0)`,
     })
     .from(li)
     .leftJoin(categories, eq(li.categoryId, categories.id))
@@ -185,12 +234,14 @@ export async function getSpendingTrend(
   endMonth: string,
   months: number,
   db: Db = getDb(),
+  accountIds?: readonly string[],
 ): Promise<TrendPoint[]> {
   const startMonth = addMonths(endMonth, -(months - 1));
   const li = spendingLineItems(
     db,
     monthStart(startMonth),
     monthStart(addMonths(endMonth, 1)),
+    accountIds,
   );
   // substr(date,1,7) is the month bucket key (SELECT/GROUP BY); the range filter
   // that hits the index already happened inside spendingLineItems (P1).
@@ -198,8 +249,8 @@ export async function getSpendingTrend(
   const rows = await db
     .select({
       month: monthOf.as("month"),
-      incomeCents: sql<number>`coalesce(sum(case when ${li.amountCents} > 0 then ${li.amountCents} else 0 end), 0)`,
-      spendingCents: sql<number>`coalesce(-sum(case when ${li.amountCents} < 0 then ${li.amountCents} else 0 end), 0)`,
+      incomeCents: sql<number>`coalesce(sum(case when ${li.amountCents} > 0 and ${li.isRefund} = 0 then ${li.amountCents} else 0 end), 0)`,
+      spendingCents: sql<number>`coalesce(-sum(case when ${li.amountCents} < 0 or ${li.isRefund} = 1 then ${li.amountCents} else 0 end), 0)`,
     })
     .from(li)
     .leftJoin(categories, eq(li.categoryId, categories.id))
@@ -217,6 +268,93 @@ export async function getSpendingTrend(
     points.push(byMonth.get(month) ?? { month, incomeCents: 0, spendingCents: 0 });
   }
   return points;
+}
+
+export interface MerchantRollup {
+  key: string;
+  merchant: string;
+  spentCents: number;
+  transactionCount: number;
+  monthCount: number;
+  recurring: boolean;
+}
+
+// A rollup is read-only presentation data. It groups included negative line
+// items across a bounded recent window; split parts contribute their amounts
+// but a transaction is counted once per merchant.
+export async function getMerchantRollup(
+  endMonth: string,
+  months = 6,
+  limit = 25,
+  db: Db = getDb(),
+  accountIds?: readonly string[],
+): Promise<MerchantRollup[]> {
+  if (!Number.isSafeInteger(months) || months < 1 || months > 24) {
+    throw new RangeError("Invalid merchant rollup month window");
+  }
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+    throw new RangeError("Invalid merchant rollup limit");
+  }
+  const startMonth = addMonths(endMonth, -(months - 1));
+  const li = spendingLineItems(
+    db,
+    monthStart(startMonth),
+    monthStart(addMonths(endMonth, 1)),
+    accountIds,
+  );
+  const rows = await db
+    .select({
+      transactionId: li.transactionId,
+      date: li.date,
+      description: li.description,
+      merchant: li.merchant,
+      amountCents: li.amountCents,
+    })
+    .from(li)
+    .leftJoin(categories, eq(li.categoryId, categories.id))
+    .where(and(or(lt(li.amountCents, 0), eq(li.isRefund, 1)), countsTowardSpending(li)));
+  const grouped = new Map<
+    string,
+    { merchant: string; spentCents: number; transactions: Set<string>; months: Set<string> }
+  >();
+  for (const row of rows) {
+    if (!isSafeAggregateValue(row.amountCents)) {
+      throw new UnsafeFinancialAggregateError("merchant rollup");
+    }
+    const label = merchantLabel(row.merchant, row.description);
+    const current = grouped.get(label.key);
+    if (!current) {
+      grouped.set(label.key, {
+        merchant: label.label,
+        spentCents: -row.amountCents,
+        transactions: new Set([row.transactionId]),
+        months: new Set([row.date.slice(0, 7)]),
+      });
+      continue;
+    }
+    const next = current.spentCents - row.amountCents;
+    if (!Number.isSafeInteger(next)) {
+      throw new UnsafeFinancialAggregateError("merchant rollup");
+    }
+    current.spentCents = next;
+    current.transactions.add(row.transactionId);
+    current.months.add(row.date.slice(0, 7));
+  }
+  return [...grouped.entries()]
+    .map(([key, value]) => ({
+      key,
+      merchant: value.merchant,
+      spentCents: value.spentCents,
+      transactionCount: value.transactions.size,
+      monthCount: value.months.size,
+      recurring: value.months.size >= 3,
+    }))
+    .sort((left, right) => right.spentCents - left.spentCents || left.merchant.localeCompare(right.merchant))
+    .slice(0, limit);
+}
+
+function isSafeAggregateValue(value: number): boolean {
+  return Number.isSafeInteger(value);
 }
 
 type SingleCurrencyState = Extract<CurrencyState, { kind: "single" }>;
@@ -240,6 +378,7 @@ export async function getMonthlySpendingOverview(
   month: string,
   netWorth: NetWorthOverview,
   db: Db = getDb(),
+  accountIds?: readonly string[],
 ): Promise<MonthlySpendingOverview> {
   if (netWorth.aggregateState.kind !== "ready") {
     return {
@@ -255,8 +394,8 @@ export async function getMonthlySpendingOverview(
 
   try {
     const [summary, byCategory] = await Promise.all([
-      getMonthlySummary(month, db),
-      getMonthlySpendingByCategory(month, db),
+      getMonthlySummary(month, db, accountIds),
+      getMonthlySpendingByCategory(month, db, accountIds),
     ]);
     return {
       currencyState: netWorth.currencyState,
@@ -282,6 +421,7 @@ export interface DashboardAggregateOverview {
   byCategory: CategorySpending[];
   budgets: BudgetVsActual[];
   trend: TrendPoint[];
+  merchants: MerchantRollup[];
 }
 
 export async function getDashboardAggregateOverview(
@@ -289,18 +429,20 @@ export async function getDashboardAggregateOverview(
   trendEndMonth: string,
   netWorth: NetWorthOverview,
   db: Db = getDb(),
+  accountIds?: readonly string[],
 ): Promise<DashboardAggregateOverview> {
-  const monthly = await getMonthlySpendingOverview(month, netWorth, db);
+  const monthly = await getMonthlySpendingOverview(month, netWorth, db, accountIds);
   if (monthly.aggregateState.kind !== "ready") {
-    return { ...monthly, budgets: [], trend: [] };
+    return { ...monthly, budgets: [], trend: [], merchants: [] };
   }
 
   try {
-    const [budgets, trend] = await Promise.all([
-      getBudgetVsActual(month, db),
-      getSpendingTrend(trendEndMonth, 6, db),
+    const [budgets, trend, merchants] = await Promise.all([
+      getBudgetVsActual(month, db, accountIds),
+      getSpendingTrend(trendEndMonth, 6, db, accountIds),
+      getMerchantRollup(trendEndMonth, 6, 25, db, accountIds),
     ]);
-    return { ...monthly, budgets, trend };
+    return { ...monthly, budgets, trend, merchants };
   } catch (error) {
     if (!(error instanceof UnsafeFinancialAggregateError)) throw error;
     return {
@@ -310,6 +452,44 @@ export async function getDashboardAggregateOverview(
       byCategory: [],
       budgets: [],
       trend: [],
+      merchants: [],
     };
   }
+}
+
+export interface DashboardCurrencyGroupOverview {
+  currency: string;
+  accountIds: string[];
+  accountNames: string[];
+  netWorthCents: number | null;
+  financials: DashboardAggregateOverview;
+}
+
+// Mixed-currency dashboards stay exact by running the existing aggregate
+// contract once per valid currency group. No conversion or cross-currency
+// scalar is produced; each group carries its own account scope and currency.
+export async function getDashboardCurrencyGroups(
+  month: string,
+  trendEndMonth: string,
+  netWorth: NetWorthOverview,
+  db: Db = getDb(),
+): Promise<DashboardCurrencyGroupOverview[]> {
+  return Promise.all(
+    netWorth.currencyGroups.map(async (group) => {
+      const scopedNetWorth: NetWorthOverview = {
+        netWorthCents: group.netWorthCents,
+        currencyState: { kind: "single", currency: group.currency },
+        aggregateState: group.aggregateState,
+        currencyGroups: [group],
+      };
+      const financials = await getDashboardAggregateOverview(
+        month,
+        trendEndMonth,
+        scopedNetWorth,
+        db,
+        group.accountIds,
+      );
+      return { ...group, financials };
+    }),
+  );
 }

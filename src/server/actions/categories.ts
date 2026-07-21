@@ -9,12 +9,14 @@ import {
   applyRulesToUncategorized,
   createCategory,
   deleteCategory,
+  mergeCategory,
   updateCategory,
 } from "@/server/services/categories";
 import {
   firstFormError,
   requiredId,
   serviceFormError,
+  type ActionResult,
   type CategoryFormState,
 } from "./shared";
 
@@ -122,6 +124,20 @@ export async function deleteCategoryAction(
   if (!categoryId) return { ok: false, error: "Missing category id" };
   const deleted = await deleteCategory(categoryId);
   if (!deleted) return { ok: false, error: "Category not found" };
+  revalidateAfterMutation();
+  return { ok: true };
+}
+
+export async function mergeCategoryAction(
+  sourceCategoryId: string,
+  targetCategoryId: string,
+): Promise<ActionResult> {
+  const originFailure = await assertTrustedActionOrigin();
+  if (originFailure) return originFailure;
+  const result = await mergeCategory(sourceCategoryId, targetCategoryId);
+  if (result.status === "not-found") return { ok: false, error: "Category not found" };
+  if (result.status === "same-category") return { ok: false, error: "Choose a different target category" };
+  if (result.status === "invalid-input") return { ok: false, error: result.message };
   revalidateAfterMutation();
   return { ok: true };
 }

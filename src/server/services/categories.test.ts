@@ -8,6 +8,7 @@ import {
   createCategory,
   deleteCategory,
   getCategoriesWithStats,
+  mergeCategory,
   type CategoryInput,
   updateCategory,
 } from "./categories";
@@ -223,5 +224,38 @@ describe("categories service (integration, temp DB)", () => {
       "FARMERS MARKET",
       "MYSTERY VENDOR",
     ]);
+  });
+
+  it("merges parent, active split, and ignored fallback references atomically", async () => {
+    await db.insert(transactions).values({
+      id: "merge-parent",
+      date: "2026-06-10",
+      description: "SPLIT SHOP",
+      amountCents: -3000,
+      accountId,
+      categoryId: groceriesId,
+    });
+    await db.insert(transactionSplits).values([
+      { transactionId: "merge-parent", categoryId: groceriesId, amountCents: -2000 },
+      { transactionId: "merge-parent", categoryId: diningId, amountCents: -1000 },
+    ]);
+
+    await expect(mergeCategory(groceriesId, diningId, db)).resolves.toMatchObject({
+      status: "merged",
+      sourceId: groceriesId,
+      targetId: diningId,
+      transactionCount: 1,
+      splitPartCount: 1,
+    });
+    expect(await db.select({ id: transactions.id, categoryId: transactions.categoryId }).from(transactions))
+      .toEqual(expect.arrayContaining([
+        { id: "merge-parent", categoryId: diningId },
+      ]));
+    expect(await db
+      .select({ categoryId: transactionSplits.categoryId })
+      .from(transactionSplits)
+      .where(eq(transactionSplits.transactionId, "merge-parent")))
+      .toEqual([{ categoryId: diningId }, { categoryId: diningId }]);
+    expect(await getCategoriesWithStats(db)).toHaveLength(1);
   });
 });
