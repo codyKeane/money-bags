@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createTestDb } from "../src/db/client";
+import { accounts } from "../src/db/schema";
 
 const PROJECT_ROOT = path.resolve(import.meta.dirname, "..");
 const IMPORT_SCRIPT = path.join(PROJECT_ROOT, "scripts", "import-csv.ts");
@@ -191,6 +192,34 @@ describe("statement import CLI", () => {
       expect(result.stderr).toMatch(/does not match the import target/);
       expect(logicalCounts(fixture.databasePath)).toEqual(beforeConflict);
     }
+  });
+
+  it("refuses a by-name import on the dated opening balance boundary without mutation", () => {
+    const fixture = createFixture(
+      "Date,Description,Amount\n2026-06-15,SYNTHETIC BOUNDARY,-1.00\n",
+    );
+    const connection = createTestDb(fixture.databasePath);
+    connection.db
+      .insert(accounts)
+      .values({
+        id: "synthetic-dated-account",
+        name: "Synthetic CLI Account",
+        type: "CHECKING",
+        currency: "USD",
+        openingBalanceCents: 10_000,
+        openingBalanceDate: "2026-06-15",
+      })
+      .run();
+    connection.sqlite.close();
+    const before = logicalCounts(fixture.databasePath);
+
+    const result = runImport(fixture, baseArguments(fixture), fixture.databasePath);
+
+    expect(result.status).toBe(2);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toMatch(/on or before the account's opening balance date/);
+    expect(result.stderr).toMatch(/first conflicting line 2: 2026-06-15/);
+    expect(logicalCounts(fixture.databasePath)).toEqual(before);
   });
 
   it("rolls back defaults and a new account when transaction insertion fails", () => {

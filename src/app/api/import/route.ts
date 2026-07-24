@@ -134,6 +134,20 @@ export async function POST(request: Request) {
     if (result.status === "account-conflict") {
       return json({ error: result.status, message: result.message }, 409);
     }
+    if (result.status === "opening-balance-date-conflict") {
+      return json(
+        {
+          error: result.status,
+          field: "accountId",
+          openingBalanceDate: result.openingBalanceDate,
+          firstConflictingRowNumber: result.firstConflictingRowNumber,
+          firstConflictingDate: result.firstConflictingDate,
+          conflictingRowCount: result.conflictingRowCount,
+          message: result.message,
+        },
+        409,
+      );
+    }
     if (result.status === "invalid-file") {
       return json({ error: result.status, errors: result.errors }, 422);
     }

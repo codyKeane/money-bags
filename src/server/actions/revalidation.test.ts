@@ -427,4 +427,21 @@ describe("root-layout mutation revalidation", () => {
       expect(mocks.revalidatePath).not.toHaveBeenCalled();
     },
   );
+
+  it("does not revalidate when a duplicate override conflicts with the opening balance date", async () => {
+    mocks.overrideDuplicateImport.mockResolvedValue({
+      status: "opening-balance-date-conflict",
+      openingBalanceDate: "2026-07-15",
+      transactionDate: "2026-07-15",
+      message:
+        "Import separately is unavailable because this transaction is on or before the account's opening balance date. Review the account's opening amount and date so they represent the balance immediately before this transaction, then retry.",
+    });
+
+    await expect(successInvocations.overrideDuplicateImportAction()).resolves.toEqual({
+      ok: false,
+      error:
+        "Import separately is unavailable because this transaction is on or before the account's opening balance date. Review the account's opening amount and date so they represent the balance immediately before this transaction, then retry.",
+    });
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
 });

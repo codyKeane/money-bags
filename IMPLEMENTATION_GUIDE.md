@@ -1,14 +1,14 @@
 # Money Bags Implementation Guide
 
-> Status: selected remediation and scoped product-decision implementation complete; manual release gates remain
-> Code baseline: the scoped implementation/documentation checkpoint is committed on `main` at `5c1a9cb`; the follow-on `CODEX_HANDOFF.md` is intentionally untracked
+> Status: selected remediation, scoped product decisions, and the deferred running-balance import guard complete; manual release gates remain
+> Code baseline: the scoped implementation is committed at `5c1a9cb`, its reconciliations through the Firefox gate are published through `975e5b9`, and the follow-on `CODEX_HANDOFF.md` is intentionally untracked
 > Implementation checkpoint: WP-00 and WP-01A/B/C completed 2026-07-13; WP-12A completed 2026-07-14; WP-01D, WP-12B, WP-02A/B, WP-03, WP-06, WP-07, WP-08, WP-09, WP-10, WP-11, WP-04, WP-05, WP-14A/B/C, WP-15, WP-16A, WP-13A, WP-16B, WP-17, and WP-18 completed 2026-07-15; the 2026-07-17 autonomous checkpoint resolves the scoped RFC-01/02/03/04/06 decisions in additive migration 0006
-> Product checkpoint: the decision-free dashboard uncategorized-review count was implemented 2026-07-15 using the canonical active split-category semantics and transaction filter; bounded transaction notes/canonical tags, exact tag filtering, and compatibility-preserving annotated export were implemented 2026-07-16 in additive migration 0005; merchant/status/opening-date fields, duplicate provenance, transfer/refund links, and guarded restore were implemented 2026-07-17 in additive migration 0006
+> Product checkpoint: the decision-free dashboard uncategorized-review count was implemented 2026-07-15 using the canonical active split-category semantics and transaction filter; bounded transaction notes/canonical tags, exact tag filtering, and compatibility-preserving annotated export were implemented 2026-07-16 in additive migration 0005; merchant/status/opening-date fields, duplicate provenance, transfer/refund links, and guarded restore were implemented 2026-07-17 in additive migration 0006; the no-migration dated-opening import guard was completed 2026-07-21
 > Checkpoint verification: the current default and seed-`20260716` shuffled suites passed 65 files / 880 tests; focused notes/tags migration, validation, action, list/search/filter, import, API, export, and backup suites passed after the migration-name privacy regression was corrected; the uncategorized-count active-category/transaction focus passed 2 files / 40 tests; WP-17's form/confirmation/navigation/action focus passed 8 files / 59 tests; WP-16B's direct-renderer/preflight/runtime/backup/trace focus passed 7 files / 81 tests with installed systemd 261 verification; WP-16A's renderer/unit/privacy-policy focus passed 2 files / 25 tests; WP-15's lint-boundary/health/import-race focus passed 5 files / 86 tests; WP-14C's action/import/split/revalidation focus passed 5 files / 128 tests; WP-14B's no-store/metadata/stream/multipart/filename/route/service/CLI focus passed 12 files / 142 tests; WP-14A's parser/config/runtime/action/import/header/launcher focus passed 7 files / 131 tests during final security re-review; WP-04/WP-05's path-policy/trace/standalone/wrapper focus passed 3 files / 65 tests; WP-10's serializer/service/route/active-category focus passed 4 files / 38 tests; WP-11's currency/account/action/API/summary/transaction/import/export focus passed 16 files / 163 tests; ESLint, TypeScript, the protected-layer DB-import search, staged/unstaged `git diff --check`, exact-money/split/service/seed/import focused tests, cross-CWD synthetic seed/import CLIs, injected rollback, wrapper-owned seed smoke, two-real-connection split serialization, Git-ignore/re-inclusion checks, sanitized audit-CLI checks, warning-sensitive rendered-unit verification, and the sanitized direct service preflight passed
 > Additional gates: the allowlisted sanitized-copy validator passed ordinary and standalone builds, every-NFT and complete copied-tree/symlink scans, exact no-store/global-header checks across every financial response class, a synthetic external-DB mutation/fresh-response check, clean-HOME telemetry-debug suppression, unchanged synthetic DB/sidecar/import/backup sentinels, and loopback health smokes against fresh external temporary databases; independent review reproduced four trace/standalone bypasses, verified their regression fixes, and returned READY; migration integrity, cross-cwd and bundled-launcher root resolution, direct-Vitest fallback, zero-artifact guards, hostile Git-environment refusal, terminal-safe audit output, and documentation checks passed; the disclosed native-Windows validation-wrapper limitation remains
 > Safety gate: no unguarded Next build ran against the working repository's configured ledger. The current `npm run build` used the temporary-DB owner and every-manifest privacy scan; WP-04's first ordinary and standalone output evidence came from an allowlisted temporary copy with clean HOME/TMP/XDG roots and synthetic runtime sentinels. Standalone remains a validation-only copied-workspace mode and is not enabled in product configuration
-> Current autonomous checkpoint verification: 65 files / 880 synthetic tests passed; ESLint, TypeScript, `git diff --check`, guarded ordinary build, and copied-workspace ordinary/standalone build, preflight, smoke, complete-tree, symlink, and trace privacy checks passed. The guarded build traced 20 manifests / 5,607 entries. The nonfatal Turbopack whole-project-trace warning remains disclosed; the repository privacy checker passed.
-> Prepared: 2026-07-20 (post-commit documentation reconciliation)
+> Current autonomous checkpoint verification: the default and seed-`20260721` shuffled suites passed 65 files / 888 synthetic tests; the dated-opening import-guard focus passed 4 files / 131 tests; ESLint, TypeScript, `git diff --check`, guarded ordinary build, and the 20-manifest / 5,607-entry trace privacy check passed. The earlier copied-workspace ordinary/standalone build, preflight, smoke, complete-tree, symlink, and trace privacy gates remain passed. The nonfatal Turbopack whole-project-trace warning remains disclosed; the repository privacy checker passed.
+> Prepared: 2026-07-21 (dated-opening import-guard continuation)
 > Scope: correctness, data integrity, privacy, operational safety, architecture, and accessibility
 > Dependency policy: use the existing Node.js 20+, Next.js, Drizzle, better-sqlite3, Zod, and Vitest stack; do not add a package unless a later decision record explicitly justifies it
 
@@ -72,7 +72,7 @@ The remediation program is complete when all of the following are true:
 - Every stateful `beforeAll` suite is either immutable or replaced with self-contained setup, including import, accounts, categories, transactions/splits, summaries, and default-category coverage.
 - Services validate their own domain write contracts: safe integer cents, ISO ledger dates, positive/null budgets, normalized account currencies, and referenced entities cannot be bypassed by a non-UI caller.
 - Editable money text is converted to and from integer cents exactly in shared browser/server-safe helpers; values with more than two fractional digits are rejected, never rounded.
-- Any malformed CSV row or invalid column map fails the whole import before account, category, batch, or transaction mutation; ambiguous dates remain a distinct explicit-format-required result.
+- Any malformed CSV row, invalid column map, or genuinely new row on/before a dated opening balance fails the whole import before account, category, batch, or transaction mutation; ambiguous dates remain a distinct explicit-format-required result. Existing frozen-hash duplicates remain idempotent.
 - Account currency is editable and repairable in the application. Invalid stored values and mixed-currency ledgers suppress combined aggregates until corrected; no conversion is implied.
 - `/api/export` keeps its five-column compatibility representation, while the UI uses a deterministic detailed format with currency and split details; legacy mixed-currency export is refused.
 - Shared errors, confirmations, navigation, and split controls satisfy the repository's accessibility contracts.
@@ -88,7 +88,7 @@ The remediation program is complete when all of the following are true:
 | External input and domain writes are explicitly validated. | Validate FormData, URL parameters, JSON mappings, CLI args, filenames, IDs, origins, and CSV values at transport boundaries. Revalidate safe integer cents, ISO dates, positive/null budgets, currency codes, and referenced entities inside the service that writes them. | Negative route/action/service tests, including direct service calls. |
 | SQL is Drizzle or parameterized. | Reusable SQL fragments must interpolate Drizzle columns and bound values, never user-built SQL text. | Review and injection-oriented tests for search/filter inputs. |
 | The import hash is frozen. | Preserve exact field order, delimiters, normalization, occurrence indexing, encoding, and SHA-256 output. Fix duplicate UX around the contract; do not “improve” the hash in place. | Golden vectors and re-import tests. |
-| A statement import is file-atomic. | Parser errors, an ambiguous date, an invalid column map, an unknown account, or a failed CLI account creation commit no account, category, batch, or transaction change. Row-level partial success is not supported. | Whole-database before/after assertions for every refusal path. |
+| A statement import is file-atomic. | Parser errors, an ambiguous date, an invalid column map, an unknown account, a genuinely new row on/before a dated opening balance, or a failed CLI account creation commit no account, category, batch, or transaction change. Existing duplicate hashes do not trigger the dated-opening refusal. Row-level partial success is not supported. | Whole-database before/after assertions for every refusal path. |
 | Splits sum exactly to their parent. | Validate inside the service transaction for every split write and guard parent amount edits. Existing mismatches are detected, not silently repaired. | Service-level rollback and concurrency/stale-state tests. |
 | Active category semantics are split-aware. | An unsplit transaction uses `transactions.category_id`; a split transaction uses only `transaction_splits.category_id`. | One shared semantic matrix exercised by filters, stats, rules, export, and summaries. |
 | Excluded categories are consistently excluded. | Apply exclusion to all relevant aggregate surfaces, including budget-vs-actual. Preserve user configuration when a category is excluded. | Cross-aggregate contract test. |
@@ -2891,9 +2891,22 @@ and inactive fallback references in one transaction. `npm run db:restore` is a
 preview-first, rescue-retaining guarded CLI requiring explicit quiescence for
 execution.
 
+The 2026-07-21 follow-on completes the deferred running-balance import guard
+without a migration, dependency, or hash change. For a dated opening balance,
+ordinary statement import and explicit duplicate override refuse genuinely new
+rows on or before the checkpoint; equality fails closed because statement dates
+have no time-of-day ordering. Existing hashes remain ordinary skips, so
+all-duplicate imports and old-duplicate/new-later files preserve idempotence.
+Refusal happens inside the immediate import transaction before default-category,
+batch, or transaction writes. Web and CLI errors expose the checkpoint, first
+conflicting line/date, and count, and recovery requires reconciling both the
+opening amount and date rather than a force bypass.
+
 Verification for this checkpoint uses only synthetic/temp databases. The full
-65-file/880-test suite, ESLint, TypeScript, guarded build, copied-workspace
-ordinary/standalone build and privacy validator, and `git diff --check` passed.
+default and seed-`20260721` shuffled suites passed 65 files / 888 tests; the
+import-guard's 4-file / 131-test focus, ESLint, TypeScript, guarded build, trace
+privacy check, and `git diff --check` passed. The earlier copied-workspace
+ordinary/standalone build and privacy validator remain passed.
 The follow-on Firefox keyboard/focus gate passed on 2026-07-20. The
 screen-reader, real-host operations, and sensitive-environment review gates
 remain pending and are not implied by the synthetic checks.

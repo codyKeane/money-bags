@@ -52,6 +52,9 @@ export async function overrideDuplicateImportAction(
   if (result.status === "source-not-found") {
     return { ok: false, error: "The original duplicate source row is no longer available." };
   }
+  if (result.status === "opening-balance-date-conflict") {
+    return { ok: false, error: result.message };
+  }
   if (result.status === "invalid-input") return { ok: false, error: result.message };
   revalidateAfterMutation();
   return { ok: true };

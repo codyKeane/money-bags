@@ -176,7 +176,9 @@ pre-commit task is retained only by this resolution note, not as live work.
 - [x] ~~Cross-file duplicate review~~ — migration 0006 adds source-file/row
   provenance for an explicit “Import separately” override. The frozen hash and
   ordinary idempotent dedupe remain unchanged; undo removes the override with
-  its batch. A running-balance import guard remains outside this checkpoint.
+  its batch. The 2026-07-21 follow-on adds the running-balance import guard:
+  genuinely new rows on/before a dated opening balance refuse atomically,
+  while existing duplicates remain idempotent and overrides cannot bypass it.
 - [x] ~~Refund semantics~~ — explicit same-account/same-currency links allow
   partial refunds up to the original outflow. Linked refunds reduce spending
   and budget actuals in their own active category/splits and do not count as
@@ -216,9 +218,15 @@ category merge, opening-balance dates, and a preview-first guarded restore CLI.
 Focused service/action/restore tests and TypeScript passed during this
 checkpoint. No configured ledger, real statement, real backup, service, or
 deployment was touched.
-The final default and fixed-seed shuffled suites each passed 65 files / 880
-tests; ESLint, the guarded build, copied-workspace privacy validation, and
-`git diff --check` also passed. A follow-on Firefox 152.0.6 keyboard/focus run
+
+The 2026-07-21 no-migration follow-on completes the deferred running-balance
+import guard across service, API, web, action, and CLI adapters. It preserves
+the frozen hash and ordinary duplicate behavior and was verified only with
+synthetic throwaway databases.
+The final default and seed-`20260721` shuffled suites each passed 65 files / 888
+tests including the dated-opening guard; ESLint, the guarded build, trace
+privacy check, and `git diff --check` also passed. The earlier copied-workspace
+privacy validation remains passed. A follow-on Firefox 152.0.6 keyboard/focus run
 passed on 2026-07-20. Screen-reader, real-host operations, and
 sensitive-environment review remain release gates.
 

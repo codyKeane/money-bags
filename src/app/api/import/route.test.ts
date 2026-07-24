@@ -148,6 +148,47 @@ describe("POST /api/import preflight mappings", () => {
     }
   });
 
+  it("maps an opening-balance date conflict to an actionable 409 without revalidation", async () => {
+    const result = {
+      status: "opening-balance-date-conflict",
+      imported: 0,
+      skipped: [],
+      errors: [],
+      warnings: [],
+      batchId: null,
+      account: null,
+      openingBalanceDate: "2026-06-03",
+      firstConflictingRowNumber: 2,
+      firstConflictingDate: "2026-06-03",
+      conflictingRowCount: 1,
+      message:
+        "Import has new transactions on or before the account's opening balance date. Review the account's opening amount and date so they represent the balance immediately before every imported row, then retry.",
+    } satisfies ImportResult;
+    const mock = vi.spyOn(importService, "importStatement").mockResolvedValue(result);
+    try {
+      const response = await POST(
+        importRequest("Date,Description,Amount\n2026-06-03,SYNTHETIC,-1.00\n", {
+          dateFormat: "MDY",
+        }),
+      );
+
+      expect(response.status).toBe(409);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(await response.json()).toEqual({
+        error: "opening-balance-date-conflict",
+        field: "accountId",
+        openingBalanceDate: "2026-06-03",
+        firstConflictingRowNumber: 2,
+        firstConflictingDate: "2026-06-03",
+        conflictingRowCount: 1,
+        message: result.message,
+      });
+      expect(revalidateAfterMutation).not.toHaveBeenCalled();
+    } finally {
+      mock.mockRestore();
+    }
+  });
+
   it("returns completed imports as non-cacheable success and revalidates the root layout", async () => {
     const result = completedResult();
     const mock = vi.spyOn(importService, "importStatement").mockResolvedValue(result);

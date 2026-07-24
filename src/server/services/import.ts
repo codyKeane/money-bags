@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { getDb, type Db } from "../../db/client";
 import { ensureDefaultCategoriesInTransaction } from "../../db/default-categories";
@@ -67,6 +67,14 @@ export type ImportResult =
   | ({ status: "unknown-account"; message: string } & ImportResultData)
   | ({ status: "account-conflict"; message: string } & ImportResultData)
   | ({ status: "date-format-required"; ambiguousRowNumbers: number[] } & ImportResultData)
+  | ({
+      status: "opening-balance-date-conflict";
+      openingBalanceDate: string;
+      firstConflictingRowNumber: number;
+      firstConflictingDate: string;
+      conflictingRowCount: number;
+      message: string;
+    } & ImportResultData)
   | ({ status: "invalid-column-map"; issues: ColumnMapIssue[] } & ImportResultData)
   | ({ status: "invalid-file" } & ImportResultData)
   | ({ status: "invalid-input"; field: string; message: string } & ImportResultData);
@@ -170,7 +178,11 @@ function normalizeParsedRows(
 }
 
 type AccountResolution =
-  | { ok: true; account: ImportedAccountTarget | null }
+  | {
+      ok: true;
+      account: ImportedAccountTarget | null;
+      openingBalanceDate: string | null;
+    }
   | { ok: false; result: ImportResult };
 
 function resolveImportAccount(
@@ -185,13 +197,24 @@ function resolveImportAccount(
         name: accounts.name,
         type: accounts.type,
         currency: accounts.currency,
+        openingBalanceDate: accounts.openingBalanceDate,
       })
       .from(accounts)
       .where(eq(accounts.id, target.accountId))
       .limit(1)
       .get();
     return account
-      ? { ok: true, account: { ...account, created: false } }
+      ? {
+          ok: true,
+          account: {
+            id: account.id,
+            name: account.name,
+            type: account.type,
+            currency: account.currency,
+            created: false,
+          },
+          openingBalanceDate: account.openingBalanceDate,
+        }
       : {
           ok: false,
           result: {
@@ -208,6 +231,7 @@ function resolveImportAccount(
       name: accounts.name,
       type: accounts.type,
       currency: accounts.currency,
+      openingBalanceDate: accounts.openingBalanceDate,
     })
     .from(accounts)
     .where(eq(accounts.name, target.name))
@@ -227,9 +251,19 @@ function resolveImportAccount(
         },
       };
     }
-    return { ok: true, account: { ...existing, created: false } };
+    return {
+      ok: true,
+      account: {
+        id: existing.id,
+        name: existing.name,
+        type: existing.type,
+        currency: existing.currency,
+        created: false,
+      },
+      openingBalanceDate: existing.openingBalanceDate,
+    };
   }
-  if (!allowCreate) return { ok: true, account: null };
+  if (!allowCreate) return { ok: true, account: null, openingBalanceDate: null };
 
   const account = db
     .insert(accounts)
@@ -248,7 +282,25 @@ function resolveImportAccount(
     })
     .get();
   if (!account) throw new Error("Failed to create the import account.");
-  return { ok: true, account: { ...account, created: true } };
+  return { ok: true, account: { ...account, created: true }, openingBalanceDate: null };
+}
+
+const IMPORT_CHUNK_SIZE = 128;
+
+function existingImportHashes(accountId: string, hashes: readonly string[], db: Db): Set<string> {
+  const existing = new Set<string>();
+  for (let i = 0; i < hashes.length; i += IMPORT_CHUNK_SIZE) {
+    const chunk = hashes.slice(i, i + IMPORT_CHUNK_SIZE);
+    const rows = db
+      .select({ importHash: transactions.importHash })
+      .from(transactions)
+      .where(and(eq(transactions.accountId, accountId), inArray(transactions.importHash, chunk)))
+      .all();
+    for (const row of rows) {
+      if (row.importHash) existing.add(row.importHash);
+    }
+  }
+  return existing;
 }
 
 export async function importStatement(
@@ -312,6 +364,35 @@ export async function importStatement(
     if (!resolution.account) throw new Error("Ready import did not resolve an account.");
     const accountId = resolution.account.id;
 
+    const hashes = computeImportHashes(accountId, rows);
+    const openingBalanceDate = resolution.openingBalanceDate;
+    if (openingBalanceDate !== null) {
+      const candidates = rows.flatMap((row, index) => {
+        const hash = hashes[index];
+        if (!hash) throw new Error("Missing import hash for a validated row.");
+        return row.date <= openingBalanceDate ? [{ row, hash }] : [];
+      });
+      const alreadyImportedHashes = existingImportHashes(
+        accountId,
+        candidates.map(({ hash }) => hash),
+        tx,
+      );
+      const conflicts = candidates.filter(({ hash }) => !alreadyImportedHashes.has(hash));
+      const firstConflict = conflicts[0]?.row;
+      if (firstConflict) {
+        return {
+          status: "opening-balance-date-conflict",
+          ...emptyImportData(),
+          openingBalanceDate,
+          firstConflictingRowNumber: firstConflict.rowNumber,
+          firstConflictingDate: firstConflict.date,
+          conflictingRowCount: conflicts.length,
+          message:
+            "Import has new transactions on or before the account's opening balance date. Review the account's opening amount and date so they represent the balance immediately before every imported row, then retry.",
+        };
+      }
+    }
+
     // On a connection acquired without startup bootstrap, defaults join the
     // same rollback boundary as account creation, batch creation, and rows.
     ensureDefaultCategoriesInTransaction(tx);
@@ -322,7 +403,6 @@ export async function importStatement(
       keywords: parseKeywords(category.keywords),
     }));
     const batchId = crypto.randomUUID();
-    const hashes = computeImportHashes(accountId, rows);
     const prepared = rows.map((row, index) => {
       const normalized = normalizeTransactionInput({
         accountId,
@@ -344,7 +424,6 @@ export async function importStatement(
     });
 
     // 7 columns/row keeps each chunk under SQLite's 999 bound-variable limit.
-    const CHUNK = 128;
     const insertedHashes = new Set<string>();
     tx.insert(importBatches)
       .values({
@@ -355,8 +434,8 @@ export async function importStatement(
         skippedCount: 0,
       })
       .run();
-    for (let i = 0; i < prepared.length; i += CHUNK) {
-      const slice = prepared.slice(i, i + CHUNK);
+    for (let i = 0; i < prepared.length; i += IMPORT_CHUNK_SIZE) {
+      const slice = prepared.slice(i, i + IMPORT_CHUNK_SIZE);
       const returned = tx
         .insert(transactions)
         .values(slice.map((p) => p.values))
@@ -431,6 +510,12 @@ export type DuplicateImportOverrideResult =
   | { status: "overridden"; batchId: string; transactionId: string }
   | { status: "already-overridden" }
   | { status: "source-not-found" }
+  | {
+      status: "opening-balance-date-conflict";
+      openingBalanceDate: string;
+      transactionDate: string;
+      message: string;
+    }
   | { status: "invalid-input"; field: string; message: string };
 
 // Explicit duplicate overrides are deliberately separate from the frozen
@@ -507,6 +592,26 @@ export async function overrideDuplicateImport(
       .limit(1)
       .get();
     if (existingOverride) return { status: "already-overridden" };
+
+    const account = tx
+      .select({ openingBalanceDate: accounts.openingBalanceDate })
+      .from(accounts)
+      .where(eq(accounts.id, accountId))
+      .limit(1)
+      .get();
+    if (
+      account?.openingBalanceDate !== null &&
+      account?.openingBalanceDate !== undefined &&
+      source.date <= account.openingBalanceDate
+    ) {
+      return {
+        status: "opening-balance-date-conflict",
+        openingBalanceDate: account.openingBalanceDate,
+        transactionDate: source.date,
+        message:
+          "Import separately is unavailable because this transaction is on or before the account's opening balance date. Review the account's opening amount and date so they represent the balance immediately before this transaction, then retry.",
+      };
+    }
 
     ensureDefaultCategoriesInTransaction(tx);
     const categoryRows = tx.select().from(categories).all();

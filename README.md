@@ -9,8 +9,8 @@ project ever performs is `npm install` at development time.
   date-only ISO transaction dates, merchant/notes/tags, cleared and
   row-exclusion controls, splits, and explicit transfer/refund relationships
 - **Ingestion**: file-atomic CSV bank-statement import (CLI + web UI) with
-  occurrence-aware hash dedupe, source-row duplicate review, and keyword
-  auto-categorization
+  occurrence-aware hash dedupe, source-row duplicate review, dated-opening
+  balance protection, and keyword auto-categorization
 - **Dashboard**: net worth, exact per-currency groups, monthly spending by
   category, merchant rollups, income-vs-spending trend, recent transactions,
   and an uncategorized-review count — light/dark, built on Next.js + Recharts
@@ -333,6 +333,16 @@ the database opens: one malformed row/map refuses the whole file without
 creating an account, batch, or partial import. Re-importing the same valid file
 is safe — duplicates are skipped and reported row by row.
 
+For an account with a dated opening balance, every genuinely new imported row
+must be strictly later than the opening date. A new row on or before that
+checkpoint refuses the whole file before defaults, batches, or transactions
+change; the response identifies the checkpoint, first conflicting source line
+and date, and total conflict count. Existing frozen-hash duplicates remain
+ordinary skips, and “Import separately” cannot bypass the checkpoint. Review
+both the opening amount and date so they represent the balance immediately
+before every imported row, then retry. Undated current baselines have no
+temporal cutoff.
+
 Web uploads allow an exact 5 MiB CSV plus up to 64 KiB of multipart framing and
 form fields. The server measures the incoming stream even when the browser omits
 or understates `Content-Length`, so the full request cannot be buffered without
@@ -372,7 +382,9 @@ controls. Selecting an account shows a deterministic running balance using the
 opening balance plus rows ordered by date, creation time, and ID. Accounts may
 date their opening balance; an undated opening amount remains a current
 baseline. The date is retained for historical balance consumers; there is no
-net-worth-over-time chart yet. Manual transactions may include an optional
+net-worth-over-time chart yet. Statement imports protect a dated checkpoint by
+refusing genuinely new rows on or before it while preserving duplicate
+re-import idempotence. Manual transactions may include an optional
 merchant label, and the dashboard groups spending by that label with a
 deterministic description fallback.
 

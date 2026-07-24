@@ -180,7 +180,7 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
   are untouched; it returns the deleted count or null if the batch is gone. Pass
   `filename` into `importStatement` from any new caller so history stays useful.
   The `batch_id` FK's `ON DELETE set null` is hand-added to migration 0003
-  (drizzle-kit omits it from `ALTER TABLE ADD`). Migrations 0000–0005 are
+  (drizzle-kit omits it from `ALTER TABLE ADD`). Migrations 0000–0006 are
   historical and byte-locked by `src/db/migrations.test.ts`; never regenerate
   or edit them. Migration 0006 is the append-only ledger-options migration for
   merchant/status fields, opening-balance dates, and explicit transfer/refund/
@@ -354,11 +354,11 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
 - `npm run lint` — ESLint through a temporary lease that fails if lint opens DB
   artifacts
 - `npm run db:generate` — generate a new append-only migration from schema
-  changes; never regenerate or edit migrations 0000–0005; migration 0006 is
+  changes; never regenerate or edit migrations 0000–0006; migration 0006 is
   the current append-only ledger-options revision
 - `npm run db:migrate` — apply migrations (also auto-applied on startup;
   default categories install automatically when the table is empty). Historical
-  migrations 0000–0005 are byte-locked compatibility assets.
+  migrations 0000–0006 are byte-locked compatibility assets.
 - `npm run db:seed` — one-time fail-closed demo initializer; requires an
   existing current schema with no ledger rows and either no categories or the
   exact untouched defaults, refuses repeat/custom targets, and has no force flag
@@ -368,7 +368,7 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
   ledger, the backup must be a validated standalone image, and the retained
   rescue is never removed automatically.
 - `npm run db:studio` — Drizzle Studio DB browser
-- `npm run import -- --file <csv> --account "<name>" [--type CHECKING] [--currency USD] [--date-format MDY] [--col-date "<header>"] [--col-amount "<header>"] …` — file-atomic CLI import; ambiguous auto dates and malformed rows/maps refuse before DB access, while a ready by-name account and all import rows share one immediate transaction. `--col-*` flags use the same strict mapping contract as `/api/import` and the Advanced UI.
+- `npm run import -- --file <csv> --account "<name>" [--type CHECKING] [--currency USD] [--date-format MDY] [--col-date "<header>"] [--col-amount "<header>"] …` — file-atomic CLI import; ambiguous auto dates and malformed rows/maps refuse before DB access, while a ready by-name account and all import rows share one immediate transaction. For a dated opening balance, genuinely new rows must be strictly later than the checkpoint; older/equal rows refuse before defaults/batches/transactions, existing hash duplicates remain skips, and duplicate overrides cannot bypass the cutoff. `--col-*` flags use the same strict mapping contract as `/api/import` and the Advanced UI.
 
 ## Other docs
 

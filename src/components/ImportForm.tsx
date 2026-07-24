@@ -42,6 +42,10 @@ interface ImportErrorResponse {
   errors?: { rowNumber: number; message: string }[];
   issues?: { message: string }[];
   field?: string;
+  openingBalanceDate?: string;
+  firstConflictingRowNumber?: number;
+  firstConflictingDate?: string;
+  conflictingRowCount?: number;
 }
 
 function importFormField(field: string | undefined): string | undefined {
@@ -194,6 +198,18 @@ export function ImportForm({ accounts }: { accounts: AccountOption[] }) {
           setUploadError(`The CSV contains invalid data or structure${location}. Nothing was saved.`);
         } else if (error.error === "invalid-column-map") {
           setUploadError(error.issues?.[0]?.message ?? "The column mapping is invalid.");
+        } else if (error.error === "opening-balance-date-conflict") {
+          setUploadErrorField("accountId");
+          const details =
+            error.openingBalanceDate &&
+            error.firstConflictingDate &&
+            error.firstConflictingRowNumber &&
+            error.conflictingRowCount
+              ? ` Opening balance date: ${error.openingBalanceDate}. First conflicting line: ${error.firstConflictingRowNumber} (${error.firstConflictingDate}); ${error.conflictingRowCount} new conflicting ${error.conflictingRowCount === 1 ? "row" : "rows"}.`
+              : "";
+          setUploadError(
+            `${error.message ?? "The statement conflicts with this account's opening balance date."}${details}`,
+          );
         } else {
           if (error.error === "file-too-large" || error.error === "unsupported-file") {
             setUploadErrorField("file");

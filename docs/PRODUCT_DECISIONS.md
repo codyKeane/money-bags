@@ -4,7 +4,7 @@
 > Scope: autonomous completion of the remaining decision-gated product work
 
 This record resolves the deferred decisions named by `IMPLEMENTATION_GUIDE.md`.
-The existing import hash and migrations `0000` through `0005` remain immutable.
+The existing import hash and migrations `0000` through `0006` remain immutable.
 All new behavior is additive and is verified only with synthetic ledgers and
 throwaway databases.
 
@@ -20,6 +20,28 @@ original hash. The same source file/row cannot be overridden twice while its
 batch exists. Undo removes the transaction, provenance, and batch together.
 Different source files may each receive an explicit override for the same
 frozen hash. Ordinary re-imports remain idempotent and never auto-override.
+
+## Dated opening-balance import boundary
+
+A non-null opening-balance date is a date-only checkpoint: the opening amount
+must represent the balance immediately before every transaction loaded into
+the account. A statement import therefore refuses the whole file when any
+genuinely new row is on or before that date. Equality refuses because
+date-only statement rows cannot prove whether a same-day transaction occurred
+before or after the checkpoint. Rows strictly after the checkpoint are
+eligible.
+
+The guard computes the existing frozen hashes first. A row already present is
+still an ordinary skipped duplicate, so all-duplicate re-imports and files that
+combine old duplicates with new later rows remain idempotent. A new conflicting
+row refuses before default-category, batch, or transaction mutation, and the
+explicit “Import separately” path cannot bypass the checkpoint. Recovery
+requires reviewing both the opening amount and date so they describe the
+balance immediately before every imported row; there is no force flag.
+
+An undated current baseline has no defensible temporal cutoff and is not
+guarded. This package does not repair historical contradictions or prevent a
+manual transaction/account edit from creating one.
 
 ## Transfer pairing
 

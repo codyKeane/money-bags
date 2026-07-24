@@ -97,6 +97,13 @@ async function main() {
     }
     process.exit(2);
   }
+  if (result.status === "opening-balance-date-conflict") {
+    console.error(`Import refused: ${result.message}`);
+    console.error(
+      `  first conflicting line ${result.firstConflictingRowNumber}: ${result.firstConflictingDate}; opening balance date: ${result.openingBalanceDate}`,
+    );
+    process.exit(2);
+  }
   if (result.status !== "completed") {
     console.error(result.message);
     process.exit(2);

@@ -157,6 +157,10 @@ describe("importStatement (integration, temp DB)", () => {
       amountCents: 260000,
     });
     expect(await db.select().from(importDuplicateOverrides)).toHaveLength(1);
+    db.update(accounts)
+      .set({ openingBalanceDate: skipped.date })
+      .where(eq(accounts.id, accountId))
+      .run();
     await expect(
       overrideDuplicateImport(
         {
@@ -219,6 +223,138 @@ describe("importStatement (integration, temp DB)", () => {
     const [account] = await getAccountsWithBalances(db);
     expect(account?.balanceCents).toBe(260000 - 7812 - 450 - 450 - 70000);
     expect(await getNetWorth(db)).toBe(account?.balanceCents);
+  });
+
+  it("refuses new rows on or before a dated opening balance without changing the ledger", async () => {
+    db.update(accounts)
+      .set({ openingBalanceDate: "2026-06-03" })
+      .where(eq(accounts.id, accountId))
+      .run();
+    const before = ledgerSnapshot(db);
+
+    const result = await importStatement(
+      {
+        account: existingAccount(accountId),
+        csvText: [
+          "Date,Description,Amount",
+          "2026-06-02,BEFORE OPENING,-1.00",
+          "2026-06-03,ON OPENING,-2.00",
+          "2026-06-04,AFTER OPENING,-3.00",
+        ].join("\n"),
+      },
+      db,
+    );
+
+    expect(result).toMatchObject({
+      status: "opening-balance-date-conflict",
+      openingBalanceDate: "2026-06-03",
+      firstConflictingRowNumber: 2,
+      firstConflictingDate: "2026-06-02",
+      conflictingRowCount: 2,
+      imported: 0,
+      batchId: null,
+    });
+    expect(ledgerSnapshot(db)).toEqual(before);
+  });
+
+  it("keeps all-duplicate re-imports idempotent after an opening balance is dated", async () => {
+    const first = await importStatement({ account: existingAccount(accountId), csvText: CSV }, db);
+    expect(first).toMatchObject({ status: "completed", imported: 5 });
+    db.update(accounts)
+      .set({ openingBalanceDate: "2026-06-25" })
+      .where(eq(accounts.id, accountId))
+      .run();
+
+    const result = await importStatement({ account: existingAccount(accountId), csvText: CSV }, db);
+
+    expect(result).toMatchObject({ status: "completed", imported: 0, batchId: null });
+    expect(result.skipped).toHaveLength(5);
+    expect(await db.select().from(transactions)).toHaveLength(5);
+  });
+
+  it("guards only new rows while allowing old duplicates and new rows after the opening date", async () => {
+    const firstCsv = "Date,Description,Amount\n2026-06-01,OLDER ROW,-1.00";
+    const first = await importStatement(
+      { account: existingAccount(accountId), csvText: firstCsv },
+      db,
+    );
+    expect(first).toMatchObject({ status: "completed", imported: 1 });
+    db.update(accounts)
+      .set({ openingBalanceDate: "2026-06-15" })
+      .where(eq(accounts.id, accountId))
+      .run();
+
+    const result = await importStatement(
+      {
+        account: existingAccount(accountId),
+        csvText: `${firstCsv}\n2026-06-20,NEWER ROW,-2.00`,
+      },
+      db,
+    );
+
+    expect(result).toMatchObject({ status: "completed", imported: 1 });
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]).toMatchObject({ description: "OLDER ROW" });
+    expect(await db.select().from(transactions)).toHaveLength(2);
+  });
+
+  it("refuses a file when an old duplicate is accompanied by a new old row", async () => {
+    const firstCsv = "Date,Description,Amount\n2026-06-01,OLDER DUPLICATE,-1.00";
+    await importStatement({ account: existingAccount(accountId), csvText: firstCsv }, db);
+    db.update(accounts)
+      .set({ openingBalanceDate: "2026-06-15" })
+      .where(eq(accounts.id, accountId))
+      .run();
+    const before = ledgerSnapshot(db);
+
+    const result = await importStatement(
+      {
+        account: existingAccount(accountId),
+        csvText: `${firstCsv}\n2026-06-10,NEW OLD ROW,-2.00`,
+      },
+      db,
+    );
+
+    expect(result).toMatchObject({
+      status: "opening-balance-date-conflict",
+      firstConflictingRowNumber: 3,
+      firstConflictingDate: "2026-06-10",
+      conflictingRowCount: 1,
+    });
+    expect(ledgerSnapshot(db)).toEqual(before);
+  });
+
+  it("refuses a duplicate override on or before the opening balance date", async () => {
+    const first = await importStatement({ account: existingAccount(accountId), csvText: CSV }, db);
+    const duplicate = await importStatement({ account: existingAccount(accountId), csvText: CSV }, db);
+    const skipped = duplicate.skipped[0];
+    if (!skipped || !duplicate.sourceFingerprint) throw new Error("duplicate fixture failed");
+    db.update(accounts)
+      .set({ openingBalanceDate: skipped.date })
+      .where(eq(accounts.id, accountId))
+      .run();
+    const before = ledgerSnapshot(db);
+
+    const result = await overrideDuplicateImport(
+      {
+        accountId,
+        sourceFingerprint: duplicate.sourceFingerprint,
+        sourceRowNumber: skipped.rowNumber,
+        importHash: skipped.importHash,
+        date: skipped.date,
+        description: skipped.description,
+        amountCents: skipped.amountCents,
+      },
+      db,
+    );
+
+    expect(first.imported).toBe(5);
+    expect(result).toMatchObject({
+      status: "opening-balance-date-conflict",
+      openingBalanceDate: skipped.date,
+      transactionDate: skipped.date,
+    });
+    expect(ledgerSnapshot(db)).toEqual(before);
   });
 
   it("returns typed account/input failures without creating a batch or transaction", async () => {

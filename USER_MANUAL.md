@@ -157,8 +157,10 @@ app, but your first statement only covers transactions after that. You set the
 negative — a credit card you already owe $250 on has an opening balance of
 `-250.00`. You can also enter an **opening balance date**. The date is retained
 for historical balance calculations; Money Bags does not currently draw a
-net-worth-over-time chart. Leave it blank when the amount is only a current
-baseline.
+net-worth-over-time chart. When the date is set, the amount must be the balance
+immediately before every transaction you load, so imported transaction dates
+must be strictly later. Leave it blank when the amount is only a current
+baseline and has no defensible historical cutoff.
 
 ### Balance
 
@@ -690,7 +692,9 @@ Repeat for each real account you have (checking, credit card, cash, etc.).
 6. Click **Import statement**.
 7. Read the result: how many were **imported** and **skipped as duplicates**.
    If the file is refused, correct the listed rows or setting and submit the
-   whole file again; no partial rows were saved.
+   whole file again; no partial rows were saved. If the account has a dated
+   opening balance, a new row on or before that date is also refused; review
+   both the opening amount and date before retrying.
 
 > **Tip:** It is completely safe to import the same file twice. The app
 > recognizes transactions it already has and skips them, so you'll never get
@@ -842,6 +846,8 @@ normal transaction with a null import hash plus source-file fingerprint, source
 row, and original-hash provenance. The same source row cannot be overridden
 twice while its batch exists, and **Undo** removes the override with the batch.
 Ordinary re-imports remain idempotent; the hash formula itself never changes.
+For a dated opening balance, **Import separately** also refuses a source row on
+or before the checkpoint—it cannot be used as a force bypass.
 
 ### How money is stored (no rounding errors)
 
@@ -889,7 +895,10 @@ where the spending reduction appears. Linking never rewrites either row.
 When the Transactions page is filtered to one account, its running balance is
 the opening balance plus each transaction in date, creation-time, and ID order.
 An opening balance without a date is a current baseline; it is not projected
-back into historical trend points.
+back into historical trend points. When an opening date is present, statement
+imports accept only genuinely new rows strictly after it. Existing duplicate
+rows still skip normally, but one new row on or before the checkpoint refuses
+the complete file before anything changes.
 
 ### How dates and months work
 
@@ -1012,7 +1021,11 @@ After you click **Import statement**, you get a summary like:
 - **A refused file** — if any row, CSV structure, or explicit column map is
   invalid, the app identifies safe line/field details and saves zero rows. Fix
   the source and import the full file again. Ambiguous dates are a separate
-  refusal that asks for an explicit order.
+  refusal that asks for an explicit order. A dated opening-balance conflict is
+  also separate: the app shows the checkpoint, first conflicting source line
+  and date, and total count. Review both the account's opening amount and date
+  so they represent the balance immediately before every imported row, then
+  retry. Existing duplicates do not trigger this refusal.
 
 ### Undoing an import
 
