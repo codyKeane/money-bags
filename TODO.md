@@ -152,6 +152,11 @@ reconciliation, merchant, category-merge, opening-date, and guarded-restore
 decisions. Those implementations are still synthetic-data verified only. The
 follow-on Firefox run closes the browser keyboard/focus portion, but not the
 screen-reader, real-host, or sensitive-env release gates.
+The 2026-07-23 workflow checkpoint adds a reviewed `npm run checkpoint`
+boundary for autonomous local commits. It uses explicit literal tracked paths,
+separately reviewed new files, effective Git ignore rules, protected financial/
+runtime/credential path classes, and post-commit verification; it never pushes
+and always leaves `CODEX_HANDOFF.md` untracked.
 
 The product backlog below is retained as historical product context. Its rank
 does not override the guide, and an unchecked item is not implementation
@@ -223,12 +228,13 @@ The 2026-07-21 no-migration follow-on completes the deferred running-balance
 import guard across service, API, web, action, and CLI adapters. It preserves
 the frozen hash and ordinary duplicate behavior and was verified only with
 synthetic throwaway databases.
-The final default and seed-`20260721` shuffled suites each passed 65 files / 888
-tests including the dated-opening guard; ESLint, the guarded build, trace
-privacy check, and `git diff --check` also passed. The earlier copied-workspace
-privacy validation remains passed. A follow-on Firefox 152.0.6 keyboard/focus run
-passed on 2026-07-20. Screen-reader, real-host operations, and
-sensitive-environment review remain release gates.
+The final default and seed-`20260723` shuffled suites each passed 66 files / 914
+tests including the dated-opening guard and autonomous checkpoint regressions;
+ESLint, TypeScript, the guarded build, 20-manifest / 5,621-entry trace privacy
+check, `git diff --check`, and the rerun sanitized ordinary/standalone
+build-preflight-smoke privacy validator passed. A follow-on Firefox 152.0.6
+keyboard/focus run passed on 2026-07-20. Screen-reader, real-host operations,
+and sensitive-environment review remain release gates.
 
 ### Shipped (kept for history)
 - [x] ~~Truthful and spreadsheet-safe transaction export~~ — WP-10. The exact

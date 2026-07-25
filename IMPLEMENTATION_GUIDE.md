@@ -1,14 +1,14 @@
 # Money Bags Implementation Guide
 
-> Status: selected remediation, scoped product decisions, and the deferred running-balance import guard complete; manual release gates remain
-> Code baseline: the scoped implementation is committed at `5c1a9cb`, its reconciliations through the Firefox gate are published through `975e5b9`, and the follow-on `CODEX_HANDOFF.md` is intentionally untracked
+> Status: selected remediation, scoped product decisions, the deferred running-balance import guard, and the autonomous local-checkpoint workflow are complete; manual release gates remain
+> Code baseline: the scoped implementation is committed at `5c1a9cb`, its reconciliations through the Firefox gate are published through `975e5b9`, the dated-opening guard is committed at `a2544b5`, the autonomous checkpoint workflow is committed at `93c7f19`, and the follow-on `CODEX_HANDOFF.md` is intentionally untracked
 > Implementation checkpoint: WP-00 and WP-01A/B/C completed 2026-07-13; WP-12A completed 2026-07-14; WP-01D, WP-12B, WP-02A/B, WP-03, WP-06, WP-07, WP-08, WP-09, WP-10, WP-11, WP-04, WP-05, WP-14A/B/C, WP-15, WP-16A, WP-13A, WP-16B, WP-17, and WP-18 completed 2026-07-15; the 2026-07-17 autonomous checkpoint resolves the scoped RFC-01/02/03/04/06 decisions in additive migration 0006
 > Product checkpoint: the decision-free dashboard uncategorized-review count was implemented 2026-07-15 using the canonical active split-category semantics and transaction filter; bounded transaction notes/canonical tags, exact tag filtering, and compatibility-preserving annotated export were implemented 2026-07-16 in additive migration 0005; merchant/status/opening-date fields, duplicate provenance, transfer/refund links, and guarded restore were implemented 2026-07-17 in additive migration 0006; the no-migration dated-opening import guard was completed 2026-07-21
 > Checkpoint verification: the current default and seed-`20260716` shuffled suites passed 65 files / 880 tests; focused notes/tags migration, validation, action, list/search/filter, import, API, export, and backup suites passed after the migration-name privacy regression was corrected; the uncategorized-count active-category/transaction focus passed 2 files / 40 tests; WP-17's form/confirmation/navigation/action focus passed 8 files / 59 tests; WP-16B's direct-renderer/preflight/runtime/backup/trace focus passed 7 files / 81 tests with installed systemd 261 verification; WP-16A's renderer/unit/privacy-policy focus passed 2 files / 25 tests; WP-15's lint-boundary/health/import-race focus passed 5 files / 86 tests; WP-14C's action/import/split/revalidation focus passed 5 files / 128 tests; WP-14B's no-store/metadata/stream/multipart/filename/route/service/CLI focus passed 12 files / 142 tests; WP-14A's parser/config/runtime/action/import/header/launcher focus passed 7 files / 131 tests during final security re-review; WP-04/WP-05's path-policy/trace/standalone/wrapper focus passed 3 files / 65 tests; WP-10's serializer/service/route/active-category focus passed 4 files / 38 tests; WP-11's currency/account/action/API/summary/transaction/import/export focus passed 16 files / 163 tests; ESLint, TypeScript, the protected-layer DB-import search, staged/unstaged `git diff --check`, exact-money/split/service/seed/import focused tests, cross-CWD synthetic seed/import CLIs, injected rollback, wrapper-owned seed smoke, two-real-connection split serialization, Git-ignore/re-inclusion checks, sanitized audit-CLI checks, warning-sensitive rendered-unit verification, and the sanitized direct service preflight passed
 > Additional gates: the allowlisted sanitized-copy validator passed ordinary and standalone builds, every-NFT and complete copied-tree/symlink scans, exact no-store/global-header checks across every financial response class, a synthetic external-DB mutation/fresh-response check, clean-HOME telemetry-debug suppression, unchanged synthetic DB/sidecar/import/backup sentinels, and loopback health smokes against fresh external temporary databases; independent review reproduced four trace/standalone bypasses, verified their regression fixes, and returned READY; migration integrity, cross-cwd and bundled-launcher root resolution, direct-Vitest fallback, zero-artifact guards, hostile Git-environment refusal, terminal-safe audit output, and documentation checks passed; the disclosed native-Windows validation-wrapper limitation remains
 > Safety gate: no unguarded Next build ran against the working repository's configured ledger. The current `npm run build` used the temporary-DB owner and every-manifest privacy scan; WP-04's first ordinary and standalone output evidence came from an allowlisted temporary copy with clean HOME/TMP/XDG roots and synthetic runtime sentinels. Standalone remains a validation-only copied-workspace mode and is not enabled in product configuration
-> Current autonomous checkpoint verification: the default and seed-`20260721` shuffled suites passed 65 files / 888 synthetic tests; the dated-opening import-guard focus passed 4 files / 131 tests; ESLint, TypeScript, `git diff --check`, guarded ordinary build, and the 20-manifest / 5,607-entry trace privacy check passed. The earlier copied-workspace ordinary/standalone build, preflight, smoke, complete-tree, symlink, and trace privacy gates remain passed. The nonfatal Turbopack whole-project-trace warning remains disclosed; the repository privacy checker passed.
-> Prepared: 2026-07-21 (dated-opening import-guard continuation)
+> Current autonomous checkpoint verification: the default and seed-`20260723` shuffled suites passed 66 files / 914 synthetic tests; the checkpoint-helper focus passed 1 file / 26 tests and its policy/trace focus passed 3 files / 59 tests; ESLint, TypeScript, `git diff --check`, guarded ordinary build, and the 20-manifest / 5,621-entry trace privacy check passed. The allowlisted sanitized-copy validator was rerun successfully across ordinary and standalone builds, direct preflight, loopback smokes, complete-tree/symlink scans, synthetic freshness, and runtime sentinels. The nonfatal Turbopack whole-project-trace warning remains disclosed; the repository privacy checker passed.
+> Prepared: 2026-07-23 (autonomous local-checkpoint continuation)
 > Scope: correctness, data integrity, privacy, operational safety, architecture, and accessibility
 > Dependency policy: use the existing Node.js 20+, Next.js, Drizzle, better-sqlite3, Zod, and Vitest stack; do not add a package unless a later decision record explicitly justifies it
 
@@ -2910,6 +2910,34 @@ ordinary/standalone build and privacy validator remain passed.
 The follow-on Firefox keyboard/focus gate passed on 2026-07-20. The
 screen-reader, real-host operations, and sensitive-environment review gates
 remain pending and are not implied by the synthetic checks.
+
+### Completed workflow checkpoint: autonomous local commits
+
+The 2026-07-23 workflow checkpoint adds `npm run checkpoint` and
+`docs/AUTONOMOUS_WORKFLOW.md` so a session with explicit local-commit authority
+can continue in bounded packages without handing routine staging and commit
+commands back to the maintainer. The helper accepts only explicit literal
+tracked paths and separately marked new regular files, refuses pre-existing
+staged/intent-to-add state and in-progress Git operations, preserves unrelated
+work, disables signing/prompts/hooks, and never invokes a remote-capable Git
+command. `CODEX_HANDOFF.md` and enumerated financial, runtime, environment,
+SQLite, private-key, and credential paths remain outside its authority.
+
+New files must pass effective repository and global Git ignore rules and a
+staged whitespace check. The helper verifies the resulting parent, path set,
+and blobs; a post-commit verification failure is reported distinctly with the
+created revision and a no-retry warning. Synthetic Git fixtures cover hostile
+environment redirects, global-only identity, global excludes, intent-to-add,
+new-file rollback, protected paths, and the real npm executable boundary.
+Independent review found and verified fixes for identity isolation,
+post-commit reporting, explicit new-file support, effective global ignores,
+intent-to-add handling, and new-file whitespace validation, then returned no
+material findings.
+
+No dependency, lockfile, schema, migration, import hash, financial behavior,
+real ledger, service, deployment, or remote changed. The workflow committed
+itself locally at `93c7f19`; it did not include the intentionally untracked
+handoff and it did not push.
 
 ## 17. Handoff template for every completed package
 
