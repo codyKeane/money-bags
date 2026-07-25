@@ -32,6 +32,7 @@ const traceExcludes = [
   "scripts/backup-db.ts",
   "scripts/build-privacy-policy.mjs",
   "scripts/check-build-privacy.mjs",
+  "scripts/create-local-checkpoint.mjs",
   "scripts/disable-tsx-cache.mjs",
   "scripts/import-csv.ts",
   "scripts/render-systemd-units.mjs",

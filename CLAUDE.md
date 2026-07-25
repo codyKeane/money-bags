@@ -389,4 +389,14 @@ better-sqlite3 · Recharts · Vitest · csv-parse · zod v4 · tsx for scripts.
 
 ## Git
 
-Repo already initialized; do not commit unless explicitly asked.
+Repo already initialized; do not commit unless explicitly asked. When the user
+authorizes autonomous implementation and periodic local commits, follow
+`docs/AUTONOMOUS_WORKFLOW.md`. For a tracked-file-only package, prefer
+`npm run checkpoint -- --message "<type>: <summary>" -- <explicit paths...>`;
+it commits only literal selected paths, refuses pre-existing staged or
+intent-to-add state and the protected financial/runtime/credential path classes
+enumerated in that workflow, disables local hooks/signing/prompts, and never
+uses a remote. New files require one explicit reviewed `--new-file <path>`
+option per file and must pass effective Git ignore rules. Never use `git add .`
+or `git add -A`, never add `CODEX_HANDOFF.md`, and never push under
+local-checkpoint authority.

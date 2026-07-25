@@ -478,6 +478,29 @@ so its permissions and backup lifecycle remain the operator's responsibility.
 
 ## Release, update, and rollback
 
+### Autonomous local checkpoints
+
+When a maintainer explicitly authorizes autonomous implementation, the durable
+loop and boundaries are in
+[`docs/AUTONOMOUS_WORKFLOW.md`](docs/AUTONOMOUS_WORKFLOW.md). After focused and
+package-level verification, tracked-file-only work can be committed locally
+without staging unrelated or untracked files:
+
+```bash
+npm run checkpoint -- --message "fix: bounded checkpoint" -- \
+  src/example.ts src/example.test.ts README.md
+```
+
+The command refuses pre-existing staged or intent-to-add state, conflicts,
+detached/in-progress Git states, untracked/deleted/symlinked paths, and the
+enumerated financial, runtime, environment, and common credential path classes
+in the workflow. It uses exact literal tracked paths, verifies the resulting
+commit, and never invokes a remote-capable Git command. New files require one
+explicit `--new-file <path>` option per reviewed file and must pass effective
+Git ignore rules. `CODEX_HANDOFF.md` remains untracked, and local checkpoint
+authority never includes push, release, deployment, real ledger access, secret
+inspection, or production service operations.
+
 Before changing a real installation, record the current code revision, selected
 Node/npm pair, rendered units, configured database target, and one freshly
 validated backup. Keep that code/runtime/unit set and the backup together until
